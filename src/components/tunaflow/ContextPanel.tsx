@@ -8,6 +8,7 @@ import { MemosPanel } from "./context-panel/MemosPanel";
 import { SkillsPanel } from "./context-panel/SkillsPanel";
 import { PlansPanel } from "./context-panel/PlansPanel";
 import { TracePanel } from "./context-panel/TracePanel";
+import { HarnessSummary } from "./context-panel/HarnessSummary";
 
 /** Workspace modes — Plan / Artifacts / Trace (Phase 1 MVP) */
 type WorkspaceMode = "plan" | "artifacts" | "trace";
@@ -22,29 +23,31 @@ export function ContextPanel() {
   const [mode, setMode] = useState<WorkspaceMode>("plan");
   const [memosOpen, setMemosOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const { artifacts, memos } = useChatStore();
+  const { artifacts, memos, selectedConversationId, activeBranchId, parentConversationId } = useChatStore();
+  const canonicalConvId = activeBranchId && parentConversationId
+    ? parentConversationId
+    : selectedConversationId;
 
   return (
     <aside className="flex flex-col w-full h-full bg-sidebar overflow-hidden">
 
       {/* Mode bar */}
-      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-border shrink-0">
+      <div className="flex items-center gap-0.5 px-2 h-9 border-b border-border/40 shrink-0">
         {MODE_TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setMode(tab.id)}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+              "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors",
               mode === tab.id
                 ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                : "text-muted-foreground/70 hover:text-foreground hover:bg-accent/50"
             )}
           >
             {tab.icon}
             {tab.label}
-            {/* Badge: artifact count on Artifacts tab */}
             {tab.id === "artifacts" && artifacts.length > 0 && (
-              <span className="text-[9px] bg-primary/15 text-primary px-1 rounded-full">
+              <span className="text-[8px] bg-primary/10 text-primary/70 px-1 rounded">
                 {artifacts.length}
               </span>
             )}
@@ -57,7 +60,8 @@ export function ContextPanel() {
         {/* ─── Plan mode ─── */}
         {mode === "plan" && (
           <>
-            <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Plans</h3>
+            {canonicalConvId && <HarnessSummary conversationId={canonicalConvId} />}
+            <h3 className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-2.5">Plans</h3>
             <PlansPanel />
           </>
         )}
@@ -65,7 +69,7 @@ export function ContextPanel() {
         {/* ─── Artifacts mode (with Memos + Skills collapsible) ─── */}
         {mode === "artifacts" && (
           <>
-            <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Artifacts</h3>
+            <h3 className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-2.5">Artifacts</h3>
             <ArtifactsPanel />
 
             {/* Memos — collapsible section */}
@@ -75,7 +79,7 @@ export function ContextPanel() {
                 className="flex items-center gap-1.5 w-full text-left mb-2"
               >
                 <StickyNote className="w-3 h-3 text-muted-foreground" />
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest flex-1">
                   Memos
                 </span>
                 {memos.length > 0 && (
@@ -95,7 +99,7 @@ export function ContextPanel() {
                 className="flex items-center gap-1.5 w-full text-left mb-2"
               >
                 <Zap className="w-3 h-3 text-muted-foreground" />
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex-1">
+                <span className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest flex-1">
                   Skills
                 </span>
                 <span className="text-[10px] text-muted-foreground">{skillsOpen ? "▾" : "▸"}</span>
@@ -108,7 +112,7 @@ export function ContextPanel() {
         {/* ─── Trace mode ─── */}
         {mode === "trace" && (
           <>
-            <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Trace</h3>
+            <h3 className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-2.5">Trace</h3>
             <TracePanel />
           </>
         )}

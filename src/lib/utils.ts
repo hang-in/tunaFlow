@@ -35,6 +35,24 @@ export function formatTimestamp(ts: number): string {
   });
 }
 
-export function isKnownEngine(s: string | undefined): s is AgentEngine {
-  return s === "claude" || s === "codex" || s === "gemini" || s === "opencode";
+/** Normalize engine string to known engine ID. "claude-code" → "claude" etc. */
+export function normalizeEngine(s: string | undefined): AgentEngine | null {
+  if (!s) return null;
+  if (s === "claude" || s === "claude-code") return "claude";
+  if (s === "codex") return "codex";
+  if (s === "gemini") return "gemini";
+  if (s === "opencode") return "opencode";
+  return null;
 }
+
+export function isKnownEngine(s: string | undefined): s is AgentEngine {
+  return normalizeEngine(s) !== null;
+}
+
+/** Agent name text color classes */
+export const AGENT_TEXT_COLORS: Record<AgentEngine, string> = {
+  claude: "text-agent-claude",
+  codex: "text-agent-codex",
+  gemini: "text-agent-gemini",
+  opencode: "text-agent-opencode",
+};

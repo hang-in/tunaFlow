@@ -84,6 +84,49 @@ SSOT: `docs/reference/dataModelRevised.md`
 | 자연어 handoff Phase A | done | alias 파서, source 우선순위, no-source guard |
 | Markdown 렌더링 | done | react-markdown + remark-gfm + MarkdownComponents |
 | Branch-git 기반 정리 | done (1차) | 모델 주석 강화, UI 표시 자리 마련 |
+| Sidebar 프로젝트 트리 | done (1차) | Projects / Roundtables / Branches / Files 4섹션, 프로젝트 트리 기반 탐색 |
+
+### 2026-03-27 세션
+
+| 기능 | 상태 | 비고 |
+|---|---|---|
+| Workspace panel 3-mode | done | Plan / Artifacts / Trace. Phase A 완료 |
+| Resizable panels | done | sidebar/workspace/drawer 너비 persist |
+| Overlay drawer | done | center+workspace 위 overlay, backdrop blur |
+| Thread/RT context inheritance | done | anchor + parent turns + RT inheritance |
+| Conversation/Branch rename | done | custom_label + InlineRename + optimistic update |
+| Harness summary | done | workflow stage chips + HarnessSummary + subtask↔branch link |
+| Harness artifact grouping | done | Harness/Other 분리 + HarnessStrip |
+| Chat object tabs | done | main + active branch tab |
+| Linear UI tone | done | MessageItem, NewMessageInput, MarkdownComponents, RT, Drawer 전체 정리 |
+| Files section (sidebar) | done | list_directory command + 2단 파일 트리 |
+| Project-level branches | done | useProjectBranches 훅, 전 conversation branches 집계 |
+| Last conversation restore | done | settings.json persist + AppShell init 복원 |
+
+### 2026-03-27 세션 (후반)
+
+| 기능 | 상태 | 비고 |
+|---|---|---|
+| Agent avatar icons | done | PNG per engine (claude/gpt/gemini/opencode) + AgentAvatar 공용 컴포넌트 |
+| Syntax highlighting | done | react-syntax-highlighter + oneDark + lazy load |
+| Code block copy + lang label | done | 복사 버튼 + 우측 하단 언어 배지 |
+| Model discovery | done | Codex ~/.codex/models_cache.json + Gemini node discovery + fallback |
+| Engine normalizeEngine | done | "claude-code" → "claude" 매핑 + AGENT_TEXT_COLORS |
+| Enter=send, Shift+Enter=newline | done | NewMessageInput + BranchThreadPanel |
+| Sidebar selection-centric | done | Projects flat select, Chats/RT/Branches/Files 현재 프로젝트 전용 |
+| Sidebar VS Code tree style | done | TreeRow + indent guides + isParent depth 보정 |
+| Non-streaming thread spawn | done | codex/gemini/opencode/claude 모두 std::thread::spawn으로 UI freeze 방지 |
+| Click-outside dropdown close | done | NewMessageInput + BranchThreadPanel + MessageItem followup |
+| RT creation dialog | done | CreateRoundtableDialog + participant/model/mode 설정 + sidebar [+] 진입 |
+| RT config → first run | done | sessionStorage per-conversation + useSendActions 연결 |
+| Message pair deletion | done | delete_message_pair command + FK cleanup + UI confirm |
+| Adopt empty branch → delete | done | empty_branch 에러 → confirm 삭제 + drawer 정리 |
+| Adopt engine/model tracking | done | 마지막 assistant의 engine/model을 adopt 요약에 포함 |
+| Branch parent conv auto-load | done | openThread에서 부모 conversation 먼저 로드 |
+| Scalability refactor Phase 1-5 | done | chatStore 6 slices, Sidebar 8 sections, Input 5 sub-components, Message 3 shared, agents.rs send_common |
+| User message background | done | bg-white/[0.035] 말풍선 텍스트 배경 |
+| Project-centric docs | done | 프로젝트 중심 설계 원칙 문서화 |
+| Plans audit | done | 27개 plan 분류 (13 완료, 7 부분, 6 보류, 1 예정) |
 
 ### 미구현
 
@@ -98,6 +141,7 @@ SSOT: `docs/reference/dataModelRevised.md`
 | Sidecar 계층 | 보류 | direct-call로 충분, 필요 시 재검토 |
 | 자연어 handoff 고도화 | P3 | 완전 자유 자연어 intent parser |
 | Thread 모델 전면 통합 | P3 | branch 확장 방식으로 대체 중 |
+| ~~프로젝트별 conversation 캐시~~ | 해당 없음 | 현재 프로젝트만 로드하는 것은 의도된 프로젝트 중심 설계. 전역 캐시 불필요 |
 
 ---
 

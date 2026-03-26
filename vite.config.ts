@@ -12,6 +12,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 2000, // Tauri desktop — no network cost
+  },
   clearScreen: false,
   server: {
     port: 1420,

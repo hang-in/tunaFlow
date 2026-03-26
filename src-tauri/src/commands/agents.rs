@@ -11,7 +11,7 @@ use crate::guardrail;
 // Submodule re-exports — ContextPack assembly, compression, and trace logging
 use super::agents_helpers::context_pack::{
     assemble_system_prompt, build_context_summary, build_cross_session_section,
-    build_artifact_handoff_section, build_findings_section, build_lite_context_prompt,
+    build_artifact_handoff_section, build_findings_section,
     build_plan_section, build_rawq_section, build_skills_section,
     build_thread_inheritance_section,
     combine_prompt_parts, resolve_plan_conversation_id, ContextMode,
@@ -118,15 +118,7 @@ pub fn send_with_claude(
         };
 
         // 1c. Persist new user message
-        if input.user_message_id.is_none() {
-            let id = Uuid::new_v4().to_string();
-            let now = now_epoch_ms();
-            conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
-                 VALUES (?1, ?2, 'user', ?3, ?4, 'done')",
-                params![id, input.conversation_id, input.prompt, now],
-            )?;
-        }
+        super::agents_helpers::send_common::persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
 
         // Load stored token; discard if engine differs (DATA_MODEL §1.8 lifecycle)
         let token_result: rusqlite::Result<(Option<String>, Option<String>)> = conn.query_row(
@@ -200,16 +192,19 @@ pub fn send_with_claude(
         guardrail::MAX_TOTAL_PROMPT,
     );
 
-    // Step 2: run claude subprocess — DB lock must NOT be held here
+    // Step 2: run claude subprocess in background thread — prevents UI freeze
     let prompt_len = input.prompt.len() + system_prompt.as_ref().map_or(0, |s| s.len());
     let t0 = std::time::Instant::now();
-    let run_result = claude::run(claude::RunInput {
+    let run_input = claude::RunInput {
         prompt: input.prompt.clone(),
         model: input.model.clone(),
         system_prompt,
         resume_token,
         project_path: project_path.clone(),
-    });
+    };
+    let run_result = std::thread::spawn(move || claude::run(run_input))
+        .join()
+        .unwrap_or_else(|_| Err(AppError::Agent("claude thread panicked".into())));
     let duration_ms = t0.elapsed().as_millis();
     guardrail::log_run("claude-code", input.model.as_deref(), duration_ms, prompt_len, run_result.is_ok());
 
@@ -296,89 +291,50 @@ pub fn send_with_codex(
     input: SendWithClaudeInput,
     state: State<DbState>,
 ) -> Result<Message, AppError> {
+    use super::agents_helpers::send_common::*;
+
     // Step 1: persist user message + build lite context (single lock block)
     let (enriched_prompt, project_path) = {
         let conn = state.0.lock().map_err(|_| AppError::Lock)?;
-        if input.user_message_id.is_none() {
-            let id = Uuid::new_v4().to_string();
-            let now = now_epoch_ms();
-            conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
-                 VALUES (?1, ?2, 'user', ?3, ?4, 'done')",
-                params![id, input.conversation_id, input.prompt, now],
-            )?;
-        }
-        let pp: Option<String> = conn.query_row(
-            "SELECT path FROM projects WHERE key = ?1", [&input.project_key], |row| row.get(0),
-        ).ok().flatten();
-        let prefix = pp.as_deref().map(|p| format!("Project: {}\n", p)).unwrap_or_default();
-        let prompt = format!("{}{}", prefix, build_lite_context_prompt(&conn, &input.conversation_id, &input.prompt));
+        persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
+        let pp = load_project_path(&conn, &input.project_key);
+        let prompt = build_lite_enriched_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref());
         (prompt, pp)
     };
 
-    // Step 2: run codex subprocess — DB lock must NOT be held
+    // Step 2: run codex subprocess in background thread — prevents UI freeze
     let t0 = std::time::Instant::now();
-    let run_result = codex::run(claude::RunInput {
+    let run_input = claude::RunInput {
         prompt: enriched_prompt,
         model: input.model.clone(),
         system_prompt: None,
         resume_token: None,
         project_path,
-    });
-    guardrail::log_run("codex", input.model.as_deref(), t0.elapsed().as_millis(), input.prompt.len(), run_result.is_ok());
+    };
+    let run_result = std::thread::spawn(move || codex::run(run_input))
+        .join()
+        .unwrap_or_else(|_| Err(AppError::Agent("codex thread panicked".into())));
+    let duration_ms = t0.elapsed().as_millis();
+    guardrail::log_run("codex", input.model.as_deref(), duration_ms, input.prompt.len(), run_result.is_ok());
 
-    let (content, status, cost_usd, in_tokens, out_tokens) = match run_result {
-        Ok(out) if out.content.is_empty() => {
-            ("(codex returned no output)".to_string(), "done".to_string(), 0.0, 0i64, 0i64)
-        }
-        Ok(out) => (out.content, "done".to_string(), out.cost_usd, out.input_tokens, out.output_tokens),
-        Err(ref e) => (guardrail::fallback_error("codex", e), "error".to_string(), 0.0, 0, 0),
+    let run = match run_result {
+        Ok(out) if out.content.is_empty() => AgentRunResult {
+            content: "(codex returned no output)".to_string(), status: "done".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
+        Ok(out) => AgentRunResult {
+            content: out.content, status: "done".to_string(),
+            cost_usd: out.cost_usd, in_tokens: out.input_tokens, out_tokens: out.output_tokens,
+        },
+        Err(ref e) => AgentRunResult {
+            content: guardrail::fallback_error("codex", e), status: "error".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
     };
 
     // Step 3: persist assistant message + update usage
     let conn = state.0.lock().map_err(|_| AppError::Lock)?;
-    let msg_id = Uuid::new_v4().to_string();
-    let now = now_epoch_ms();
-
-    conn.execute(
-        "INSERT INTO messages
-         (id, conversation_id, role, content, timestamp, status, engine, model)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, 'codex', ?6)",
-        params![msg_id, input.conversation_id, content, now, status, input.model],
-    )?;
-
-    conn.execute(
-        "UPDATE conversations SET
-             total_input_tokens  = total_input_tokens  + ?1,
-             total_output_tokens = total_output_tokens + ?2,
-             total_cost_usd      = total_cost_usd      + ?3,
-             updated_at          = ?4
-         WHERE id = ?5",
-        params![in_tokens, out_tokens, cost_usd, now / 1000, input.conversation_id],
-    )?;
-
-    insert_trace_log(&conn, &input.conversation_id, in_tokens, out_tokens, cost_usd, now, &SpanInfo {
-        trace_id: &new_trace_id(),
-        span_id: new_span_id(),
-        parent_span_id: None,
-        operation: "agent.send",
-        engine: "codex",
-        duration_ms: t0.elapsed().as_millis() as i64,
-        status: if status == "done" { "ok" } else { "error" },
-    });
-
-    Ok(Message {
-        id: msg_id,
-        conversation_id: input.conversation_id,
-        role: "assistant".into(),
-        content,
-        timestamp: now,
-        status,
-        progress_content: None,
-        engine: Some("codex".into()),
-        model: input.model,
-        persona: None,
-    })
+    persist_assistant_message(&conn, &input.conversation_id, "codex", &input.model, &run, duration_ms)
 }
 
 /// Send a one-shot request to the local `gemini` CLI and persist the result.
@@ -389,84 +345,50 @@ pub fn send_with_gemini(
     input: SendWithClaudeInput,
     state: State<DbState>,
 ) -> Result<Message, AppError> {
+    use super::agents_helpers::send_common::*;
+
     // Step 1: persist user message + build lite context (single lock block)
     let (enriched_prompt, project_path) = {
         let conn = state.0.lock().map_err(|_| AppError::Lock)?;
-        if input.user_message_id.is_none() {
-            let id = Uuid::new_v4().to_string();
-            let now = now_epoch_ms();
-            conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
-                 VALUES (?1, ?2, 'user', ?3, ?4, 'done')",
-                params![id, input.conversation_id, input.prompt, now],
-            )?;
-        }
-        let pp: Option<String> = conn.query_row(
-            "SELECT path FROM projects WHERE key = ?1", [&input.project_key], |row| row.get(0),
-        ).ok().flatten();
-        let prefix = pp.as_deref().map(|p| format!("Project: {}\n", p)).unwrap_or_default();
-        let prompt = format!("{}{}", prefix, build_lite_context_prompt(&conn, &input.conversation_id, &input.prompt));
+        persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
+        let pp = load_project_path(&conn, &input.project_key);
+        let prompt = build_lite_enriched_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref());
         (prompt, pp)
     };
 
-    // Step 2: run gemini subprocess — DB lock must NOT be held
+    // Step 2: run gemini subprocess in background thread — prevents UI freeze
     let t0 = std::time::Instant::now();
-    let run_result = gemini::run(claude::RunInput {
+    let run_input = claude::RunInput {
         prompt: enriched_prompt,
         model: input.model.clone(),
         system_prompt: None,
         resume_token: None,
         project_path,
-    });
-    guardrail::log_run("gemini", input.model.as_deref(), t0.elapsed().as_millis(), input.prompt.len(), run_result.is_ok());
+    };
+    let run_result = std::thread::spawn(move || gemini::run(run_input))
+        .join()
+        .unwrap_or_else(|_| Err(AppError::Agent("gemini thread panicked".into())));
+    let duration_ms = t0.elapsed().as_millis();
+    guardrail::log_run("gemini", input.model.as_deref(), duration_ms, input.prompt.len(), run_result.is_ok());
 
-    let (content, status) = match run_result {
-        Ok(out) if out.content.is_empty() => {
-            ("(gemini returned no output)".to_string(), "done".to_string())
-        }
-        Ok(out) => (out.content, "done".to_string()),
-        Err(ref e) => (guardrail::fallback_error("gemini", e), "error".to_string()),
+    let run = match run_result {
+        Ok(out) if out.content.is_empty() => AgentRunResult {
+            content: "(gemini returned no output)".to_string(), status: "done".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
+        Ok(out) => AgentRunResult {
+            content: out.content, status: "done".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
+        Err(ref e) => AgentRunResult {
+            content: guardrail::fallback_error("gemini", e), status: "error".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
     };
 
     // Step 3: persist assistant message
     let conn = state.0.lock().map_err(|_| AppError::Lock)?;
-    let msg_id = Uuid::new_v4().to_string();
-    let now = now_epoch_ms();
-
-    conn.execute(
-        "INSERT INTO messages
-         (id, conversation_id, role, content, timestamp, status, engine, model)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, 'gemini', ?6)",
-        params![msg_id, input.conversation_id, content, now, status, input.model],
-    )?;
-
-    conn.execute(
-        "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
-        params![now / 1000, input.conversation_id],
-    )?;
-
-    insert_trace_log(&conn, &input.conversation_id, 0, 0, 0.0, now, &SpanInfo {
-        trace_id: &new_trace_id(),
-        span_id: new_span_id(),
-        parent_span_id: None,
-        operation: "agent.send",
-        engine: "gemini",
-        duration_ms: t0.elapsed().as_millis() as i64,
-        status: if status == "done" { "ok" } else { "error" },
-    });
-
-    Ok(Message {
-        id: msg_id,
-        conversation_id: input.conversation_id,
-        role: "assistant".into(),
-        content,
-        timestamp: now,
-        status,
-        progress_content: None,
-        engine: Some("gemini".into()),
-        model: input.model,
-        persona: None,
-    })
+    persist_assistant_message(&conn, &input.conversation_id, "gemini", &input.model, &run, duration_ms)
 }
 
 /// Send a one-shot request to the local `opencode` CLI and persist the result.
@@ -477,81 +399,47 @@ pub fn send_with_opencode(
     input: SendWithClaudeInput,
     state: State<DbState>,
 ) -> Result<Message, AppError> {
+    use super::agents_helpers::send_common::*;
+
     let (enriched_prompt, project_path) = {
         let conn = state.0.lock().map_err(|_| AppError::Lock)?;
-        if input.user_message_id.is_none() {
-            let id = Uuid::new_v4().to_string();
-            let now = now_epoch_ms();
-            conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
-                 VALUES (?1, ?2, 'user', ?3, ?4, 'done')",
-                params![id, input.conversation_id, input.prompt, now],
-            )?;
-        }
-        let pp: Option<String> = conn.query_row(
-            "SELECT path FROM projects WHERE key = ?1", [&input.project_key], |row| row.get(0),
-        ).ok().flatten();
-        let prefix = pp.as_deref().map(|p| format!("Project: {}\n", p)).unwrap_or_default();
-        let prompt = format!("{}{}", prefix, build_lite_context_prompt(&conn, &input.conversation_id, &input.prompt));
+        persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
+        let pp = load_project_path(&conn, &input.project_key);
+        let prompt = build_lite_enriched_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref());
         (prompt, pp)
     };
 
     let t0 = std::time::Instant::now();
-    let run_result = opencode::run(claude::RunInput {
+    let run_input = claude::RunInput {
         prompt: enriched_prompt,
         model: input.model.clone(),
         system_prompt: None,
         resume_token: None,
         project_path,
-    });
-    guardrail::log_run("opencode", input.model.as_deref(), t0.elapsed().as_millis(), input.prompt.len(), run_result.is_ok());
+    };
+    let run_result = std::thread::spawn(move || opencode::run(run_input))
+        .join()
+        .unwrap_or_else(|_| Err(AppError::Agent("opencode thread panicked".into())));
+    let duration_ms = t0.elapsed().as_millis();
+    guardrail::log_run("opencode", input.model.as_deref(), duration_ms, input.prompt.len(), run_result.is_ok());
 
-    let (content, status) = match run_result {
-        Ok(out) if out.content.is_empty() => {
-            ("(opencode returned no output)".to_string(), "done".to_string())
-        }
-        Ok(out) => (out.content, "done".to_string()),
-        Err(ref e) => (guardrail::fallback_error("opencode", e), "error".to_string()),
+    let run = match run_result {
+        Ok(out) if out.content.is_empty() => AgentRunResult {
+            content: "(opencode returned no output)".to_string(), status: "done".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
+        Ok(out) => AgentRunResult {
+            content: out.content, status: "done".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
+        Err(ref e) => AgentRunResult {
+            content: guardrail::fallback_error("opencode", e), status: "error".to_string(),
+            cost_usd: 0.0, in_tokens: 0, out_tokens: 0,
+        },
     };
 
     let conn = state.0.lock().map_err(|_| AppError::Lock)?;
-    let msg_id = Uuid::new_v4().to_string();
-    let now = now_epoch_ms();
-
-    conn.execute(
-        "INSERT INTO messages
-         (id, conversation_id, role, content, timestamp, status, engine, model)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, 'opencode', ?6)",
-        params![msg_id, input.conversation_id, content, now, status, input.model],
-    )?;
-
-    conn.execute(
-        "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
-        params![now / 1000, input.conversation_id],
-    )?;
-
-    insert_trace_log(&conn, &input.conversation_id, 0, 0, 0.0, now, &SpanInfo {
-        trace_id: &new_trace_id(),
-        span_id: new_span_id(),
-        parent_span_id: None,
-        operation: "agent.send",
-        engine: "opencode",
-        duration_ms: t0.elapsed().as_millis() as i64,
-        status: if status == "done" { "ok" } else { "error" },
-    });
-
-    Ok(Message {
-        id: msg_id,
-        conversation_id: input.conversation_id,
-        role: "assistant".into(),
-        content,
-        timestamp: now,
-        status,
-        progress_content: None,
-        engine: Some("opencode".into()),
-        model: input.model,
-        persona: None,
-    })
+    persist_assistant_message(&conn, &input.conversation_id, "opencode", &input.model, &run, duration_ms)
 }
 
 /// Streaming version of send_with_claude.

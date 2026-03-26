@@ -182,10 +182,14 @@ function SubtaskRow({
   subtask,
   onStatusChange,
   onOwnerChange,
+  linkedBranch,
+  onOpenThread,
 }: {
   subtask: PlanSubtask;
   onStatusChange: (id: string, status: SubtaskStatus) => void;
   onOwnerChange: (id: string, owner: string | null) => void;
+  linkedBranch?: { id: string; label: string; customLabel?: string; status: string } | null;
+  onOpenThread?: (branchId: string) => void;
 }) {
   const cfg = SUBTASK_STATUS_CFG[subtask.status];
   return (
@@ -205,7 +209,7 @@ function SubtaskRow({
         {subtask.details && (
           <p className="text-[10px] text-muted-foreground leading-snug mt-0.5 line-clamp-2">{subtask.details}</p>
         )}
-        <div className="flex items-center gap-1.5 mt-0.5">
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
           <select
             value={subtask.ownerAgent || ""}
             onChange={(e) => onOwnerChange(subtask.id, e.target.value || null)}
@@ -217,6 +221,17 @@ function SubtaskRow({
           </select>
           {subtask.lastUpdatedBy && (
             <span className="text-[9px] text-muted-foreground/50">by: {subtask.lastUpdatedBy}</span>
+          )}
+          {linkedBranch && (
+            <button
+              onClick={() => onOpenThread?.(linkedBranch.id)}
+              className="inline-flex items-center gap-0.5 text-[8px] font-medium text-primary/60 bg-primary/6 hover:bg-primary/12 px-1 py-0 rounded transition-colors"
+              title={`Open branch: ${linkedBranch.customLabel ?? linkedBranch.label}`}
+            >
+              <GitBranch className="w-2 h-2" />
+              {linkedBranch.customLabel ?? linkedBranch.label}
+              <span className="text-muted-foreground/40 ml-0.5">{linkedBranch.status}</span>
+            </button>
           )}
         </div>
       </div>
@@ -235,7 +250,7 @@ function PlanCard({
   onStatusChange: (id: string, status: PlanStatus) => void;
   defaultExpanded?: boolean;
 }) {
-  const { sendFollowup, setHandoffSource } = useChatStore();
+  const { sendFollowup, setHandoffSource, branches, openThread } = useChatStore();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [subtasks, setSubtasks] = useState<PlanSubtask[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -350,9 +365,19 @@ function PlanCard({
             {!loading && subtasks !== null && subtasks.length === 0 && (
               <p className="text-[10px] text-muted-foreground">No subtasks.</p>
             )}
-            {!loading && subtasks && subtasks.map((st) => (
-              <SubtaskRow key={st.id} subtask={st} onStatusChange={handleSubtaskStatus} onOwnerChange={handleOwnerChange} />
-            ))}
+            {!loading && subtasks && subtasks.map((st) => {
+              const linked = branches.find((b) => b.subtaskId === st.id);
+              return (
+                <SubtaskRow
+                  key={st.id}
+                  subtask={st}
+                  onStatusChange={handleSubtaskStatus}
+                  onOwnerChange={handleOwnerChange}
+                  linkedBranch={linked ? { id: linked.id, label: linked.label, customLabel: linked.customLabel, status: linked.status } : null}
+                  onOpenThread={openThread}
+                />
+              );
+            })}
           </div>
           {/* Plan forward — send plan context to an agent */}
           <div className="flex items-center gap-1.5 pl-5 pt-1.5 mt-1 border-t border-border/20">

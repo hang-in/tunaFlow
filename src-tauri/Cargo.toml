@@ -22,6 +22,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
 thiserror = "1"
+lazy_static = "1"
+dirs = "5"
 
 [profile.release]
 panic = "abort"

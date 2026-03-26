@@ -28,7 +28,7 @@ export function BranchBar() {
   if (activeBranchId) {
     const activeBranch = branches.find((b) => b.id === activeBranchId);
     return (
-      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-primary/20 bg-primary/5 shrink-0">
+      <div className="flex items-center gap-2 px-4 h-8 border-b border-border/40 bg-primary/3 shrink-0">
         <GitBranch className="w-3 h-3 text-primary shrink-0" />
         <span className="text-[11px] font-medium text-primary truncate flex-1 min-w-0">
           <InlineRename
@@ -57,7 +57,7 @@ export function BranchBar() {
   const activeCount = branches.filter((b) => b.status === "active").length;
 
   return (
-    <div className="border-b border-border/50 shrink-0">
+    <div className="border-b border-border/30 shrink-0">
       {/* Collapsed bar */}
       <button
         onClick={() => setExpanded(!expanded)}
@@ -93,7 +93,7 @@ export function BranchBar() {
                 />
               </span>
               {b.mode === "roundtable" && (
-                <span className="text-[8px] font-semibold text-agent-gemini bg-agent-gemini/10 border border-agent-gemini/20 px-1 py-0 rounded-full">
+                <span className="text-[8px] font-medium text-agent-gemini/70 bg-agent-gemini/8 px-1 py-0 rounded">
                   RT
                 </span>
               )}
@@ -103,10 +103,10 @@ export function BranchBar() {
                 </span>
               )}
               <span className={cn(
-                "text-[8px] font-semibold uppercase px-1 py-0 rounded-full border",
-                b.status === "active" && "text-primary bg-primary/10 border-primary/20",
-                b.status === "adopted" && "text-status-approved bg-status-approved/10 border-status-approved/20",
-                b.status === "archived" && "text-muted-foreground bg-accent border-border",
+                "text-[7px] font-medium uppercase px-1 py-0 rounded tracking-wide",
+                b.status === "active" && "text-primary/70 bg-primary/8",
+                b.status === "adopted" && "text-status-approved/70 bg-status-approved/8",
+                b.status === "archived" && "text-muted-foreground/50 bg-muted",
               )}>
                 {b.status}
               </span>

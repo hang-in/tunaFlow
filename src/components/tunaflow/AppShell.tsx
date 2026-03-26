@@ -53,7 +53,17 @@ export function AppShell() {
         await createProject({ key: "default", name: "Workspace", type: "chat", source: "configured" });
         proj = useChatStore.getState().projects[0];
       }
-      if (proj) selectProject(proj.key);
+      if (proj) {
+        await selectProject(proj.key);
+        // Restore last conversation
+        const lastConvId = await getSetting<string>("lastConversationId", "");
+        if (lastConvId) {
+          const { conversations, selectConversation } = useChatStore.getState();
+          if (conversations.some((c) => c.id === lastConvId)) {
+            selectConversation(lastConvId);
+          }
+        }
+      }
     };
     init();
   }, []);
@@ -152,7 +162,7 @@ export function AppShell() {
               </div>
 
               {/* Drawer content */}
-              <div className="flex-1 min-w-0 bg-background shadow-[-8px_0_24px_-4px_rgba(0,0,0,0.15)] rounded-l-lg overflow-hidden">
+              <div className="flex-1 min-w-0 bg-background shadow-[-4px_0_16px_-2px_rgba(0,0,0,0.2)] rounded-l-md overflow-hidden border-l border-border/30">
                 <BranchThreadPanel />
               </div>
             </div>

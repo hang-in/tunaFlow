@@ -330,21 +330,37 @@ pub fn adopt_branch(
                 };
                 format!("### Last Response\n\n{}", preview)
             }
-            None => "No content available.".to_string(),
+            None => String::new(), // Empty branch — frontend will handle
         }
     };
+
+    // If branch has no content, return empty marker for frontend to handle
+    if summary_body.is_empty() {
+        return Err(AppError::Agent("empty_branch".into()));
+    }
+
+    // Get engine/model from the last assistant message in the branch
+    let (last_engine, last_model): (Option<String>, Option<String>) = conn
+        .query_row(
+            "SELECT engine, model FROM messages
+             WHERE conversation_id = ?1 AND role = 'assistant' AND status = 'done'
+             ORDER BY timestamp DESC LIMIT 1",
+            [&shadow_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap_or((None, None));
 
     let msg_id = Uuid::new_v4().to_string();
     let now = now_epoch_ms();
     let type_label = if is_rt { "Roundtable" } else { "Thread" };
     let content = format!(
-        "<!-- branch-adopt-summary -->\n## {} Adopted: {}\n\n{}\n",
+        "## {} Adopted: {}\n\n{}\n",
         type_label, branch_label, summary_body
     );
     conn.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, 'done')",
-        params![msg_id, input.conversation_id, content, now],
+        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine, model)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, 'done', ?5, ?6)",
+        params![msg_id, input.conversation_id, content, now, last_engine, last_model],
     )?;
 
     Ok(Message {
@@ -355,8 +371,8 @@ pub fn adopt_branch(
         timestamp: now,
         status: "done".into(),
         progress_content: None,
-        engine: None,
-        model: None,
+        engine: last_engine,
+        model: last_model,
         persona: None,
     })
 }

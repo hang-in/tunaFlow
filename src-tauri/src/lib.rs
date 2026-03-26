@@ -75,6 +75,7 @@ pub fn run() {
             commands::messages::create_user_message,
             commands::messages::append_assistant_message,
             commands::messages::update_message_status,
+            commands::messages::delete_message_pair,
             // Branch
             commands::branches::list_branches,
             commands::branches::create_branch,
@@ -109,7 +110,8 @@ pub fn run() {
             commands::artifacts::link_artifact_to_subtask,
             commands::artifacts::delete_artifact,
             // Models
-            commands::models::list_engine_models,
+            commands::model_discovery::list_engine_models,
+            commands::model_discovery::refresh_engine_models,
             // Capability
             commands::capabilities::list_capabilities,
             // Evaluation
@@ -119,6 +121,8 @@ pub fn run() {
             commands::evaluation::list_eval_results,
             commands::evaluation::update_eval_run_status,
             commands::evaluation::delete_eval_run,
+            // Files
+            commands::files::list_directory,
             // Tracing
             commands::tracing::list_traces,
             commands::tracing::export_traces_otel,

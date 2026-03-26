@@ -6,6 +6,7 @@ import { MessageItem } from "./MessageItem";
 import { RoundtableView } from "./RoundtableView";
 import { NewMessageInput } from "./NewMessageInput";
 import { BranchBar } from "./BranchBar";
+import { ChatObjectTabs } from "./ChatObjectTabs";
 import { InlineRename } from "./InlineRename";
 import { Users, MessageSquare } from "lucide-react";
 
@@ -26,6 +27,7 @@ export function ChatPanel() {
     openThread,
     sendFollowup,
     renameConversation,
+    deleteMessagePair,
   } = useChatStore();
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -67,15 +69,18 @@ export function ChatPanel() {
         crossSessionCount={crossSessionIds.length}
       />
 
+      {/* Chat object tabs — main + open branch/RT */}
+      <ChatObjectTabs />
+
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border shrink-0">
+      <div className="flex items-center gap-3 px-4 h-10 border-b border-border/60 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
           {isRoundtable ? (
-            <Users className="w-4 h-4 text-agent-gemini shrink-0" />
+            <Users className="w-3.5 h-3.5 text-agent-gemini shrink-0" />
           ) : (
-            <MessageSquare className="w-4 h-4 text-muted-foreground shrink-0" />
+            <MessageSquare className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
           )}
-          <h2 className="text-sm font-semibold text-foreground truncate min-w-0">
+          <h2 className="text-[13px] font-medium text-foreground truncate min-w-0">
             {selectedConversationId && currentConv ? (
               <InlineRename
                 value={currentConv.customLabel ?? currentConv.label}
@@ -84,36 +89,36 @@ export function ChatPanel() {
             ) : "Conversation"}
           </h2>
           <span className={cn(
-            "text-[10px] font-medium px-1.5 py-0.5 rounded-full uppercase tracking-wide border shrink-0",
+            "text-[9px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0",
             isRoundtable
-              ? "text-agent-gemini bg-agent-gemini/10 border-agent-gemini/20"
-              : "text-muted-foreground bg-accent border-border"
+              ? "text-agent-gemini/80 bg-agent-gemini/8"
+              : "text-muted-foreground/60 bg-muted"
           )}>
-            {isRoundtable ? "Roundtable" : "Chat"}
+            {isRoundtable ? "RT" : "Chat"}
           </span>
         </div>
 
         {/* View toggle — only show for roundtable */}
         {isRoundtable && (
-          <div className="flex items-center gap-1 bg-accent rounded-lg p-0.5 shrink-0">
+          <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5 shrink-0">
             <button
               onClick={() => setView("stream")}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                "flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors",
                 view === "stream" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <MessageSquare className="w-3 h-3" />
+              <MessageSquare className="w-2.5 h-2.5" />
               Stream
             </button>
             <button
               onClick={() => setView("roundtable")}
               className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                "flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium transition-colors",
                 view === "roundtable" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Users className="w-3 h-3" />
+              <Users className="w-2.5 h-2.5" />
               Table
             </button>
           </div>
@@ -127,12 +132,12 @@ export function ChatPanel() {
 
       {/* Error banner */}
       {error && (
-        <div className="px-4 py-2 bg-destructive/10 border-b border-destructive/20 text-destructive text-xs shrink-0">
+        <div className="px-4 py-1.5 bg-destructive/8 border-b border-destructive/15 text-destructive/80 text-[11px] shrink-0">
           {error}
         </div>
       )}
 
-      {/* Content */}
+      {/* Scrollable area — messages + sticky input */}
       <div className="flex-1 overflow-y-auto">
         {view === "roundtable" && isRoundtable ? (
           <RoundtableView messages={messages} onBranch={(id) => createBranch(selectedConversationId, id)} />
@@ -144,7 +149,6 @@ export function ChatPanel() {
               </div>
             )}
             {messages.map((msg) => {
-              // Find branches anchored to this message
               const msgBranches = !activeBranchId
                 ? branches.filter((b) => b.checkpointId === msg.id)
                 : [];
@@ -156,6 +160,7 @@ export function ChatPanel() {
                   onBranchRT={!activeBranchId ? (id) => createBranch(selectedConversationId, id, undefined, "roundtable") : undefined}
                   onMemo={!activeBranchId ? (id) => createMemo(id, msg.content) : undefined}
                   onFollowup={(engine, content) => sendFollowup(engine, "message", content)}
+                  onDeletePair={(id) => deleteMessagePair(id)}
                   threadBranches={msgBranches.length > 0 ? msgBranches : undefined}
                   onOpenThread={!activeBranchId ? (branchId) => openThread(branchId) : undefined}
                 />
@@ -171,10 +176,15 @@ export function ChatPanel() {
             <div ref={bottomRef} />
           </div>
         )}
-      </div>
 
-      {/* Input */}
-      <NewMessageInput />
+        {/* Input — sticky at bottom, transparent background */}
+        <div className="sticky bottom-0 z-20">
+          <div className="pointer-events-none h-6 bg-gradient-to-t from-background to-transparent" />
+          <div className="bg-background">
+            <NewMessageInput />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

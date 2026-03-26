@@ -54,16 +54,22 @@ pub fn run_participant(
         project_path,
     };
 
-    let (run_result, engine_label) = match engine_key {
-        "claude" => (claude::run(run_input), "claude-code"),
-        "codex" => (codex::run(run_input), "codex"),
-        "gemini" => (gemini::run(run_input), "gemini"),
-        "opencode" => (opencode::run(run_input), "opencode"),
-        other => (
-            Err(AppError::Agent(format!("unsupported engine: {}", other))),
-            "unknown",
-        ),
-    };
+    // Run subprocess in background thread to prevent UI freeze
+    let engine_key_owned = engine_key.to_string();
+    let (run_result, engine_label) = std::thread::spawn(move || -> (Result<crate::agents::claude::RunOutput, AppError>, &'static str) {
+        match engine_key_owned.as_str() {
+            "claude" => (claude::run(run_input), "claude-code"),
+            "codex" => (codex::run(run_input), "codex"),
+            "gemini" => (gemini::run(run_input), "gemini"),
+            "opencode" => (opencode::run(run_input), "opencode"),
+            _ => (
+                Err(AppError::Agent(format!("unsupported engine: {}", engine_key_owned))),
+                "unknown",
+            ),
+        }
+    })
+    .join()
+    .unwrap_or_else(|_| (Err(AppError::Agent("participant thread panicked".into())), "unknown"));
 
     match run_result {
         Ok(out) => ParticipantResult {

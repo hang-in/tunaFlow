@@ -16,13 +16,13 @@
   --secondary-foreground: oklch(0.82 0.008 255);
   --muted: oklch(0.20 0.012 255);
   --muted-foreground: oklch(0.55 0.012 255);
-  --accent: oklch(0.22 0.02 255);
+  --accent: oklch(0.19 0.016 255);
   --accent-foreground: oklch(0.88 0.008 255);
   --destructive: oklch(0.52 0.21 25);
   --destructive-foreground: oklch(0.9 0.01 25);
-  --border: oklch(0.24 0.018 255);
-  --input: oklch(0.22 0.018 255);
-  --ring: oklch(0.55 0.12 270);
+  --border: oklch(0.20 0.012 255);
+  --input: oklch(0.20 0.015 255);
+  --ring: oklch(0.50 0.10 270);
   --radius: 0.375rem;
 
   --agent-claude: oklch(0.62 0.22 290);
@@ -40,7 +40,7 @@
   --sidebar-primary-foreground: oklch(0.98 0 0);
   --sidebar-accent: oklch(0.20 0.018 255);
   --sidebar-accent-foreground: oklch(0.88 0.006 255);
-  --sidebar-border: oklch(0.22 0.016 255);
+  --sidebar-border: oklch(0.19 0.012 255);
   --sidebar-ring: oklch(0.55 0.12 270);
 }
 
@@ -95,6 +95,21 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Minimal scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 @keyframes typing-dot {
