@@ -28,7 +28,10 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-29/engine_feature_parity_master_prompt](./2026-03-29/engine_feature_parity_master_prompt.md): 4개 엔진 parity 작업을 순차 수행하고 단계별 상세 결과를 보고하게 하는 마스터 프롬프트
 - [2026-03-29/engine_feature_parity_wave1_correction_prompt](./2026-03-29/engine_feature_parity_wave1_correction_prompt.md): Wave 1 parity 결과의 남은 구멍을 보정하는 프롬프트
 - [2026-03-29/streaming_engine_parity_prompt](./2026-03-29/streaming_engine_parity_prompt.md): 4개 엔진 streaming UX/state parity를 별도 세션에서 진행하는 프롬프트
+- [2026-03-29/token_cost_tracking_engine_parity_prompt](./2026-03-29/token_cost_tracking_engine_parity_prompt.md): 4개 엔진 token/cost tracking parity를 별도 세션에서 진행하는 프롬프트
 - [2026-03-29/chat_markdown_codeblock_upgrade_prompt](./2026-03-29/chat_markdown_codeblock_upgrade_prompt.md): 채팅 Markdown/codeblock UX를 개선하기 위한 실행 프롬프트
 - [2026-03-29/chat_fileviewer_integration_prompt](./2026-03-29/chat_fileviewer_integration_prompt.md): 채팅 파일 경로 클릭 및 FileViewer 도입 프롬프트
 - [2026-03-29/chat_ui_parity_with_tunachat_master_prompt](./2026-03-29/chat_ui_parity_with_tunachat_master_prompt.md): Claude가 의견을 먼저 제시하고 단계적으로 채팅 UI parity 작업을 수행하게 하는 마스터 프롬프트
 - [2026-03-29/chat_virtualization_prompt](./2026-03-29/chat_virtualization_prompt.md): 긴 대화 virtualization 구현 프롬프트 (보류 — 성능 문제 체감 시 착수)
+- [2026-03-29/trace_panel_runtime_first_prompt](./2026-03-29/trace_panel_runtime_first_prompt.md): TracePanel을 runtime 대시보드로 전환하는 실행 프롬프트
+- [2026-03-29/token_cost_tracking_engine_parity_prompt](./2026-03-29/token_cost_tracking_engine_parity_prompt.md): 4개 엔진 token/cost tracking parity 실행 프롬프트

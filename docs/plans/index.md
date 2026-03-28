@@ -53,6 +53,7 @@
 | [chatUiParityWithTunaChatPlan](./chatUiParityWithTunaChatPlan.md) | tunaChat 수준의 채팅 UI/UX로 단계적으로 끌어올리는 상위 계획 | Markdown/file viewer/message density/virtualization 진행 필요 |
 | [chatMarkdownCodeblockUpgradePlan_2026-03-29](./chatMarkdownCodeblockUpgradePlan_2026-03-29.md) | 코드블록 헤더 통합, collapse/expand, copy 피드백 | Phase 1 완료 |
 | [chatFileViewerIntegrationPlan_2026-03-29](./chatFileViewerIntegrationPlan_2026-03-29.md) | 파일 경로 클릭 + FileViewer 모달 | Phase 1 완료 |
+| [tracePanelRuntimeFirstPlan_2026-03-29](./tracePanelRuntimeFirstPlan_2026-03-29.md) | TracePanel을 runtime 대시보드로 전환 | Phase 1 완료 |
 
 ### 보류
 

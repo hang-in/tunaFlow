@@ -2,7 +2,11 @@
 
 - 작성자: OpenAI Codex
 - 작성 시각: 2026-03-29
-- 상태: 제안
+- 상태: Phase 1-2 부분 완료 (frontend N/A 표시 완료, backend DB 레벨 unavailable 구분은 후속)
+
+> **현재 한계:** DB에는 0과 unavailable이 구분되지 않음.
+> Frontend에서 engine 기반으로 N/A를 표시하지만, `trace_log`/`messages` 테이블에는 `usage_status` 같은 컬럼이 없어 쿼리 시 구분 불가.
+> 후속 작업: `usage_status ENUM (exact, estimated, unavailable)` 컬럼 추가 (DB migration 필요).
 
 ## 현재 차이
 

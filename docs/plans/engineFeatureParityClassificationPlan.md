@@ -2,7 +2,7 @@
 
 - 작성자: OpenAI Codex
 - 작성 시각: 2026-03-29
-- 상태: 제안
+- 상태: Wave 1 완료, Wave 2 완료 (token/cost는 frontend parity + backend partial)
 
 ## 목적
 

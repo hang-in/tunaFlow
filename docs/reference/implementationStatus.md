@@ -183,10 +183,10 @@ SSOT: `docs/reference/dataModelRevised.md`
 | rawq code context | O | O | O | O |
 | Cross-session context | O | O | O | O |
 | Thread inheritance | O | O | O | O |
-| Resume token | O (native) | X | X | X |
+| Continuation | O (native resume) | O (context replay) | O (context replay) | O (context replay) |
 | Streaming | O (native) | O (JSONL synthetic) | O (native) | partial (progress only) |
 | Background execution | O | O | O | O |
-| Token/cost tracking | O | O | partial | X |
+| Token/cost tracking | O (exact) | O (exact) | O (streaming exact, one-shot N/A) | N/A (unavailable) |
 | OTel span recording | O | O | O | O |
 
 ---
