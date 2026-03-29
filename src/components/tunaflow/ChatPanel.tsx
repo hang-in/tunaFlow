@@ -145,12 +145,12 @@ export function ChatPanel() {
 
       {/* Input — fixed at bottom */}
       <div className="shrink-0">
-        <NewMessageInput />
+        <NewMessageInput onCreateRT={() => setRtDialogCheckpoint("")} />
       </div>
       <CreateRoundtableDialog
         open={rtDialogCheckpoint !== null}
         onClose={() => setRtDialogCheckpoint(null)}
-        checkpointId={rtDialogCheckpoint}
+        checkpointId={rtDialogCheckpoint || null}
       />
       {/* Project loading modal */}
       {projectLoading && (

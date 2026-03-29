@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { ROUNDTABLE_PARTICIPANTS } from "@/lib/constants";
-import { SendHorizonal } from "lucide-react";
+import { SendHorizonal, Users } from "lucide-react";
 import type { RtMode, RoundtableParticipant } from "@/types";
 
 import { EngineSelector, type Engine } from "./input/EngineSelector";
@@ -14,9 +14,10 @@ import { useSendActions } from "./input/useSendActions";
 
 interface NewMessageInputProps {
   threadMode?: boolean;
+  onCreateRT?: () => void;
 }
 
-export function NewMessageInput({ threadMode = false }: NewMessageInputProps) {
+export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageInputProps) {
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const conversations = useChatStore((s) => s.conversations);
   const activeBranchId = useChatStore((s) => s.activeBranchId);
@@ -171,6 +172,15 @@ export function NewMessageInput({ threadMode = false }: NewMessageInputProps) {
                 selectedModel={selectedModel}
                 setSelectedModel={setSelectedModel}
               />
+              {onCreateRT && (
+                <button
+                  onClick={onCreateRT}
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-agent-gemini/50 hover:text-agent-gemini hover:bg-agent-gemini/10 transition-colors"
+                  title="New Roundtable"
+                >
+                  <Users className="w-3 h-3" />
+                </button>
+              )}
             </>
           )}
         </div>

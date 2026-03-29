@@ -95,10 +95,14 @@ tunaFlow/
 │ Files    │                              │
 └──────────┴──────────────────────────────┘
 ```
-- Sidebar: 프로젝트 드롭다운 선택기, workspace tree
-- CenterPanel: 4-tab (Chat/Plan/Review/Test), toolbar zone(투명) + content zone(bordered)
+- Sidebar: 프로젝트 드롭다운 → 대화 트리 (Chat이 루트, "Chats" 섹션 헤더 없음)
+  - Branch 상태: ACTIVE/ADOPTED/ARCHIVED 배지 → 상태 dot으로 축소
+  - Skills/Files 섹션은 대화 트리 아래
+- CenterPanel: 5-tab (Chat/Plan/Artifacts/Review/Test), toolbar zone(투명) + content zone(bordered)
+  - toolbar 우측: Memo 아이콘(팝오버) + Search placeholder
+- 입력창: RT 퀵 버튼 (👥) — 엔진/모델 선택기 옆, checkpointId 없이 RT 생성
 - RuntimeStatusBar: 전체 폭 하단, trace(클릭→모달) + rawq 상태
-- ContextPanel: 제거됨 (Plan/Review/Test → 중앙 탭, Artifacts/Memos/Skills → 사이드바, Trace → 하단 바)
+- ContextPanel: 제거됨
 
 ### 4.2 Background execution
 - `start_*` 커맨드: DB 준비 후 즉시 반환, background thread에서 subprocess 실행

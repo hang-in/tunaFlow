@@ -5,7 +5,6 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import type { Branch } from "@/types";
 
 import { ChatsSection } from "./sidebar/ChatsSection";
-import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 import { FilesSection } from "./sidebar/FilesSection";
 import { AddProjectForm } from "./sidebar/AddProjectForm";
 import { useProjectBranches } from "./sidebar/useProjectBranches";
@@ -21,7 +20,6 @@ export function Sidebar() {
   const conversations = useChatStore((s) => s.conversations);
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const selectConversation = useChatStore((s) => s.selectConversation);
-  const createConversation = useChatStore((s) => s.createConversation);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const renameConversation = useChatStore((s) => s.renameConversation);
   const storeBranches = useChatStore((s) => s.branches);
@@ -35,10 +33,8 @@ export function Sidebar() {
   const activeSkills = useChatStore((s) => s.activeSkills);
 
   const [renameCounter, setRenameCounter] = useState(0);
-  const [chatsOpen, setChatsOpen] = useState(true);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
-  const [showCreateRT, setShowCreateRT] = useState(false);
 
   // Project dropdown state
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
@@ -89,15 +85,6 @@ export function Sidebar() {
       await deleteBranch(branchId);
       setRenameCounter((c) => c + 1);
     }
-  };
-
-  const handleCreateChat = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!selectedProjectKey) return;
-    const convs = useChatStore.getState().conversations;
-    const label = `Conversation ${convs.filter((c) => !c.id.startsWith("branch:")).length + 1}`;
-    const conv = await createConversation({ projectKey: selectedProjectKey, label, type: "main", mode: "chat", source: "tunadish" });
-    await selectConversation(conv.id);
   };
 
   const handleDelete = async (id: string, label: string, e: React.MouseEvent) => {
@@ -200,22 +187,18 @@ export function Sidebar() {
         {selectedProjectKey && (
           <>
             <ChatsSection
-              chatsOpen={chatsOpen}
-              setChatsOpen={setChatsOpen}
               filteredChats={chatConvs}
               selectedConversationId={selectedConversationId}
               activeBranchId={activeBranchId}
               threadBranchId={threadBranchId}
               selectConversation={selectConversation}
               renameConversation={renameConversation}
-              handleCreateChat={handleCreateChat}
               handleDelete={handleDelete}
               branchesByConv={branchesByConv}
               childMap={childMap}
               openThread={openThread}
               handleRenameBranch={handleRenameBranch}
               onDeleteBranch={handleDeleteBranch}
-              onCreateRT={() => setShowCreateRT(true)}
             />
 
             <SectionHeader title="Skills" expanded={skillsOpen} onToggle={() => setSkillsOpen(!skillsOpen)}
@@ -237,7 +220,6 @@ export function Sidebar() {
         )}
       </nav>
 
-      <CreateRoundtableDialog open={showCreateRT} onClose={() => setShowCreateRT(false)} />
     </aside>
   );
 }
