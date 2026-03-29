@@ -233,6 +233,9 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
                     <AgentAvatar engine={p.engine} size="sm" />
                     <input value={p.name} onChange={(e) => updateName(idx, e.target.value)}
                       className="w-[80px] bg-transparent text-[11px] font-medium text-foreground outline-none border-b border-transparent focus:border-border/40" />
+                    {agentProfiles.some((ap) => ap.label === p.name) && (
+                      <span className="text-[8px] text-primary/40 shrink-0">profile</span>
+                    )}
                     <select value={p.engine ?? "claude"} onChange={(e) => updateEngine(idx, e.target.value)}
                       className="bg-accent/50 rounded px-1.5 py-0.5 text-[10px] text-foreground/70 outline-none border border-border/20 focus:border-ring/40 cursor-pointer">
                       {ENGINES.map((eng) => <option key={eng} value={eng}>{eng}</option>)}

@@ -61,6 +61,7 @@
 | [artifactsAsMainTabAndMemoAssistPlan_2026-03-29](./artifactsAsMainTabAndMemoAssistPlan_2026-03-29.md) | Artifacts를 메인 탭으로 승격하고 Memo를 보조 UX로 내리는 계획 | 메인 탭/보조 아이콘 구조 반영 필요 |
 | [agentProfilesSettingsMvpPlan_2026-03-29](./agentProfilesSettingsMvpPlan_2026-03-29.md) | Settings > Agents를 실제 profile 관리 UI로 만드는 MVP 계획 | profile 목록/편집/persistence 구현 필요 |
 | [agentProfileChatInputBindingPlan_2026-03-29](./agentProfileChatInputBindingPlan_2026-03-29.md) | Settings의 Agent Profile을 실제 채팅 입력과 실행 흐름에 연결하는 계획 | profile selector + 실행 반영 필요 |
+| [agentProfileUsagePolishPlan_2026-03-29](./agentProfileUsagePolishPlan_2026-03-29.md) | Agent Profile을 실제 1급 선택 단위로 느끼게 만드는 UX 보강 계획 | profile summary, custom 규칙 가시화, RT 표시 polish |
 
 ### 보류
 
@@ -133,6 +134,7 @@
 - [artifactsAsMainTabAndMemoAssistPlan_2026-03-29](./artifactsAsMainTabAndMemoAssistPlan_2026-03-29.md)
 - [agentProfilesSettingsMvpPlan_2026-03-29](./agentProfilesSettingsMvpPlan_2026-03-29.md)
 - [agentProfileChatInputBindingPlan_2026-03-29](./agentProfileChatInputBindingPlan_2026-03-29.md)
+- [agentProfileUsagePolishPlan_2026-03-29](./agentProfileUsagePolishPlan_2026-03-29.md)
 - [backgroundAgentExecutionPlan](./backgroundAgentExecutionPlan.md)
 - [sidebarThreeSectionPlan](./sidebarThreeSectionPlan.md)
 - [sidecarMigrationPlan](./sidecarMigrationPlan.md)

@@ -39,13 +39,19 @@ export function ProfileSelector({ profiles, selectedProfileId, onSelectProfile }
           <>
             <Wrench className="w-3 h-3" />
             <span>Custom</span>
+            <span className="text-[9px] text-muted-foreground/30">manual override</span>
           </>
         ) : (
           <>
             <AgentAvatar engine={selected?.engine ?? "claude"} size="xs" />
             <span className="truncate max-w-[100px]">{selected?.label ?? "Agent"}</span>
-            <span className="text-[9px] text-muted-foreground/40 truncate max-w-[160px]">
-              {[selected?.engine, selected?.model, selected?.personaKey].filter(Boolean).join(" · ")}
+            <span className="text-[9px] text-muted-foreground/40 truncate max-w-[200px]">
+              {[
+                selected?.engine,
+                selected?.model,
+                selected?.personaKey,
+                selected?.defaultSkills.length ? `${selected.defaultSkills.length} skills` : null,
+              ].filter(Boolean).join(" · ")}
             </span>
           </>
         )}
@@ -66,7 +72,9 @@ export function ProfileSelector({ profiles, selectedProfileId, onSelectProfile }
               >
                 <AgentAvatar engine={p.engine} size="xs" />
                 <span className="flex-1 truncate font-medium">{p.label}</span>
-                <span className="text-[9px] text-muted-foreground/40">{p.engine}</span>
+                <span className="text-[9px] text-muted-foreground/40">
+                  {[p.engine, p.personaKey, p.defaultSkills.length ? `${p.defaultSkills.length}s` : null].filter(Boolean).join(" · ")}
+                </span>
               </button>
             ))}
           </div>
