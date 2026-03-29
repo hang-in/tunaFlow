@@ -6,8 +6,6 @@ import type { Branch } from "@/types";
 
 import { ProjectsSection } from "./sidebar/ProjectsSection";
 import { ChatsSection } from "./sidebar/ChatsSection";
-import { RoundtablesSection } from "./sidebar/RoundtablesSection";
-import { BranchesSection } from "./sidebar/BranchesSection";
 import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 import { FilesSection } from "./sidebar/FilesSection";
 import { AddProjectForm } from "./sidebar/AddProjectForm";
@@ -30,7 +28,6 @@ export function Sidebar() {
   const activeBranchId = useChatStore((s) => s.activeBranchId);
   const threadBranchId = useChatStore((s) => s.threadBranchId);
   const openThread = useChatStore((s) => s.openThread);
-  const openBranchStream = useChatStore((s) => s.openBranchStream);
   const rawqStatus = useChatStore((s) => s.rawqStatus);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
   const messageQueue = useChatStore((s) => s.messageQueue);
@@ -40,8 +37,6 @@ export function Sidebar() {
   const [renameCounter, setRenameCounter] = useState(0);
 
   const [chatsOpen, setChatsOpen] = useState(true);
-  const [rtOpen, setRtOpen] = useState(true);
-  const [branchesOpen, setBranchesOpen] = useState(true);
   const [filesOpen, setFilesOpen] = useState(false);
   const [showCreateRT, setShowCreateRT] = useState(false);
 
@@ -49,18 +44,22 @@ export function Sidebar() {
 
   // Current project data
   const chatConvs = conversations.filter((c) => !c.id.startsWith("branch:") && c.mode !== "roundtable");
-  const rtConvs = conversations.filter((c) => !c.id.startsWith("branch:") && c.mode === "roundtable");
   const filteredChats = searchQuery.trim()
     ? chatConvs.filter((c) => (c.customLabel ?? c.label).toLowerCase().includes(searchQuery.toLowerCase()))
     : chatConvs;
 
   const allBranches = useProjectBranches(conversations, storeBranches, renameCounter);
-  const rtBranches = allBranches.filter((b) => b.mode === "roundtable");
-  const regularBranches = allBranches.filter((b) => b.mode !== "roundtable");
+  // Branch-to-branch child map (for nested branches)
   const childMap = new Map<string, Branch[]>();
   for (const b of allBranches) { if (b.parentBranchId) { const a = childMap.get(b.parentBranchId) ?? []; a.push(b); childMap.set(b.parentBranchId, a); } }
-  const topLevelRT = rtBranches.filter((b) => !b.parentBranchId);
-  const topLevelBranches = regularBranches.filter((b) => !b.parentBranchId);
+  // Top-level branches grouped by parent conversation
+  const branchesByConv = new Map<string, Branch[]>();
+  for (const b of allBranches) {
+    if (b.parentBranchId) continue; // nested branches handled by childMap
+    const a = branchesByConv.get(b.conversationId) ?? [];
+    a.push(b);
+    branchesByConv.set(b.conversationId, a);
+  }
 
   const handleRenameBranch = async (branchId: string, newLabel: string) => {
     await renameBranch(branchId, newLabel);
@@ -143,41 +142,18 @@ export function Sidebar() {
               setChatsOpen={setChatsOpen}
               filteredChats={filteredChats}
               selectedConversationId={selectedConversationId}
+              activeBranchId={activeBranchId}
+              threadBranchId={threadBranchId}
               selectConversation={selectConversation}
               renameConversation={renameConversation}
               handleCreateChat={handleCreateChat}
               handleDelete={handleDelete}
-            />
-
-            <RoundtablesSection
-              rtOpen={rtOpen}
-              setRtOpen={setRtOpen}
-              rtConvs={rtConvs}
-              topLevelRT={topLevelRT}
+              branchesByConv={branchesByConv}
               childMap={childMap}
-              selectedConversationId={selectedConversationId}
-              activeBranchId={activeBranchId}
-              threadBranchId={threadBranchId}
-              selectConversation={selectConversation}
-              renameConversation={renameConversation}
               openThread={openThread}
-              openBranchStream={openBranchStream}
-              handleDelete={handleDelete}
               handleRenameBranch={handleRenameBranch}
               onDeleteBranch={handleDeleteBranch}
               onCreateRT={() => setShowCreateRT(true)}
-            />
-
-            <BranchesSection
-              branchesOpen={branchesOpen}
-              setBranchesOpen={setBranchesOpen}
-              topLevelBranches={topLevelBranches}
-              childMap={childMap}
-              activeBranchId={activeBranchId}
-              threadBranchId={threadBranchId}
-              openThread={openThread}
-              handleRenameBranch={handleRenameBranch}
-              onDeleteBranch={handleDeleteBranch}
             />
 
             <FilesSection

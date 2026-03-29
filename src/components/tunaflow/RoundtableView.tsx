@@ -18,6 +18,8 @@ interface ParticipantStatus {
 interface RoundtableViewProps {
   messages: Message[];
   onBranch?: (messageId: string) => void;
+  /** Override conversationId for thread/drawer context */
+  conversationId?: string;
 }
 
 // ─── Prompt source metadata ──────────────────────────────────────────────────
@@ -215,12 +217,13 @@ const RT_MODE_LABELS: Record<string, string> = {
   deliberative: "Deliberative",
 };
 
-export function RoundtableView({ messages }: RoundtableViewProps) {
+export function RoundtableView({ messages, conversationId }: RoundtableViewProps) {
   const participants = getParticipants(messages);
   const rounds = groupIntoRounds(messages);
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
-  const isRunning = !!selectedConversationId && runningThreadIds.includes(selectedConversationId);
+  const targetConvId = conversationId ?? selectedConversationId;
+  const isRunning = !!targetConvId && runningThreadIds.includes(targetConvId);
 
   // ─── Real-time participant telemetry ─────────────────────────────
   const [pStatuses, setPStatuses] = useState<Map<string, ParticipantStatus>>(new Map());
@@ -236,7 +239,7 @@ export function RoundtableView({ messages }: RoundtableViewProps) {
       (event) => {
         if (cancelled) return;
         const { conversationId, name, engine, model, round, status } = event.payload;
-        if (conversationId !== selectedConversationId) return;
+        if (conversationId !== targetConvId) return;
         setPStatuses((prev) => {
           const next = new Map(prev);
           next.set(name, { name, engine, model: model ?? null, round, status: status as ParticipantStatus["status"], updatedAt: Date.now() });
@@ -249,7 +252,7 @@ export function RoundtableView({ messages }: RoundtableViewProps) {
       cancelled = true;
       unlisten?.();
     };
-  }, [selectedConversationId]);
+  }, [targetConvId]);
 
   // Clear statuses when RT finishes (no more running)
   useEffect(() => {

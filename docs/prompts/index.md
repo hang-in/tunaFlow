@@ -36,5 +36,6 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-29/trace_panel_runtime_first_prompt](./2026-03-29/trace_panel_runtime_first_prompt.md): TracePanel을 runtime 대시보드로 전환하는 실행 프롬프트
 - [2026-03-29/trace_panel_runtime_metrics_cards_prompt](./2026-03-29/trace_panel_runtime_metrics_cards_prompt.md): TracePanel 실시간 경과 시간 + 엔진별 aggregate 카드 프롬프트
 - [2026-03-29/token_cost_tracking_engine_parity_prompt](./2026-03-29/token_cost_tracking_engine_parity_prompt.md): 4개 엔진 token/cost tracking parity 실행 프롬프트
+- [2026-03-29/new_session_handoff_with_codex_reference_prompt](./2026-03-29/new_session_handoff_with_codex_reference_prompt.md): 새 Claude 세션이 CLAUDE.md와 Codex 참고 문서를 함께 읽고 시작하게 하는 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

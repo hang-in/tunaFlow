@@ -10,6 +10,8 @@ import type {
   CreateBranchInput,
   AdoptBranchInput,
   SendWithClaudeInput,
+  RoundtableParticipant,
+  RtMode,
 } from "./types";
 
 export interface BranchSlice {
@@ -31,6 +33,8 @@ export interface BranchSlice {
   openThread: (branchId: string) => Promise<void>;
   closeThread: () => void;
   sendThreadMessage: (prompt: string, engine?: string, model?: string) => Promise<void>;
+  sendThreadRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
+  sendThreadRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
 }
 
 export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => ({
@@ -184,36 +188,55 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       // Find the branch — may come from store or need DB lookup
       let branch = get().branches.find((b) => b.id === branchId);
 
-      // If branch's parent conversation is not currently selected, switch to it first
-      if (branch?.conversationId && branch.conversationId !== get().selectedConversationId) {
-        // Select the parent conversation to load its messages/branches
-        const parentConvId = branch.conversationId;
+      // Determine parent conversation ID from branch or shadow conversation
+      let parentConvId = branch?.conversationId ?? null;
+
+      // If branch not in store (e.g. no conversation selected), resolve via shadow conv
+      if (!parentConvId) {
+        const branchConvId = await invoke<string>("open_branch_stream", { branchId });
+        const branchConv = await invoke<Conversation>("get_conversation", { id: branchConvId });
+        parentConvId = branchConv.parentId ?? null;
+      }
+
+      // If parent conversation is not currently selected, load it first
+      if (parentConvId && parentConvId !== get().selectedConversationId) {
         const [messages, branches, memos, artifacts] = await Promise.all([
           invoke<Message[]>("list_messages", { conversationId: parentConvId }),
           invoke<Branch[]>("list_branches", { conversationId: parentConvId }),
           invoke<Memo[]>("list_memos_by_conversation", { conversationId: parentConvId }),
           invoke<Artifact[]>("list_artifacts", { conversationId: parentConvId }),
         ]);
-        set({ selectedConversationId: parentConvId, messages, branches, memos, artifacts, error: null });
+        // Ensure parent conversation is in the conversations list
+        let convs = get().conversations;
+        if (!convs.some((c) => c.id === parentConvId)) {
+          const parentConv = await invoke<Conversation>("get_conversation", { id: parentConvId! });
+          convs = [...convs, parentConv];
+        }
+        set({ selectedConversationId: parentConvId, messages, branches, memos, artifacts, conversations: convs, error: null });
         // Re-find branch from fresh data
-        branch = branches.find((b) => b.id === branchId);
+        branch = get().branches.find((b) => b.id === branchId);
       }
 
       const branchConvId = await invoke<string>("open_branch_stream", { branchId });
-      const branchMessages = await invoke<Message[]>("list_messages", {
-        conversationId: branchConvId,
-      });
+      const [branchMessages, branchConv] = await Promise.all([
+        invoke<Message[]>("list_messages", { conversationId: branchConvId }),
+        invoke<Conversation>("get_conversation", { id: branchConvId }),
+      ]);
       // Find parent message using branch.checkpointId
       const parentMsg = branch?.checkpointId
         ? get().messages.find((m) => m.id === branch.checkpointId) ?? null
         : null;
-      set({
+      set((state) => ({
         threadBranchId: branchId,
         threadBranchConvId: branchConvId,
         threadMessages: branchMessages,
         threadBranchLabel: branch?.customLabel ?? branch?.label ?? branchId.slice(0, 12),
         threadParentMessage: parentMsg,
-      });
+        // Add shadow conversation to conversations array (needed for RT detection)
+        conversations: state.conversations.some((c) => c.id === branchConvId)
+          ? state.conversations
+          : [...state.conversations, branchConv],
+      }));
     } catch (e) {
       set({ error: String(e) });
     }
@@ -298,6 +321,108 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       cleanup();
       set((state) => ({ error: String(e), threadMessages: state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")) }));
       get()._endRun(threadBranchConvId);
+    }
+  },
+
+  sendThreadRoundtable: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => {
+    const { threadBranchConvId } = get();
+    if (!threadBranchConvId) return;
+    if (get().runningThreadIds.includes(threadBranchConvId)) {
+      get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () => get().sendThreadRoundtable(prompt, participants, mode));
+      return;
+    }
+    get()._startRun(threadBranchConvId);
+    const now = Date.now();
+    set((state) => ({
+      threadMessages: [
+        ...state.threadMessages,
+        { id: `temp-user-${now}`, conversationId: threadBranchConvId, role: "user", content: prompt, timestamp: now, status: "done" },
+        { id: `temp-thinking-${now}`, conversationId: threadBranchConvId, role: "assistant", content: "", progressContent: "Roundtable starting...", timestamp: now, status: "streaming", engine: "system" },
+      ],
+    }));
+
+    const { listen } = await import("@tauri-apps/api/event");
+    let placeholderCleared = false;
+    const ulRT = await listen<Message>("roundtable:progress", (event) => {
+      const msg = event.payload;
+      if (msg.role === "user") return;
+      set((state) => {
+        if (!placeholderCleared) {
+          placeholderCleared = true;
+          return { threadMessages: [...state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")), msg] };
+        }
+        return { threadMessages: [...state.threadMessages, msg] };
+      });
+    });
+    const cleanup = () => { ulRT(); ulD(); ulE(); };
+    const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      cleanup();
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
+      set({ threadMessages }); get()._endRun(threadBranchConvId);
+    });
+    const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      cleanup(); set({ error: e.payload.error });
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
+      set({ threadMessages }); get()._endRun(threadBranchConvId);
+    });
+
+    try {
+      await invoke<{ messageId: string }>("start_roundtable_run", { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
+    } catch (e) {
+      cleanup(); set({ error: String(e) }); get()._endRun(threadBranchConvId);
+    }
+  },
+
+  sendThreadRoundtableFollowup: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => {
+    const { threadBranchConvId } = get();
+    if (!threadBranchConvId) return;
+    if (get().runningThreadIds.includes(threadBranchConvId)) {
+      get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () => get().sendThreadRoundtableFollowup(prompt, participants, mode));
+      return;
+    }
+    get()._startRun(threadBranchConvId);
+    const now = Date.now();
+    set((state) => ({
+      threadMessages: [
+        ...state.threadMessages,
+        { id: `temp-user-${now}`, conversationId: threadBranchConvId, role: "user", content: prompt, timestamp: now, status: "done" },
+        { id: `temp-thinking-${now}`, conversationId: threadBranchConvId, role: "assistant", content: "", progressContent: "Roundtable starting...", timestamp: now, status: "streaming", engine: "system" },
+      ],
+    }));
+
+    const { listen } = await import("@tauri-apps/api/event");
+    let placeholderCleared = false;
+    const ulRT = await listen<Message>("roundtable:progress", (event) => {
+      const msg = event.payload;
+      if (msg.role === "user") return;
+      set((state) => {
+        if (!placeholderCleared) {
+          placeholderCleared = true;
+          return { threadMessages: [...state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")), msg] };
+        }
+        return { threadMessages: [...state.threadMessages, msg] };
+      });
+    });
+    const cleanup = () => { ulRT(); ulD(); ulE(); };
+    const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      cleanup();
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
+      set({ threadMessages }); get()._endRun(threadBranchConvId);
+    });
+    const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      cleanup(); set({ error: e.payload.error });
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
+      set({ threadMessages }); get()._endRun(threadBranchConvId);
+    });
+
+    try {
+      await invoke<{ messageId: string }>("start_roundtable_followup", { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
+    } catch (e) {
+      cleanup(); set({ error: String(e) }); get()._endRun(threadBranchConvId);
     }
   },
 });

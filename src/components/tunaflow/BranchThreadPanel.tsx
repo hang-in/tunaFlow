@@ -6,6 +6,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { MessageItem } from "./MessageItem";
 import { NewMessageInput } from "./NewMessageInput";
 import { InlineRename } from "./InlineRename";
+import { RoundtableView } from "./RoundtableView";
 
 export function BranchThreadPanel() {
   const {
@@ -35,6 +36,9 @@ export function BranchThreadPanel() {
 
   if (!threadBranchId) return null;
 
+  const threadBranch = branches.find((b) => b.id === threadBranchId);
+  const isRT = threadBranch?.mode === "roundtable";
+
   const handleAdopt = async () => {
     if (!selectedConversationId) return;
     await adoptBranch(threadBranchId, selectedConversationId);
@@ -54,10 +58,6 @@ export function BranchThreadPanel() {
   return (
     <div className="flex flex-col w-full h-full bg-background">
       {/* Header — RT vs Branch differentiation */}
-      {(() => {
-        const threadBranch = threadBranchId ? branches.find((b) => b.id === threadBranchId) : null;
-        const isRT = threadBranch?.mode === "roundtable";
-        return (
       <div className="flex items-center gap-2.5 px-3.5 h-10 border-b border-border/40 shrink-0">
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {isRT
@@ -75,9 +75,12 @@ export function BranchThreadPanel() {
           </span>
         </div>
         <div className="flex items-center gap-0.5 shrink-0">
-          <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
-            <Check className="w-2.5 h-2.5" /> Adopt
-          </button>
+          {/* Adopt only for branches with a checkpoint (forked from a message) */}
+          {threadBranch?.checkpointId && (
+            <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
+              <Check className="w-2.5 h-2.5" /> Adopt
+            </button>
+          )}
           <button onClick={() => {
             if (window.confirm(`"${threadBranchLabel}" 브랜치를 삭제하시겠습니까?`)) {
               closeThread();
@@ -91,7 +94,6 @@ export function BranchThreadPanel() {
           </button>
         </div>
       </div>
-        ); })()}
 
       {/* Parent anchor */}
       {threadParentMessage && (
@@ -122,9 +124,18 @@ export function BranchThreadPanel() {
       <div className="flex-1 overflow-y-auto">
         {threadMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-muted-foreground/40 text-[12px] gap-1.5">
-            <GitBranch className="w-4 h-4" />
-            <p>No replies yet</p>
+            {isRT ? <Users className="w-4 h-4" /> : <GitBranch className="w-4 h-4" />}
+            <p>{isRT ? "No roundtable messages yet" : "No replies yet"}</p>
           </div>
+        ) : isRT ? (
+          <>
+            <RoundtableView
+              messages={threadMessages}
+              conversationId={threadBranchConvId ?? undefined}
+              onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id) : undefined}
+            />
+            <div ref={bottomRef} />
+          </>
         ) : (
           <div className="py-2 space-y-0.5">
             {threadMessages.map((msg, idx) => {

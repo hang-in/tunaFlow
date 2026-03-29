@@ -37,23 +37,27 @@ export function NewMessageInput({ threadMode = false }: NewMessageInputProps) {
   );
 
   // Load RT config when entering an RT conversation or branch
-  const currentConv = conversations.find((c) => c.id === selectedConversationId);
-  const isRtConv = currentConv?.mode === "roundtable";
-  // RT config key: for branches use shadow ID, for conversations use conversation ID
-  const rtConfigKey = activeBranchId ? `branch:${activeBranchId}` : selectedConversationId;
+  const threadBranchConvId = useChatStore((s) => s.threadBranchConvId);
+  const threadBranchId = useChatStore((s) => s.threadBranchId);
+  // In thread mode, check the shadow conversation for RT detection
+  const effectiveConvId = threadMode ? threadBranchConvId : selectedConversationId;
+  const effectiveConv = conversations.find((c) => c.id === effectiveConvId);
+  const isRtConv = effectiveConv?.mode === "roundtable";
+  // RT config key: for thread branches use shadow ID, for branches use shadow ID, for conversations use conversation ID
+  const rtConfigKey = threadMode ? threadBranchConvId : activeBranchId ? `branch:${activeBranchId}` : selectedConversationId;
   const [rtParticipants, setRtParticipants] = useState<RoundtableParticipant[]>(ROUNDTABLE_PARTICIPANTS);
   useEffect(() => {
-    if (!selectedConversationId || !isRtConv) {
+    if (!effectiveConvId || !isRtConv) {
       setRtParticipants(ROUNDTABLE_PARTICIPANTS);
       return;
     }
     // Load RT config from DB (persists across app restarts)
-    const configId = rtConfigKey ?? selectedConversationId;
+    const configId = rtConfigKey ?? effectiveConvId;
     invoke<string | null>("get_rt_config", { conversationId: configId }).then((raw) => {
       if (!raw) {
         // Try parent conversation if this is a branch
-        if (configId !== selectedConversationId) {
-          return invoke<string | null>("get_rt_config", { conversationId: selectedConversationId });
+        if (configId !== effectiveConvId) {
+          return invoke<string | null>("get_rt_config", { conversationId: effectiveConvId });
         }
         return null;
       }
@@ -75,9 +79,8 @@ export function NewMessageInput({ threadMode = false }: NewMessageInputProps) {
         }
       } catch { setRtParticipants(ROUNDTABLE_PARTICIPANTS); }
     }).catch(() => setRtParticipants(ROUNDTABLE_PARTICIPANTS));
-  }, [selectedConversationId, activeBranchId]);
+  }, [effectiveConvId, activeBranchId, threadBranchId]);
 
-  const threadBranchConvId = useChatStore((s) => s.threadBranchConvId);
   const effectiveThreadId = threadMode ? threadBranchConvId : selectedConversationId;
   const isCurrentThreadRunning = !!effectiveThreadId && runningThreadIds.includes(effectiveThreadId);
   const currentQueueLength = messageQueue.filter((q) => q.threadId === selectedConversationId).length;

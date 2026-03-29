@@ -97,8 +97,9 @@ tunaFlow/
 ### 4.5 RT = Branch의 협업 모드
 - RT는 독립 기능이 아니라 **Branch의 확장 모드**
 - `branches.mode: "chat" | "roundtable"` — RT 모드면 여러 에이전트가 토론
-- RT conversation(독립)은 메인 패널, RT branch는 드로어에서 열림
-- 드로어 안에서 RoundtableView, RT 컨트롤, 참가자 선택이 모두 동작해야 함
+- **모든 RT는 채팅의 하위 branch로 생성** — 독립 RT conversation 폐기
+- 드로어 안에서 RoundtableView, RT 컨트롤, 참가자 선택이 모두 동작
+- 사이드바 구조: Chats 섹션 하위에 RT/Branch를 트리로 표시
 
 ### 4.6 rawq = 필수 런타임 의존성
 - sidecar binary (`src-tauri/binaries/rawq-{target-triple}`)
@@ -108,28 +109,24 @@ tunaFlow/
 
 ---
 
-## 5. 현재 상태와 긴급 이슈 (2026-03-29)
+## 5. 현재 상태와 알려진 이슈 (2026-03-29)
 
-### ⚠️ 최우선 해결 필요: 드로어 RT 기능 미완성
+### ✅ 해결됨: 드로어 RT 기능 구현 완료
 
-**현상:** RT branch를 드로어로 열면 RT 기능이 사라지고 일반 chat처럼 동작
+- `BranchThreadPanel`: RT 모드 감지 → `RoundtableView` 렌더링
+- `openThread`: shadow conversation을 `conversations` 배열에 추가 (RT 감지 전제 조건)
+- `sendThreadRoundtable` / `sendThreadRoundtableFollowup`: thread context RT 전용 함수
+- `useSendActions`: threadMode + isRoundtable → thread RT 함수로 라우팅
+- `NewMessageInput`: thread mode에서 shadow conv 기준 RT config 로딩
+- `RoundtableView`: `conversationId` prop으로 thread conv 기반 running/telemetry 감지
 
-**원인 분석:**
-1. `BranchThreadPanel`에서 `MessageItem` 리스트만 렌더링 — `RoundtableView` 미사용
-2. `NewMessageInput(threadMode=true)`에서 shadow conversation의 mode를 conversations 배열에서 찾지 못함 → `isRoundtable = false`
-3. RT config 로드 경로가 threadMode에서 꼬임 — `effectiveConvId`가 shadow ID인데 conversations에 없을 수 있음
-4. `sendRoundtable`이 아닌 `sendThreadMessage`로 라우팅되어 일반 chat으로 처리
+### ✅ 해결됨: 사이드바 RT/Branch 계층 구조
 
-**수정 필요 사항:**
-1. BranchThreadPanel: RT 모드 감지 시 `RoundtableView` 렌더링
-2. `useSendActions(threadMode=true)`: shadow conversation의 mode 감지 수정
-3. `sendRoundtable`/`sendRoundtableFollowup`이 `threadBranchConvId`로도 동작하도록 연결
-4. 드로어 기본 너비 확대 + 최대 80% 복원 확인
-5. **수정 전에 반드시 기존 RT 실행 경로를 end-to-end 추적하고, 새 경로가 동작하는 것을 먼저 검증**
-
-**관련 코드 경로:**
-- 메인 패널 RT (정상 동작): `ChatPanel` → `isRoundtable` → `RoundtableView` + `NewMessageInput` → `sendRoundtable`
-- 드로어 RT (미완성): `BranchThreadPanel` → `MessageItem` (RoundtableView 아님) → `NewMessageInput(threadMode)` → `sendThreadMessage` (sendRoundtable 아님)
+- RT/Branch를 Chats 하위 트리로 표시 (기존 3-section → 1-section)
+- 사이드바 [+] RT 생성 시 기존 채팅의 branch로 생성 (독립 conversation 폐기)
+- 채팅 1개 → 자동 선택, 여러 개 → 드롭다운 선택
+- checkpointId 없는 RT branch에서 Adopt 숨김
+- `openThread`: 부모 conversation이 미선택 상태면 자동 로딩
 
 ### 기타 알려진 이슈
 
@@ -137,22 +134,26 @@ tunaFlow/
 - Listener timeout: background thread crash 시 event listener가 영영 cleanup 안 될 수 있음
 - trace_log context metadata는 `start_claude_stream`만 적용. 다른 엔진은 NULL
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
+- `RoundtablesSection.tsx`, `BranchesSection.tsx` dead code (사이드바 통합 후 미참조)
 
 ---
 
 ## 6. RT (Roundtable) 실행 흐름
 
-### RT 유형 2가지
+### RT 생성 경로
 
-| | RT Conversation | RT Branch |
-|---|---|---|
-| 생성 | 사이드바 [+] → CreateRoundtableDialog | 메시지에서 RT 분기 → CreateRoundtableDialog(checkpointId) |
-| 저장 | `conversations.mode = "roundtable"` | `branches.mode = "roundtable"` + shadow conversation |
-| 참가자 설정 | `conversations.rt_config` (JSON) | `conversations.rt_config` 키 = `branch:{branchId}` |
-| 열리는 곳 | 메인 패널 (ChatPanel → RoundtableView) | **드로어** (BranchThreadPanel) — ⚠️ 현재 미완성 |
+| 경로 | 설명 |
+|---|---|
+| 사이드바 [+] | `CreateRoundtableDialog` → 부모 채팅 선택 → RT branch 생성 → 드로어 |
+| 메시지 RT 분기 | `CreateRoundtableDialog(checkpointId)` → RT branch 생성 → 드로어 |
 
-### 실행 흐름 (정상 작동 경로 = 메인 패널)
-1. `sendRoundtable(prompt, participants, mode)` → `invoke("start_roundtable_run")`
+- 저장: `branches.mode = "roundtable"` + shadow conversation (`branch:{branchId}`)
+- 참가자: `conversations.rt_config` (JSON), 키 = shadow conversation ID
+- 열리는 곳: **드로어** (`BranchThreadPanel` → `RoundtableView`)
+
+### 실행 흐름
+1. 드로어: `sendThreadRoundtable(prompt, participants, mode)` → `invoke("start_roundtable_run")`
+1. 메인 패널 (레거시): `sendRoundtable(prompt, participants, mode)` → `invoke("start_roundtable_run")`
 2. Backend: `execute_round()` per participant (Sequential: 직렬, Deliberative: 병렬)
 3. Events: `roundtable:participant_status`, `roundtable:progress`, `agent:completed`
 4. Frontend: `list_messages()` 리로드 → `RoundtableView` 렌더링
@@ -172,7 +173,7 @@ tunaFlow/
 |---|---|
 | `projectSlice` | `projects`, `selectedProjectKey`, `projectLoading`, `selectProject()` |
 | `conversationSlice` | `conversations`, `selectedConversationId`, `messages`, `selectConversation()` |
-| `branchSlice` | `branches`, `activeBranchId`, `threadBranchId`, `threadBranchConvId`, `threadMessages`, `openThread()`, `sendThreadMessage()` |
+| `branchSlice` | `branches`, `activeBranchId`, `threadBranchId`, `threadBranchConvId`, `threadMessages`, `openThread()`, `sendThreadMessage()`, `sendThreadRoundtable()`, `sendThreadRoundtableFollowup()` |
 | `runtimeSlice` | `runningThreadIds`, `messageQueue`, `sendMessage()`, `sendWithGemini()`, `sendRoundtable()` 등 |
 | `assetSlice` | `memos`, `artifacts`, `skills`, `activeSkills` (persist), `crossSessionIds` |
 | `engineModelSlice` | `engineModels`, `loadEngineModels()` |
@@ -180,8 +181,9 @@ tunaFlow/
 ### 주요 실행 패턴
 - **메인 패널 전송**: `runtimeSlice.sendMessage()` → `start_claude_stream` + event listener
 - **드로어 전송**: `branchSlice.sendThreadMessage()` → `start_*` + event listener (background)
-- **RT 전송**: `runtimeSlice.sendRoundtable()` → `start_roundtable_run` + event listener
-- **입력 라우팅**: `useSendActions({ threadMode })` — threadMode면 `sendThreadMessage`, RT면 `sendRoundtable`
+- **드로어 RT 전송**: `branchSlice.sendThreadRoundtable()` → `start_roundtable_run` + event listener (threadMessages)
+- **메인 RT 전송**: `runtimeSlice.sendRoundtable()` → `start_roundtable_run` + event listener (messages)
+- **입력 라우팅**: `useSendActions({ threadMode })` — RT + threadMode → `sendThreadRoundtable`, RT → `sendRoundtable`, threadMode → `sendThreadMessage`
 
 ---
 
@@ -236,11 +238,14 @@ tunaFlow/
 - Message grouping: 연속 동일 발신자 아바타/이름 축소
 - MessageActions 아이콘 축소
 
-### 드로어/Branch 통합 (진행 중 — ⚠️ RT 미완성)
+### 드로어/Branch 통합 (완료)
 - 모든 Branch/RT는 드로어로만 열림 (openBranchStream UI에서 제거)
-- BranchThreadPanel: NewMessageInput(threadMode) 교체, grouped, 메시지 액션 활성화
-- sendThreadMessage: background start_* + event listener로 업그레이드
-- **RT 기능은 드로어에서 아직 미동작** — 다음 세션 최우선
+- BranchThreadPanel: RT 모드 → RoundtableView 렌더링, 일반 → MessageItem 렌더링
+- sendThreadRoundtable/sendThreadRoundtableFollowup: thread context RT 전용 함수
+- openThread: shadow conv를 conversations 배열에 추가 + 부모 conv 자동 로딩
+- 사이드바: Chats 하위 트리로 RT/Branch 통합 (RoundtablesSection/BranchesSection 폐기)
+- CreateRoundtableDialog: 항상 branch로 생성, 부모 채팅 선택 UI 추가
+- checkpointId 없는 branch에서 Adopt 숨김
 
 ### Skills UI
 - vendor 그룹핑 + 검색/필터 + 추천 프리셋 (Frontend/Review/OpenAI/Claude/MCP)
@@ -258,15 +263,12 @@ tunaFlow/
 
 ## 11. 다음 우선순위
 
-### P0: 드로어 RT 완전 구현
-1. BranchThreadPanel에서 RT 모드 감지 → RoundtableView 렌더링
-2. NewMessageInput threadMode에서 RT config 정상 로드 + RT 컨트롤 표시
-3. sendRoundtable이 threadBranchConvId로도 동작하도록 연결
-4. 드로어 최대 너비 80% 복원 확인
-5. end-to-end RT 실행 경로 검증
+### P0: 대규모 UI/UX 개선
+- (다음 세션에서 진행 예정)
 
 ### P1: 코드 정합성
 - `openBranchStream` dead code 정리 (UI에서 미호출)
+- `RoundtablesSection.tsx`, `BranchesSection.tsx` dead code 삭제
 - smoke test 복구 (store mock 업데이트)
 - token/cost: DB 레벨 `usage_status` 컬럼 추가 (unavailable 구분)
 

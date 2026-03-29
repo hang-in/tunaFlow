@@ -122,6 +122,8 @@ export interface ChatState {
   openThread: (branchId: string) => Promise<void>;
   closeThread: () => void;
   sendThreadMessage: (prompt: string, engine?: string, model?: string) => Promise<void>;
+  sendThreadRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
+  sendThreadRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
   cancelOperation: (threadId?: string) => Promise<void>;
   toggleCrossSession: (conversationId: string) => void;
   loadSkills: () => Promise<void>;

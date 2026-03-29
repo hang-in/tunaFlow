@@ -24,7 +24,7 @@
 | [threadContextInheritancePlan](./threadContextInheritancePlan.md) | anchor message + parent turns + RT inheritance Phase 1 구현 완료 |
 | [workspacePanelRedesignPlan](./workspacePanelRedesignPlan.md) | 3-mode workspace panel (Plan/Artifacts/Trace) Phase A 구현 완료 |
 | [panelDrawerUxPlan](./panelDrawerUxPlan.md) | resizable panels + overlay drawer Phase 1 구현 완료 |
-| [sidebarThreeSectionPlan](./sidebarThreeSectionPlan.md) | Projects/Roundtables/Branches/Files 4섹션 구현 완료 |
+| [sidebarThreeSectionPlan](./sidebarThreeSectionPlan.md) | Chats 하위 트리로 RT/Branch 통합, RoundtablesSection/BranchesSection 폐기 |
 
 ### 부분 완료
 
@@ -36,7 +36,7 @@
 | [tauri2PluginAdoptionPlan](./tauri2PluginAdoptionPlan.md) | notification, store, dialog, window-state 적용 | clipboard, shell, updater 미적용 |
 | [ownerAgentAssignmentPlan](./ownerAgentAssignmentPlan.md) | DB 필드 + PlansPanel UI dropdown 존재 | 자동 할당 로직, agent lane 연동 |
 | [projectOnboardingLifecyclePlan](./projectOnboardingLifecyclePlan.md) | folder picker + validation + auto main conv + rawq indexing | workspace scan, template, guided setup |
-| [threadModelRoundtableRedesign](./threadModelRoundtableRedesign.md) | branch.mode + RT branch + shadow conversation 구현 | thread-first 모델 통합, reviewer thread |
+| [threadModelRoundtableRedesign](./threadModelRoundtableRedesign.md) | branch.mode + RT branch + shadow conversation + 드로어 RT 완성 + 사이드바 통합 | reviewer thread |
 | [projectScopedConcurrencyPlan](./projectScopedConcurrencyPlan.md) | thread-local queue 구현 (선행 조건 충족) | 프로젝트 간 병렬 UI 표시, cross-project queue |
 | [rawqRequiredSidecarPlan](./rawqRequiredSidecarPlan.md) | rawq를 optional fallback이 아니라 필수 sidecar로 다루는 전환 계획 | vendor/sidecar 정착, 배포 경로 정리 |
 | [skillRegistryPlan](./skillRegistryPlan.md) | chops 참고 메모 기반 상위 계획 | UI registry, collections, applied skill visibility |
@@ -54,6 +54,7 @@
 | [chatMarkdownCodeblockUpgradePlan_2026-03-29](./chatMarkdownCodeblockUpgradePlan_2026-03-29.md) | 코드블록 헤더 통합, collapse/expand, copy 피드백 | Phase 1 완료 |
 | [chatFileViewerIntegrationPlan_2026-03-29](./chatFileViewerIntegrationPlan_2026-03-29.md) | 파일 경로 클릭 + FileViewer 모달 | Phase 1 완료 |
 | [tracePanelRuntimeFirstPlan_2026-03-29](./tracePanelRuntimeFirstPlan_2026-03-29.md) | TracePanel을 runtime 대시보드로 전환 | Phase 1 완료 |
+| [agentSkillPersonaIaPlan_2026-03-29](./agentSkillPersonaIaPlan_2026-03-29.md) | skills를 workspace에서 분리하고 agent/persona/settings 중심으로 재구성하는 IA 초안 | Settings/agent profile 구조 설계 필요 |
 
 ### 보류
 
@@ -120,6 +121,8 @@
 - [chatUiParityWithTunaChatPlan](./chatUiParityWithTunaChatPlan.md)
 - [chatMarkdownCodeblockUpgradePlan_2026-03-29](./chatMarkdownCodeblockUpgradePlan_2026-03-29.md)
 - [chatFileViewerIntegrationPlan_2026-03-29](./chatFileViewerIntegrationPlan_2026-03-29.md)
+- [tracePanelRuntimeFirstPlan_2026-03-29](./tracePanelRuntimeFirstPlan_2026-03-29.md)
+- [agentSkillPersonaIaPlan_2026-03-29](./agentSkillPersonaIaPlan_2026-03-29.md)
 - [backgroundAgentExecutionPlan](./backgroundAgentExecutionPlan.md)
 - [sidebarThreeSectionPlan](./sidebarThreeSectionPlan.md)
 - [sidecarMigrationPlan](./sidecarMigrationPlan.md)

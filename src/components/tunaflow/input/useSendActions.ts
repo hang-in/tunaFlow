@@ -135,6 +135,8 @@ export function useSendActions({
     sendWithOpencode,
     sendRoundtable,
     sendRoundtableFollowup,
+    sendThreadRoundtable,
+    sendThreadRoundtableFollowup,
     sendFollowup,
     sendThreadMessage,
     loadEngineModels,
@@ -259,7 +261,14 @@ export function useSendActions({
         console.warn("[RT] Participants without explicit model:", noModel.map((p) => p.name).join(", "), "— engine default will be used");
       }
 
-      if (hasRtMessages) {
+      if (threadMode) {
+        // Thread RT: use thread-aware RT functions
+        if (hasRtMessages) {
+          await sendThreadRoundtableFollowup(prompt, participants, rtMode);
+        } else {
+          await sendThreadRoundtable(prompt, participants, rtMode);
+        }
+      } else if (hasRtMessages) {
         await sendRoundtableFollowup(prompt, participants, rtMode);
       } else {
         await sendRoundtable(prompt, participants, rtMode);

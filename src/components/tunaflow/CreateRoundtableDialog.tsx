@@ -22,10 +22,22 @@ interface CreateRoundtableDialogProps {
 }
 
 export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRoundtableDialogProps) {
-  const { selectedProjectKey, selectedConversationId, createConversation, createBranch, selectConversation, engineModels } = useChatStore();
+  const { selectedConversationId, conversations, createBranch, selectConversation, engineModels } = useChatStore();
+
+  // Non-shadow, non-RT conversations for parent selection
+  const chatConvs = useMemo(
+    () => conversations.filter((c) => c.type !== "branch" && c.mode !== "roundtable"),
+    [conversations],
+  );
 
   const [label, setLabel] = useState("");
   const [mode, setMode] = useState<RtMode>("sequential");
+  // Parent conversation for sidebar-created RT (auto-selected if only 1 chat)
+  const [parentConvId, setParentConvId] = useState<string | null>(null);
+  // Auto-select parent when dialog opens
+  const effectiveParentConvId = checkpointId
+    ? selectedConversationId
+    : parentConvId ?? (chatConvs.length === 1 ? chatConvs[0].id : null);
   const [participants, setParticipants] = useState<RoundtableParticipant[]>(
     () => ROUNDTABLE_PARTICIPANTS.map((p) => ({ ...p }))
   );
@@ -85,35 +97,27 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
 
   const handleCreate = async () => {
     if (activeParticipants.length < 2) return;
+    if (!effectiveParentConvId) return;
     setCreating(true);
     try {
-      if (checkpointId && selectedConversationId) {
-        // Create RT branch from a message
-        await createBranch(selectedConversationId, checkpointId, label.trim() || undefined, "roundtable");
-        // Find the newly created branch and store config
-        const { branches } = useChatStore.getState();
-        const newBranch = branches.find((b) => b.checkpointId === checkpointId && b.mode === "roundtable");
-        if (newBranch) {
-          const shadowId = `branch:${newBranch.id}`;
-          const configJson = JSON.stringify({ participants: activeParticipants, mode });
-          invoke("save_rt_config", { conversationId: shadowId, configJson }).catch(() => {});
-          // Open RT branch in drawer
-          await useChatStore.getState().openThread(newBranch.id);
-        }
-      } else {
-        // Create RT conversation
-        if (!selectedProjectKey) return;
-        const rtLabel = label.trim() || `Roundtable ${Date.now() % 10000}`;
-        const conv = await createConversation({
-          projectKey: selectedProjectKey,
-          label: rtLabel,
-          type: "main",
-          mode: "roundtable",
-          source: "tunadish",
-        });
+      // Always create RT as a branch of the parent conversation
+      // checkpointId is set when branching from a specific message, null when creating from sidebar
+      await createBranch(effectiveParentConvId, checkpointId ?? undefined, label.trim() || undefined, "roundtable");
+      // Find the newly created branch and store config
+      const { branches } = useChatStore.getState();
+      const newBranch = checkpointId
+        ? branches.find((b) => b.checkpointId === checkpointId && b.mode === "roundtable")
+        : branches.filter((b) => b.mode === "roundtable" && b.conversationId === effectiveParentConvId)
+            .sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (newBranch) {
+        const shadowId = `branch:${newBranch.id}`;
         const configJson = JSON.stringify({ participants: activeParticipants, mode });
-        invoke("save_rt_config", { conversationId: conv.id, configJson }).catch(() => {});
-        await selectConversation(conv.id);
+        invoke("save_rt_config", { conversationId: shadowId, configJson }).catch(() => {});
+        // Ensure parent conversation is selected, then open RT branch in drawer
+        if (effectiveParentConvId !== useChatStore.getState().selectedConversationId) {
+          await selectConversation(effectiveParentConvId);
+        }
+        await useChatStore.getState().openThread(newBranch.id);
       }
       onClose();
     } catch {
@@ -142,6 +146,28 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
         </div>
 
         <div className="p-4 space-y-4">
+          {/* Parent conversation selector — shown when creating from sidebar with multiple chats */}
+          {!checkpointId && chatConvs.length > 1 && (
+            <div>
+              <label className="text-[11px] text-sidebar-foreground/60 mb-1 block">상위 채팅</label>
+              <select
+                value={effectiveParentConvId ?? ""}
+                onChange={(e) => setParentConvId(e.target.value || null)}
+                className="w-full bg-input rounded-md px-3 py-1.5 text-[12px] outline-none text-foreground border border-border/30 focus:border-ring/40 cursor-pointer"
+              >
+                <option value="">채팅을 선택하세요</option>
+                {chatConvs.map((c) => (
+                  <option key={c.id} value={c.id}>{c.customLabel ?? c.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {!checkpointId && chatConvs.length === 0 && (
+            <div className="text-[10px] text-destructive/70 bg-destructive/5 rounded px-2.5 py-1.5">
+              채팅이 없습니다. 먼저 채팅을 생성하세요.
+            </div>
+          )}
+
           {/* Label */}
           <div>
             <label className="text-[11px] text-sidebar-foreground/60 mb-1 block">Title</label>
@@ -219,7 +245,7 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
             <button onClick={onClose} className="px-3 py-1.5 rounded-md text-[11px] text-muted-foreground hover:bg-accent transition-colors">
               Cancel
             </button>
-            <button onClick={handleCreate} disabled={creating || activeParticipants.length < 2}
+            <button onClick={handleCreate} disabled={creating || activeParticipants.length < 2 || !effectiveParentConvId}
               className="px-4 py-1.5 rounded-md text-[11px] font-medium bg-agent-gemini/15 text-agent-gemini hover:bg-agent-gemini/25 transition-colors disabled:opacity-40">
               {creating ? "Creating…" : "Create Roundtable"}
             </button>
