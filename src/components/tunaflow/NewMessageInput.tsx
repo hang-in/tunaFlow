@@ -217,7 +217,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                   onSelectProfile={handleProfileSelect}
                 />
               )}
-              {/* Custom mode: show engine/model/persona selectors */}
+              {/* Custom mode: show engine/model selectors */}
               {(!selectedProfileId || profiles.length === 0) && (
                 <>
                   <EngineSelector engine={engine} setEngine={setEngine} />
@@ -228,13 +228,15 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                   />
                 </>
               )}
+              <span className="flex-1" />
               {onCreateRT && (
                 <button
                   onClick={onCreateRT}
-                  className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-agent-gemini/50 hover:text-agent-gemini hover:bg-agent-gemini/10 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-agent-gemini/50 hover:text-agent-gemini hover:bg-agent-gemini/10 transition-colors border border-agent-gemini/15"
                   title="New Roundtable"
                 >
                   <Users className="w-3 h-3" />
+                  <span>RT</span>
                 </button>
               )}
             </>

@@ -50,7 +50,7 @@ export function ProfileSelector({ profiles, selectedProfileId, onSelectProfile }
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 w-[220px] bg-popover border border-border/40 rounded-lg shadow-xl overflow-hidden z-50">
+        <div className="absolute left-0 bottom-full mb-1 w-[220px] bg-popover border border-border/40 rounded-lg shadow-xl overflow-hidden z-50">
           <div className="py-1">
             {profiles.map((p) => (
               <button
