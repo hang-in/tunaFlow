@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { X, Check, GitBranch, Users, Trash2, ChevronLeft } from "lucide-react";
+import { X, Check, GitBranch, Users, Trash2 } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { AgentAvatar } from "./AgentAvatar";
 import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
@@ -42,15 +42,22 @@ export function BranchThreadPanel() {
   const isRT = threadBranch?.mode === "roundtable";
   const isReadOnly = threadBranch?.status === "adopted" || threadBranch?.status === "archived";
 
-  // Parent branch for breadcrumb navigation
-  const parentBranch = threadBranch?.parentBranchId
-    ? branches.find((b) => b.id === threadBranch.parentBranchId)
-    : null;
-  const parentConv = selectedConversationId
-    ? conversations.find((c) => c.id === selectedConversationId)
-    : null;
-  // Show back button: depth 1 → "← Main", depth 2+ → "← parentLabel"
-  const hasParent = !!threadBranch?.parentBranchId || !!threadBranch?.checkpointId;
+  // Build full parent chain for breadcrumb
+  const parentChain: { id: string | null; label: string }[] = [];
+  {
+    // Walk up parentBranchId chain
+    let current = threadBranch;
+    while (current?.parentBranchId) {
+      const parent = branches.find((b) => b.id === current!.parentBranchId);
+      if (!parent) break;
+      parentChain.unshift({ id: parent.id, label: parent.customLabel ?? parent.label });
+      current = parent;
+    }
+    // Add "Main" as root
+    const conv = selectedConversationId ? conversations.find((c) => c.id === selectedConversationId) : null;
+    parentChain.unshift({ id: null, label: conv?.customLabel ?? conv?.label ?? "Main" });
+  }
+  const hasParent = parentChain.length > 0;
 
   const handleAdopt = async () => {
     if (!selectedConversationId) return;
@@ -77,8 +84,10 @@ export function BranchThreadPanel() {
   };
 
   const handleBack = () => {
-    if (parentBranch) {
-      openThread(parentBranch.id);
+    // Navigate to immediate parent (last item in parentChain)
+    const immediateParent = parentChain[parentChain.length - 1];
+    if (immediateParent?.id) {
+      openThread(immediateParent.id);
     } else {
       closeThread();
     }
@@ -96,21 +105,24 @@ export function BranchThreadPanel() {
 
   return (
     <div className="flex flex-col w-full h-full bg-background">
-      {/* Header with breadcrumb */}
-      <div className="flex items-center gap-1.5 px-3 h-10 shrink-0">
-        {/* Back button / breadcrumb */}
-        {hasParent && (
-          <button
-            onClick={handleBack}
-            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/50 hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
-            title={parentBranch ? (parentBranch.customLabel ?? parentBranch.label) : (parentConv?.customLabel ?? parentConv?.label ?? "Main")}
-          >
-            <ChevronLeft className="w-3 h-3" />
-            <span className="truncate max-w-[80px]">
-              {parentBranch ? (parentBranch.customLabel ?? parentBranch.label) : "Main"}
+      {/* Header with full breadcrumb */}
+      <div className="flex items-center gap-1 px-3 h-10 shrink-0">
+        {/* Full breadcrumb path */}
+        <div className="flex items-center gap-0.5 min-w-0 overflow-hidden shrink">
+          {parentChain.map((crumb, i) => (
+            <span key={i} className="flex items-center gap-0.5 shrink-0">
+              {i > 0 && <span className="text-[10px] text-muted-foreground/30">/</span>}
+              <button
+                onClick={() => crumb.id ? openThread(crumb.id) : closeThread()}
+                className="text-[11px] text-muted-foreground/50 hover:text-foreground truncate max-w-[60px] transition-colors"
+                title={crumb.label}
+              >
+                {crumb.label}
+              </button>
             </span>
-          </button>
-        )}
+          ))}
+          <span className="text-[10px] text-muted-foreground/30 shrink-0">/</span>
+        </div>
 
         {/* Current branch */}
         <div className="flex items-center gap-1.5 flex-1 min-w-0">

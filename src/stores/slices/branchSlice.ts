@@ -59,8 +59,10 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
   createBranch: async (conversationId: string, checkpointId?: string, label?: string, mode?: string, parentBranchId?: string) => {
     try {
       const input: CreateBranchInput = { conversationId, checkpointId, label, mode, parentBranchId };
-      await invoke<Branch>("create_branch", { input });
-      const branches = await invoke<Branch[]>("list_branches", { conversationId });
+      const created = await invoke<Branch>("create_branch", { input });
+      // Use the root conversation ID from the created branch (backend resolves shadow convs)
+      const rootConvId = created.conversationId;
+      const branches = await invoke<Branch[]>("list_branches", { conversationId: rootConvId });
       set({ branches });
     } catch (e) {
       set({ error: String(e) });
