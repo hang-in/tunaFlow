@@ -2,12 +2,14 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
+import { getSetting, setSetting } from "@/lib/appStore";
 import { ROUNDTABLE_PARTICIPANTS } from "@/lib/constants";
 import { SendHorizonal, Users } from "lucide-react";
-import type { RtMode, RoundtableParticipant } from "@/types";
+import type { RtMode, RoundtableParticipant, AgentProfile } from "@/types";
 
 import { EngineSelector, type Engine } from "./input/EngineSelector";
 import { ModelSelector } from "./input/ModelSelector";
+import { ProfileSelector } from "./input/ProfileSelector";
 import { RoundtableControls } from "./input/RoundtableControls";
 import { ContextBadges } from "./input/ContextBadges";
 import { useSendActions } from "./input/useSendActions";
@@ -33,6 +35,48 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   const [engine, setEngine] = useState<Engine>("claude");
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [rtMode, setRtMode] = useState<RtMode>("sequential");
+
+  // Agent Profile state
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  const toggleSkill = useChatStore((s) => s.toggleSkill);
+
+  // Load profiles from settings
+  useEffect(() => {
+    getSetting<AgentProfile[]>("agentProfiles", []).then((p) => {
+      setProfiles(p);
+      // Load last selected profile
+      getSetting<string | null>("lastProfileId", null).then((lastId) => {
+        if (lastId && p.some((pr) => pr.id === lastId)) {
+          setSelectedProfileId(lastId);
+          applyProfile(p.find((pr) => pr.id === lastId)!);
+        } else if (p.length > 0) {
+          setSelectedProfileId(p[0].id);
+          applyProfile(p[0]);
+        }
+      });
+    });
+  }, []);
+
+  const applyProfile = (profile: AgentProfile) => {
+    setEngine(profile.engine as Engine);
+    if (profile.model) setSelectedModel(profile.model);
+    // Apply default skills
+    const store = useChatStore.getState();
+    const currentSkills = new Set(store.activeSkills);
+    for (const skill of profile.defaultSkills) {
+      if (!currentSkills.has(skill)) toggleSkill(skill);
+    }
+  };
+
+  const handleProfileSelect = (profileId: string | null) => {
+    setSelectedProfileId(profileId);
+    setSetting("lastProfileId", profileId);
+    if (profileId) {
+      const profile = profiles.find((p) => p.id === profileId);
+      if (profile) applyProfile(profile);
+    }
+  };
   const [activeParticipants, setActiveParticipants] = useState<Set<string>>(
     () => new Set(ROUNDTABLE_PARTICIPANTS.map((p) => p.name)),
   );
@@ -166,12 +210,24 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
             />
           ) : (
             <>
-              <EngineSelector engine={engine} setEngine={setEngine} />
-              <ModelSelector
-                currentModels={currentModels}
-                selectedModel={selectedModel}
-                setSelectedModel={setSelectedModel}
-              />
+              {profiles.length > 0 && (
+                <ProfileSelector
+                  profiles={profiles}
+                  selectedProfileId={selectedProfileId}
+                  onSelectProfile={handleProfileSelect}
+                />
+              )}
+              {/* Custom mode: show engine/model/persona selectors */}
+              {(!selectedProfileId || profiles.length === 0) && (
+                <>
+                  <EngineSelector engine={engine} setEngine={setEngine} />
+                  <ModelSelector
+                    currentModels={currentModels}
+                    selectedModel={selectedModel}
+                    setSelectedModel={setSelectedModel}
+                  />
+                </>
+              )}
               {onCreateRT && (
                 <button
                   onClick={onCreateRT}

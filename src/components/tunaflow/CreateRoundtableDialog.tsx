@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
+import { getSetting } from "@/lib/appStore";
 import { ROUNDTABLE_PARTICIPANTS } from "@/lib/constants";
 import { X, Users, Plus, Minus } from "lucide-react";
-import type { RtMode, RoundtableParticipant } from "@/types";
+import type { RtMode, RoundtableParticipant, AgentProfile } from "@/types";
 import { AgentAvatar } from "./AgentAvatar";
 
 const RT_MODES: { id: RtMode; label: string; desc: string }[] = [
@@ -38,11 +39,29 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
   const effectiveParentConvId = checkpointId
     ? selectedConversationId
     : parentConvId ?? (chatConvs.length === 1 ? chatConvs[0].id : null);
+  const [agentProfiles, setAgentProfiles] = useState<AgentProfile[]>([]);
   const [participants, setParticipants] = useState<RoundtableParticipant[]>(
     () => ROUNDTABLE_PARTICIPANTS.map((p) => ({ ...p }))
   );
   const [disabledIdx, setDisabledIdx] = useState<Set<number>>(new Set());
   const [creating, setCreating] = useState(false);
+
+  // Load agent profiles and use them as initial participants if available
+  useEffect(() => {
+    if (!open) return;
+    getSetting<AgentProfile[]>("agentProfiles", []).then((profiles) => {
+      setAgentProfiles(profiles);
+      if (profiles.length >= 2) {
+        // Use agent profiles as participants
+        setParticipants(profiles.map((p) => ({
+          name: p.label,
+          engine: p.engine,
+          model: p.model,
+        })));
+        setDisabledIdx(new Set());
+      }
+    });
+  }, [open]);
 
   const toggleParticipant = (idx: number) => {
     setDisabledIdx((prev) => {
@@ -74,10 +93,14 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
   };
 
   const addParticipant = () => {
-    setParticipants((prev) => [
-      ...prev,
-      { name: `Agent ${prev.length + 1}`, engine: "claude" },
-    ]);
+    // Find a profile not already in participants
+    const usedNames = new Set(participants.map((p) => p.name));
+    const unused = agentProfiles.find((p) => !usedNames.has(p.label));
+    if (unused) {
+      setParticipants((prev) => [...prev, { name: unused.label, engine: unused.engine, model: unused.model }]);
+    } else {
+      setParticipants((prev) => [...prev, { name: `Agent ${prev.length + 1}`, engine: "claude" }]);
+    }
   };
 
   const removeParticipant = (idx: number) => {
