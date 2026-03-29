@@ -252,7 +252,18 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
           : [...state.conversations, branchConv],
       }));
     } catch (e) {
-      set({ error: String(e) });
+      const msg = String(e);
+      // If branch was already deleted, silently reload branches
+      if (msg.includes("not found") || msg.includes("Not found")) {
+        const convId = get().selectedConversationId;
+        if (convId) {
+          invoke<Branch[]>("list_branches", { conversationId: convId })
+            .then((branches) => set({ branches }))
+            .catch(() => {});
+        }
+      } else {
+        set({ error: msg });
+      }
     }
   },
 
