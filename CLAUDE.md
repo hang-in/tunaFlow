@@ -52,10 +52,13 @@ tunaFlow/
 ├── src/                    # React frontend
 │   ├── components/tunaflow/  # UI 컴포넌트
 │   │   ├── chat/           # MarkdownComponents, FileViewer, fileViewerContext
-│   │   ├── context-panel/  # SkillsPanel, TracePanel, PlansPanel, ArtifactsPanel 등
+│   │   ├── context-panel/  # PlansPanel, ReviewPanel, TestPanel, TracePanel, SkillsPanel, ArtifactsPanel
 │   │   ├── input/          # EngineSelector, ModelSelector, RoundtableControls, useSendActions
 │   │   ├── message/        # MessageMeta, MessageActions, ProgressSurface
-│   │   └── sidebar/        # ProjectsSection, ChatsSection, RoundtablesSection, BranchesSection
+│   │   ├── sidebar/        # ChatsSection, TreeRow, ArtifactsSidebarPanel, FilesSection
+│   │   ├── CenterPanel.tsx # 4-tab center (Chat/Plan/Review/Test)
+│   │   ├── RuntimeStatusBar.tsx # 하단 상태바 (trace + rawq)
+│   │   └── TraceModal.tsx  # Trace 상세 모달
 │   ├── stores/slices/      # Zustand store slices (6개)
 │   ├── lib/                # utils, constants, appStore, api/
 │   ├── types/index.ts      # 공유 타입
@@ -75,6 +78,27 @@ tunaFlow/
 
 ### 4.1 Project-centric
 모든 데이터는 Project 소속. Store는 선택된 프로젝트의 데이터만 보유.
+프로젝트 삭제는 soft-hide (hidden=1) — DB 데이터 보존, 같은 경로 재추가 시 복원.
+
+### 4.1.1 레이아웃 구조 (Linear-inspired)
+```
+┌──────────┬──────────────────────────────┐
+│ Sidebar  │ [Chat] [Plan] [Review] [Test]│ ← floating tab pills
+│ (darkest │    [CHAT] Main — 🔀br       │ ← centered path
+│  base)   │ ┌──────────────────────────┐ │
+│          │ │ content (rounded border) │ │ ← elevated
+│ 📁 Drop  │ │                          │ │
+│ Chats    │ │                          │ │
+│ Artifacts│ └──────────────────────────┘ │
+│ Memos    ├──────────────────────────────┤
+│ Skills   │ trace status │ rawq status   │ ← full-width footer
+│ Files    │                              │
+└──────────┴──────────────────────────────┘
+```
+- Sidebar: 프로젝트 드롭다운 선택기, workspace tree
+- CenterPanel: 4-tab (Chat/Plan/Review/Test), toolbar zone(투명) + content zone(bordered)
+- RuntimeStatusBar: 전체 폭 하단, trace(클릭→모달) + rawq 상태
+- ContextPanel: 제거됨 (Plan/Review/Test → 중앙 탭, Artifacts/Memos/Skills → 사이드바, Trace → 하단 바)
 
 ### 4.2 Background execution
 - `start_*` 커맨드: DB 준비 후 즉시 반환, background thread에서 subprocess 실행
@@ -106,6 +130,8 @@ tunaFlow/
 - 앱 시작 시 daemon 자동 시작 (임베딩 모델 상주, 30분 idle timeout)
 - `.gitignore`를 존중하여 인덱싱 (node_modules, target 등 자동 제외)
 - `start_rawq_index` command로 비동기 인덱싱 (UI 블로킹 없음)
+- `RawqIndexing` guard로 동일 경로 중복 인덱싱 방지
+- timeout 제거 — daemon이 실제 작업 수행, CLI wait_with_output으로 완료 대기
 
 ---
 
@@ -128,13 +154,36 @@ tunaFlow/
 - checkpointId 없는 RT branch에서 Adopt 숨김
 - `openThread`: 부모 conversation이 미선택 상태면 자동 로딩
 
+### ✅ 해결됨: UI/UX 대규모 리팩토링 (Linear-inspired)
+
+- ContextPanel(우측 패널) 제거 → Plan/Review/Test를 중앙 4-tab으로 승격
+- CenterPanel: toolbar zone(투명, 탭 pills) + content zone(rounded border)
+- 사이드바: 프로젝트 드롭다운 선택기 + Artifacts/Memos/Skills 섹션 추가
+- RuntimeStatusBar: 하단 전체 폭, trace(클릭→모달) + rawq 상태
+- Linear 스펙 색상/간격 적용 (lch 색상, h-7, rounded-lg, 13px, gap-1.5)
+- 검색창: 중앙 toolbar 우측 (placeholder, 기능 미구현)
+
+### ✅ 해결됨: rawq 인덱싱 안정화
+
+- ensure_index timeout 제거 (daemon이 실제 작업, CLI kill 무의미)
+- RawqIndexing guard: 동일 경로 중복 인덱싱 방지
+- Frontend: 프로젝트 전환 시 이전 rawq listener cleanup
+
+### ✅ 해결됨: 프로젝트 soft-delete
+
+- DB v13: projects.hidden 컬럼
+- hide_project: hidden=1, 리스트에서 제외
+- create_project: 같은 경로 재추가 시 hidden 프로젝트 복원
+- 메인 채팅 삭제 방지 (마지막 1개 보호)
+
 ### 기타 알려진 이슈
 
-- 기존 smoke-sidebar/smoke-workspace 테스트 실패 (selector 전환 이후 store mock 불일치)
-- Listener timeout: background thread crash 시 event listener가 영영 cleanup 안 될 수 있음
+- 기존 smoke-sidebar/smoke-workspace 테스트 실패 (store mock 불일치)
 - trace_log context metadata는 `start_claude_stream`만 적용. 다른 엔진은 NULL
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- `RoundtablesSection.tsx`, `BranchesSection.tsx` dead code (사이드바 통합 후 미참조)
+- `ContextPanel.tsx`, `RoundtablesSection.tsx`, `BranchesSection.tsx`, `StatusBar.tsx`, `ChatObjectTabs.tsx` dead code
+- 드로어에서 하위 branch 생성 시 부모가 메인 패널로 올라가는 문제 (depth 탐색 UX 미구현)
+- Adopt 시 하위 branch 자동 archive 미구현
 
 ---
 
@@ -255,22 +304,35 @@ tunaFlow/
 
 ### Infrastructure
 - rawq: sidecar bundle, daemon startup, background indexing (`start_rawq_index`)
+- rawq: timeout 제거, RawqIndexing guard, listener cleanup
 - Gemini model discovery: `npm root -g` 기반 (fnm/nvm 호환)
 - window-state: `CloseRequested` 시 명시적 save
 - App icons: tunaDish tuna.png (전 플랫폼)
+
+### UI/UX 대규모 리팩토링 (Linear-inspired)
+- ContextPanel 제거 → CenterPanel 4-tab 구조
+- 사이드바: 프로젝트 드롭다운, Artifacts/Memos/Skills 섹션
+- RuntimeStatusBar: 하단 전체 폭 (trace modal + rawq)
+- Linear lch 색상 시스템 + 간격 스펙 적용
+- 프로젝트 soft-delete (hidden), 메인 채팅 삭제 방지
+- 검색창 placeholder (CenterPanel toolbar 우측)
 
 ---
 
 ## 11. 다음 우선순위
 
-### P0: 대규모 UI/UX 개선
-- (다음 세션에서 진행 예정)
+### P0: Branch depth 탐색 UX
+1. 드로어에서 하위 branch 생성 시 드로어 교체 (메인 패널로 올리지 않음)
+2. 드로어 헤더 breadcrumb 네비게이션 (부모 chain 표시, 클릭으로 전환)
+3. Adopt 시 드로어가 부모 branch로 자동 전환 (닫지 않음)
+4. Adopt 시 하위 branch 자동 archived 처리
+5. Branch 상태 모델: active → adopted / archived / (delete)
 
 ### P1: 코드 정합성
-- `openBranchStream` dead code 정리 (UI에서 미호출)
-- `RoundtablesSection.tsx`, `BranchesSection.tsx` dead code 삭제
+- dead code 삭제: ContextPanel, RoundtablesSection, BranchesSection, StatusBar, ChatObjectTabs, ProjectsSection
 - smoke test 복구 (store mock 업데이트)
 - token/cost: DB 레벨 `usage_status` 컬럼 추가 (unavailable 구분)
+- 채팅 검색 구현 (FTS5 트리거 + 검색 커맨드 + UI)
 
 ### P2: 후순위
 - Evaluation UI 연결 (backend 완료, frontend 미연결)
