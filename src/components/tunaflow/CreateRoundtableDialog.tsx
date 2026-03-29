@@ -110,9 +110,10 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
         : branches.filter((b) => b.mode === "roundtable" && b.conversationId === effectiveParentConvId)
             .sort((a, b) => b.createdAt - a.createdAt)[0];
       if (newBranch) {
-        const shadowId = `branch:${newBranch.id}`;
+        // Ensure shadow conversation exists before saving config
+        const shadowId = await invoke<string>("open_branch_stream", { branchId: newBranch.id });
         const configJson = JSON.stringify({ participants: activeParticipants, mode });
-        invoke("save_rt_config", { conversationId: shadowId, configJson }).catch(() => {});
+        await invoke("save_rt_config", { conversationId: shadowId, configJson });
         // Ensure parent conversation is selected, then open RT branch in drawer
         if (effectiveParentConvId !== useChatStore.getState().selectedConversationId) {
           await selectConversation(effectiveParentConvId);
