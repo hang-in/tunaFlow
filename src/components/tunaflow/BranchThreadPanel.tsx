@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from "react";
-import { X, Check, GitBranch, Users, Trash2 } from "lucide-react";
+import { X, Check, GitBranch, Users, Trash2, ChevronsLeft, ChevronsRight, ChevronRight } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { AgentAvatar } from "./AgentAvatar";
 import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
@@ -44,22 +44,28 @@ export function BranchThreadPanel() {
   const isRT = threadBranch?.mode === "roundtable";
   const isReadOnly = threadBranch?.status === "adopted" || threadBranch?.status === "archived";
 
-  // Build full parent chain for breadcrumb
-  const parentChain: { id: string | null; label: string }[] = [];
+  // Build full navigation chain: [Main, ...ancestors, current]
+  const fullChain: { id: string | null; label: string; isRT?: boolean }[] = [];
   {
-    // Walk up parentBranchId chain
     let current = threadBranch;
     while (current?.parentBranchId) {
       const parent = branches.find((b) => b.id === current!.parentBranchId);
       if (!parent) break;
-      parentChain.unshift({ id: parent.id, label: parent.customLabel ?? parent.label });
+      fullChain.unshift({ id: parent.id, label: parent.customLabel ?? parent.label, isRT: parent.mode === "roundtable" });
       current = parent;
     }
-    // Add "Main" as root
     const conv = selectedConversationId ? conversations.find((c) => c.id === selectedConversationId) : null;
-    parentChain.unshift({ id: null, label: conv?.customLabel ?? conv?.label ?? "Main" });
+    fullChain.unshift({ id: null, label: conv?.customLabel ?? conv?.label ?? "Main" });
+    // Add current as last item
+    fullChain.push({ id: threadBranchId, label: threadBranchLabel ?? threadBranchId, isRT });
   }
-  const hasParent = parentChain.length > 0;
+  const currentIdx = fullChain.length - 1;
+  // Visible window: 2 before + current + 2 after
+  const windowStart = Math.max(0, currentIdx - 2);
+  const windowEnd = Math.min(fullChain.length - 1, currentIdx + 2);
+  const visibleChain = fullChain.slice(windowStart, windowEnd + 1);
+  const hasLeftOverflow = windowStart > 0;
+  const hasRightOverflow = windowEnd < fullChain.length - 1;
 
   const handleAdopt = async () => {
     if (!selectedConversationId) return;
@@ -86,10 +92,9 @@ export function BranchThreadPanel() {
   };
 
   const handleBack = () => {
-    // Navigate to immediate parent (last item in parentChain)
-    const immediateParent = parentChain[parentChain.length - 1];
-    if (immediateParent?.id) {
-      openThread(immediateParent.id);
+    if (currentIdx > 0) {
+      const prev = fullChain[currentIdx - 1];
+      prev.id ? openThread(prev.id) : closeThread();
     } else {
       closeThread();
     }
@@ -107,44 +112,70 @@ export function BranchThreadPanel() {
 
   return (
     <div className="flex flex-col w-full h-full bg-background">
-      {/* Header with full breadcrumb */}
+      {/* Header — navigator + actions */}
       <div className="flex items-center gap-1 px-3 h-10 shrink-0">
-        {/* Full breadcrumb path */}
-        <div className="flex items-center gap-0.5 min-w-0 overflow-hidden shrink">
-          {parentChain.map((crumb, i) => (
-            <span key={i} className="flex items-center gap-0.5 shrink-0">
-              {i > 0 && <span className="text-[10px] text-muted-foreground/30">/</span>}
-              <button
-                onClick={() => crumb.id ? openThread(crumb.id) : closeThread()}
-                className="text-[11px] text-muted-foreground/50 hover:text-foreground truncate max-w-[60px] transition-colors"
-                title={crumb.label}
-              >
-                {crumb.label}
-              </button>
-            </span>
-          ))}
-          <span className="text-[10px] text-muted-foreground/30 shrink-0">/</span>
-        </div>
-
-        {/* Current branch */}
-        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-          {isRT
-            ? <Users className="w-3.5 h-3.5 text-agent-gemini/60 shrink-0" />
-            : <GitBranch className="w-3 h-3 text-primary/60 shrink-0" />}
-          <h2 className="text-[12px] font-medium text-foreground truncate min-w-0">
-            <InlineRename value={threadBranchLabel ?? ""} onSave={(v) => renameBranch(threadBranchId, v)} inputClassName="text-[11px] w-full" />
-          </h2>
+        {/* Badge */}
+        <span className={cn("text-[8px] font-medium px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0",
+          isRT ? "text-agent-gemini/60 bg-agent-gemini/8" : "text-primary/50 bg-primary/6"
+        )}>
+          {isRT ? "RT" : "Branch"}
+        </span>
+        {isReadOnly && (
           <span className={cn("text-[8px] font-medium px-1 py-0.5 rounded uppercase tracking-wider shrink-0",
-            isRT ? "text-agent-gemini/60 bg-agent-gemini/8" : "text-primary/50 bg-primary/6"
+            threadBranch?.status === "adopted" ? "text-status-approved/60 bg-status-approved/8" : "text-muted-foreground/40 bg-muted"
           )}>
-            {isRT ? "RT" : "Branch"}
+            {threadBranch?.status}
           </span>
-          {isReadOnly && (
-            <span className={cn("text-[8px] font-medium px-1 py-0.5 rounded uppercase tracking-wider shrink-0",
-              threadBranch?.status === "adopted" ? "text-status-approved/60 bg-status-approved/8" : "text-muted-foreground/40 bg-muted"
-            )}>
-              {threadBranch?.status}
-            </span>
+        )}
+
+        {/* Navigator — centered */}
+        <div className="flex-1 flex items-center justify-center gap-0.5 min-w-0">
+          {/* << jump to start */}
+          {hasLeftOverflow && (
+            <button
+              onClick={() => { const first = fullChain[0]; first.id ? openThread(first.id) : closeThread(); }}
+              className="p-0.5 rounded text-muted-foreground/30 hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
+              title={fullChain[0].label}
+            >
+              <ChevronsLeft className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {/* Visible chain */}
+          {visibleChain.map((item, i) => {
+            const globalIdx = windowStart + i;
+            const isCurrent = globalIdx === currentIdx;
+            return (
+              <span key={globalIdx} className="flex items-center gap-0.5 shrink-0">
+                {i > 0 && <ChevronRight className="w-3 h-3 text-muted-foreground/20 shrink-0" />}
+                <button
+                  onClick={() => {
+                    if (isCurrent) return;
+                    item.id ? openThread(item.id) : closeThread();
+                  }}
+                  className={cn(
+                    "text-[11px] truncate max-w-[80px] rounded px-1 py-0.5 transition-colors",
+                    isCurrent
+                      ? "text-foreground font-medium bg-accent"
+                      : "text-muted-foreground/50 hover:text-foreground hover:bg-accent/50"
+                  )}
+                  title={item.label}
+                >
+                  {item.label}
+                </button>
+              </span>
+            );
+          })}
+
+          {/* >> jump to end */}
+          {hasRightOverflow && (
+            <button
+              onClick={() => { const last = fullChain[fullChain.length - 1]; last.id && openThread(last.id); }}
+              className="p-0.5 rounded text-muted-foreground/30 hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
+              title={fullChain[fullChain.length - 1].label}
+            >
+              <ChevronsRight className="w-3.5 h-3.5" />
+            </button>
           )}
         </div>
 
