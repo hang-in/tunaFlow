@@ -238,7 +238,7 @@ pub fn rename_branch(id: String, custom_label: String, state: State<DbState>) ->
     Ok(())
 }
 
-/// Delete a branch and its shadow conversation + messages.
+/// Delete a branch, its descendants, and all shadow conversations + messages.
 #[tauri::command]
 pub fn delete_branch(
     id: String,
@@ -246,29 +246,29 @@ pub fn delete_branch(
 ) -> Result<(), AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
 
-    let branch_conv_id = format!("branch:{}", id);
+    // Collect all descendant branch IDs (recursive)
+    let mut to_delete = vec![id.clone()];
+    let mut i = 0;
+    while i < to_delete.len() {
+        let parent_id = &to_delete[i].clone();
+        let mut stmt = conn.prepare("SELECT id FROM branches WHERE parent_branch_id = ?1")?;
+        let children: Vec<String> = stmt
+            .query_map([parent_id], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        to_delete.extend(children);
+        i += 1;
+    }
 
-    // Delete shadow conversation messages (FK cascade would handle this,
-    // but the shadow conv itself needs explicit cleanup)
-    conn.execute(
-        "DELETE FROM messages WHERE conversation_id = ?1",
-        [&branch_conv_id],
-    )?;
-    conn.execute(
-        "DELETE FROM memos WHERE conversation_id = ?1",
-        [&branch_conv_id],
-    )?;
-    conn.execute(
-        "DELETE FROM artifacts WHERE conversation_id = ?1",
-        [&branch_conv_id],
-    )?;
-    // Delete shadow conversation row
-    conn.execute(
-        "DELETE FROM conversations WHERE id = ?1",
-        [&branch_conv_id],
-    )?;
-    // Delete the branch itself
-    conn.execute("DELETE FROM branches WHERE id = ?1", [&id])?;
+    // Delete from deepest to shallowest (reverse order)
+    for branch_id in to_delete.iter().rev() {
+        let branch_conv_id = format!("branch:{}", branch_id);
+        conn.execute("DELETE FROM messages WHERE conversation_id = ?1", [&branch_conv_id])?;
+        conn.execute("DELETE FROM memos WHERE conversation_id = ?1", [&branch_conv_id])?;
+        conn.execute("DELETE FROM artifacts WHERE conversation_id = ?1", [&branch_conv_id])?;
+        conn.execute("DELETE FROM conversations WHERE id = ?1", [&branch_conv_id])?;
+        conn.execute("DELETE FROM branches WHERE id = ?1", [branch_id])?;
+    }
 
     Ok(())
 }
