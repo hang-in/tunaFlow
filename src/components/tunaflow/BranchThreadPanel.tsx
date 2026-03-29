@@ -39,6 +39,7 @@ export function BranchThreadPanel() {
 
   const threadBranch = branches.find((b) => b.id === threadBranchId);
   const isRT = threadBranch?.mode === "roundtable";
+  const isReadOnly = threadBranch?.status === "adopted" || threadBranch?.status === "archived";
 
   // Parent branch for breadcrumb navigation
   const parentBranch = threadBranch?.parentBranchId
@@ -58,6 +59,19 @@ export function BranchThreadPanel() {
       openThread(threadBranch.parentBranchId);
     } else {
       closeThread();
+    }
+  };
+
+  // Create sub-branch and immediately switch drawer to it
+  const handleCreateSubBranch = async (checkpointId: string) => {
+    if (!threadBranchConvId || !threadBranchId) return;
+    await createBranch(threadBranchConvId, checkpointId, undefined, undefined, threadBranchId);
+    const { branches: freshBranches } = useChatStore.getState();
+    const newBranch = freshBranches
+      .filter((b) => b.checkpointId === checkpointId && b.parentBranchId === threadBranchId && b.status === "active")
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (newBranch) {
+      openThread(newBranch.id);
     }
   };
 
@@ -110,11 +124,18 @@ export function BranchThreadPanel() {
           )}>
             {isRT ? "RT" : "Branch"}
           </span>
+          {isReadOnly && (
+            <span className={cn("text-[8px] font-medium px-1 py-0.5 rounded uppercase tracking-wider shrink-0",
+              threadBranch?.status === "adopted" ? "text-status-approved/60 bg-status-approved/8" : "text-muted-foreground/40 bg-muted"
+            )}>
+              {threadBranch?.status}
+            </span>
+          )}
         </div>
 
         {/* Actions */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {threadBranch?.checkpointId && (
+          {!isReadOnly && threadBranch?.checkpointId && (
             <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
               <Check className="w-2.5 h-2.5" /> Adopt
             </button>
@@ -170,7 +191,7 @@ export function BranchThreadPanel() {
             <RoundtableView
               messages={threadMessages}
               conversationId={threadBranchConvId ?? undefined}
-              onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id, undefined, undefined, threadBranchId) : undefined}
+              onBranch={!isReadOnly ? (id) => handleCreateSubBranch(id) : undefined}
             />
             <div ref={bottomRef} />
           </>
@@ -189,9 +210,9 @@ export function BranchThreadPanel() {
                   key={msg.id}
                   message={msg}
                   grouped={grouped}
-                  onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id, undefined, undefined, threadBranchId) : undefined}
-                  onMemo={(id) => createMemo(id, msg.content)}
-                  onFollowup={(engine, content) => sendThreadMessage(content, engine as any)}
+                  onBranch={!isReadOnly ? (id) => handleCreateSubBranch(id) : undefined}
+                  onMemo={!isReadOnly ? (id) => createMemo(id, msg.content) : undefined}
+                  onFollowup={!isReadOnly ? (engine, content) => sendThreadMessage(content, engine as any) : undefined}
                   threadBranches={msgBranches.length > 0 ? msgBranches : undefined}
                   onOpenThread={(branchId) => openThread(branchId)}
                 />
@@ -209,8 +230,8 @@ export function BranchThreadPanel() {
         )}
       </div>
 
-      {/* Input */}
-      <NewMessageInput threadMode />
+      {/* Input — hidden for read-only branches */}
+      {!isReadOnly && <NewMessageInput threadMode />}
     </div>
   );
 }

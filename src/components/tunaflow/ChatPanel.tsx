@@ -29,6 +29,20 @@ export function ChatPanel() {
   const currentConv = conversations.find((c) => c.id === selectedConversationId);
   const isRoundtable = currentConv?.mode === "roundtable";
 
+  // Create branch and immediately open in drawer
+  const handleCreateBranch = async (checkpointId: string) => {
+    if (!selectedConversationId) return;
+    await createBranch(selectedConversationId, checkpointId);
+    // Find the newly created branch by checkpointId (most recent)
+    const { branches: freshBranches } = useChatStore.getState();
+    const newBranch = freshBranches
+      .filter((b) => b.checkpointId === checkpointId && b.status === "active")
+      .sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (newBranch) {
+      openThread(newBranch.id);
+    }
+  };
+
   // Auto-switch view based on conversation mode
   useEffect(() => {
     setView(isRoundtable ? "roundtable" : "stream");
@@ -63,7 +77,7 @@ export function ChatPanel() {
       {/* Scrollable message area */}
       <div className="flex-1 overflow-y-auto">
         {view === "roundtable" && isRoundtable ? (
-          <RoundtableView messages={messages} onBranch={(id) => createBranch(selectedConversationId, id)} />
+          <RoundtableView messages={messages} onBranch={(id) => handleCreateBranch(id)} />
         ) : (
           <div className="py-3 space-y-0.5">
             {messages.length === 0 && !runningThreadIds.includes(selectedConversationId!) && (
@@ -86,7 +100,7 @@ export function ChatPanel() {
                   key={msg.id}
                   message={msg}
                   grouped={grouped}
-                  onBranch={!activeBranchId ? (id) => createBranch(selectedConversationId, id) : undefined}
+                  onBranch={!activeBranchId ? (id) => handleCreateBranch(id) : undefined}
                   onBranchRT={!activeBranchId ? (id) => setRtDialogCheckpoint(id) : undefined}
                   onMemo={!activeBranchId ? (id) => createMemo(id, msg.content) : undefined}
                   onFollowup={(engine, content) => sendFollowup(engine, "message", content)}
