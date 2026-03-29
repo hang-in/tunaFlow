@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, params};
 use crate::errors::AppError;
 use super::schema;
 
@@ -216,39 +216,67 @@ fn apply_v13(conn: &Connection) -> Result<(), AppError> {
 /// Fix branches with shadow conversation IDs (branch:xxx) as conversation_id.
 /// These should point to the root conversation instead.
 fn apply_v14(conn: &Connection) -> Result<(), AppError> {
-    // Find all branches whose conversation_id starts with 'branch:'
-    // and update them to use the root conversation (via conversations.parent_id chain)
-    conn.execute_batch("
-        UPDATE branches SET conversation_id = (
-            WITH RECURSIVE chain AS (
-                SELECT id, parent_id FROM conversations WHERE id = branches.conversation_id
-                UNION ALL
-                SELECT c.id, c.parent_id FROM conversations c JOIN chain ch ON c.id = ch.parent_id
-                WHERE ch.parent_id IS NOT NULL
-            )
-            SELECT id FROM chain WHERE parent_id IS NULL OR parent_id NOT LIKE 'branch:%'
-            ORDER BY rowid DESC LIMIT 1
-        )
-        WHERE conversation_id LIKE 'branch:%';
-    ")?;
+    // Step 1: Fix conversation_id for branches pointing to shadow convs.
+    // For each such branch, walk up the conversations.parent_id chain to find root.
+    let mut stmt = conn.prepare(
+        "SELECT b.id, b.conversation_id FROM branches b WHERE b.conversation_id LIKE 'branch:%'"
+    )?;
+    let broken: Vec<(String, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
 
-    // Also set parent_branch_id for branches that were created from shadow convs
-    // but missing the parent reference: extract branch ID from the original conversation_id
-    // This is best-effort — only fixes cases where we can match
-    conn.execute_batch("
-        UPDATE branches SET parent_branch_id = (
-            SELECT b2.id FROM branches b2
-            WHERE 'branch:' || b2.id = (
-                SELECT c.id FROM conversations c WHERE c.id LIKE 'branch:%'
-                AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.id = branches.checkpoint_id)
+    for (branch_id, shadow_conv_id) in &broken {
+        // Walk parent_id chain to find root conversation
+        let mut current = shadow_conv_id.clone();
+        for _ in 0..10 { // max depth guard
+            let parent: Option<String> = conn
+                .query_row("SELECT parent_id FROM conversations WHERE id = ?1", [&current], |row| row.get(0))
+                .ok()
+                .flatten();
+            match parent {
+                Some(p) if p.starts_with("branch:") => current = p,
+                Some(p) => { current = p; break; }
+                None => break,
+            }
+        }
+        if !current.starts_with("branch:") {
+            conn.execute("UPDATE branches SET conversation_id = ?1 WHERE id = ?2", params![current, branch_id])?;
+        }
+    }
+
+    // Step 2: Best-effort parent_branch_id backfill.
+    // For branches that were created from a shadow conv (now fixed),
+    // if checkpoint_id exists in messages of a shadow conv, set parent_branch_id.
+    let mut stmt2 = conn.prepare(
+        "SELECT b.id, b.checkpoint_id FROM branches b
+         WHERE b.parent_branch_id IS NULL AND b.checkpoint_id IS NOT NULL"
+    )?;
+    let candidates: Vec<(String, String)> = stmt2
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    for (branch_id, checkpoint_id) in &candidates {
+        // Find which shadow conversation contains this checkpoint message
+        let parent: Option<String> = conn
+            .query_row(
+                "SELECT REPLACE(m.conversation_id, 'branch:', '') FROM messages m
+                 WHERE m.id = ?1 AND m.conversation_id LIKE 'branch:%'",
+                [checkpoint_id],
+                |row| row.get(0),
             )
-        )
-        WHERE parent_branch_id IS NULL
-        AND checkpoint_id IS NOT NULL
-        AND id IN (
-            SELECT id FROM branches WHERE conversation_id NOT LIKE 'branch:%'
-        );
-    ")?;
+            .ok();
+        if let Some(parent_branch_id) = parent {
+            // Verify this parent branch actually exists
+            let exists: bool = conn
+                .query_row("SELECT COUNT(*) FROM branches WHERE id = ?1", [&parent_branch_id], |row| row.get::<_, i64>(0))
+                .unwrap_or(0) > 0;
+            if exists {
+                conn.execute("UPDATE branches SET parent_branch_id = ?1 WHERE id = ?2", params![parent_branch_id, branch_id])?;
+            }
+        }
+    }
 
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (14, ?1)", [now_epoch()])?;
     Ok(())
