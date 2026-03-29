@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
 import { X, Check, GitBranch, Users, Trash2, ChevronLeft } from "lucide-react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { AgentAvatar } from "./AgentAvatar";
 import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -140,8 +141,9 @@ export function BranchThreadPanel() {
               <Check className="w-2.5 h-2.5" /> Adopt
             </button>
           )}
-          <button onClick={() => {
-            if (window.confirm(`"${threadBranchLabel}" 브랜치를 삭제하시겠습니까?`)) {
+          <button onClick={async () => {
+            const yes = await ask(`"${threadBranchLabel}" 브랜치를 삭제하시겠습니까?`, { title: "브랜치 삭제", kind: "warning" });
+            if (yes) {
               closeThread();
               deleteBranch(threadBranchId);
             }

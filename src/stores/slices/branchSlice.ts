@@ -135,7 +135,8 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
     } catch (e) {
       const msg = String(e);
       if (msg.includes("empty_branch")) {
-        if (window.confirm("빈 브랜치입니다. 삭제하시겠습니까?")) {
+        const { ask } = await import("@tauri-apps/plugin-dialog");
+        if (await ask("빈 브랜치입니다. 삭제하시겠습니까?", { title: "빈 브랜치", kind: "warning" })) {
           // Close drawer/thread if this branch is open
           if (get().threadBranchId === branchId) {
             set({ threadBranchId: null, threadBranchConvId: null, threadMessages: [], threadBranchLabel: null, threadParentMessage: null });

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useChatStore } from "@/stores/chatStore";
 import { Waves, ChevronDown, FolderOpen, Folder, Trash2, Loader2 } from "lucide-react";
+import { ask } from "@tauri-apps/plugin-dialog";
 import type { Branch } from "@/types";
 
 import { ChatsSection } from "./sidebar/ChatsSection";
@@ -83,7 +84,8 @@ export function Sidebar() {
   };
 
   const handleDeleteBranch = async (branchId: string, label: string) => {
-    if (window.confirm(`"${label}" 브랜치를 삭제하시겠습니까?`)) {
+    const yes = await ask(`"${label}" 브랜치를 삭제하시겠습니까?`, { title: "브랜치 삭제", kind: "warning" });
+    if (yes) {
       await deleteBranch(branchId);
       setRenameCounter((c) => c + 1);
     }
@@ -100,7 +102,8 @@ export function Sidebar() {
 
   const handleDelete = async (id: string, label: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`"${label}" 대화를 삭제하시겠습니까?`)) return;
+    const yes = await ask(`"${label}" 대화를 삭제하시겠습니까?`, { title: "대화 삭제", kind: "warning" });
+    if (!yes) return;
     await deleteConversation(id);
   };
 
@@ -157,9 +160,10 @@ export function Sidebar() {
                       )}
                     </button>
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        if (window.confirm(`"${p.name}" 프로젝트를 삭제하시겠습니까?\n(프로젝트 데이터는 보존되며, 같은 경로로 다시 추가할 수 있습니다)`)) {
+                        const yes = await ask(`"${p.name}" 프로젝트를 삭제하시겠습니까?\n(프로젝트 데이터는 보존되며, 같은 경로로 다시 추가할 수 있습니다)`, { title: "프로젝트 삭제", kind: "warning" });
+                        if (yes) {
                           hideProject(p.key);
                           if (projects.length <= 1) setProjectDropdownOpen(false);
                         }

@@ -77,8 +77,9 @@ export function MessageActions({ messageId, messageContent, isUser, onBranch, on
         <Copy className="w-3.5 h-3.5" />
       </button>
       {onDeletePair && (
-        <button onClick={() => {
-          if (window.confirm("이 메시지를 삭제하시겠습니까?")) onDeletePair(messageId);
+        <button onClick={async () => {
+          const { ask } = await import("@tauri-apps/plugin-dialog");
+          if (await ask("이 메시지를 삭제하시겠습니까?", { title: "메시지 삭제", kind: "warning" })) onDeletePair(messageId);
         }} title="Delete"
           className="p-1 rounded hover:bg-destructive/15 hover:text-destructive text-muted-foreground/50 transition-colors">
           <Trash2 className="w-3.5 h-3.5" />
