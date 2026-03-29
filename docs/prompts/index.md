@@ -49,6 +49,7 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/knowledge_sources_settings_shell_prompt](./2026-03-30/knowledge_sources_settings_shell_prompt.md): Settings에 Knowledge Sources 섹션을 product shell로 먼저 추가하는 프롬프트
 - [2026-03-30/documentation_ia_governance_prompt](./2026-03-30/documentation_ia_governance_prompt.md): docs 탐색 규칙과 index 구조를 먼저 정리하는 프롬프트
 - [2026-03-30/document_versioning_policy_prompt](./2026-03-30/document_versioning_policy_prompt.md): reference/plan/prompt/brainstorm 문서의 버전관리 규칙을 정리하는 프롬프트
+- [2026-03-30/document_naming_rule_prompt](./2026-03-30/document_naming_rule_prompt.md): 파일명은 짧게, title/metas/index는 설명적으로 가는 규칙을 정리하는 프롬프트
 - [2026-03-30/runtime_settings_implementation_prompt](./2026-03-30/runtime_settings_implementation_prompt.md): Settings > Runtime을 실제 진단/설정 섹션으로 먼저 채우는 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

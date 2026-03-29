@@ -13,4 +13,5 @@
 - [documentationNavigationModel_2026-03-30](./documentationNavigationModel_2026-03-30.md)
 - [documentMetadataSchema_2026-03-30](./documentMetadataSchema_2026-03-30.md)
 - [documentVersioningPolicy_2026-03-30](./documentVersioningPolicy_2026-03-30.md)
+- [documentNamingRule_2026-03-30](./documentNamingRule_2026-03-30.md)
 - [workingRulesForAgents](./workingRulesForAgents.md)
