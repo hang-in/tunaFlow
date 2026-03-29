@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { X, Check, GitBranch, Users, Trash2 } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { AgentAvatar } from "./AgentAvatar";
@@ -8,6 +8,7 @@ import { MessageItem } from "./MessageItem";
 import { NewMessageInput } from "./NewMessageInput";
 import { InlineRename } from "./InlineRename";
 import { RoundtableView } from "./RoundtableView";
+import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 
 export function BranchThreadPanel() {
   const {
@@ -31,6 +32,7 @@ export function BranchThreadPanel() {
   } = useChatStore();
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [rtDialogCheckpoint, setRtDialogCheckpoint] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -227,6 +229,7 @@ export function BranchThreadPanel() {
                   message={msg}
                   grouped={grouped}
                   onBranch={!isReadOnly ? (id) => handleCreateSubBranch(id) : undefined}
+                  onBranchRT={!isReadOnly ? (id) => setRtDialogCheckpoint(id) : undefined}
                   onMemo={!isReadOnly ? (id) => createMemo(id, msg.content) : undefined}
                   onFollowup={!isReadOnly ? (engine, content) => sendThreadMessage(content, engine as any) : undefined}
                   threadBranches={msgBranches.length > 0 ? msgBranches : undefined}
@@ -248,6 +251,13 @@ export function BranchThreadPanel() {
 
       {/* Input — hidden for read-only branches */}
       {!isReadOnly && <NewMessageInput threadMode />}
+
+      {/* RT creation dialog for branching from thread messages */}
+      <CreateRoundtableDialog
+        open={rtDialogCheckpoint !== null}
+        onClose={() => setRtDialogCheckpoint(null)}
+        checkpointId={rtDialogCheckpoint}
+      />
     </div>
   );
 }
