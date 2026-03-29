@@ -44,9 +44,11 @@ export function BranchThreadPanel() {
   const isRT = threadBranch?.mode === "roundtable";
   const isReadOnly = threadBranch?.status === "adopted" || threadBranch?.status === "archived";
 
-  // Build full navigation chain: [Main, ...ancestors, current]
+  // Build full navigation chain: [Main, ...ancestors, current, ...descendants]
   const fullChain: { id: string | null; label: string; isRT?: boolean }[] = [];
+  let currentIdx = 0;
   {
+    // Walk up: ancestors
     let current = threadBranch;
     while (current?.parentBranchId) {
       const parent = branches.find((b) => b.id === current!.parentBranchId);
@@ -54,12 +56,24 @@ export function BranchThreadPanel() {
       fullChain.unshift({ id: parent.id, label: parent.customLabel ?? parent.label, isRT: parent.mode === "roundtable" });
       current = parent;
     }
+    // Root conversation
     const conv = selectedConversationId ? conversations.find((c) => c.id === selectedConversationId) : null;
     fullChain.unshift({ id: null, label: conv?.customLabel ?? conv?.label ?? "Main" });
-    // Add current as last item
+    // Current
     fullChain.push({ id: threadBranchId, label: threadBranchLabel ?? threadBranchId, isRT });
+    currentIdx = fullChain.length - 1;
+    // Walk down: descendants (follow most recent child at each level)
+    let descendantId: string | null = threadBranchId;
+    while (descendantId) {
+      const children = branches
+        .filter((b) => b.parentBranchId === descendantId)
+        .sort((a, b) => b.createdAt - a.createdAt);
+      if (children.length === 0) break;
+      const child = children[0];
+      fullChain.push({ id: child.id, label: child.customLabel ?? child.label, isRT: child.mode === "roundtable" });
+      descendantId = child.id;
+    }
   }
-  const currentIdx = fullChain.length - 1;
   // Visible window: 2 before + current + 2 after
   const windowStart = Math.max(0, currentIdx - 2);
   const windowEnd = Math.min(fullChain.length - 1, currentIdx + 2);
