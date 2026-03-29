@@ -124,13 +124,6 @@ export function BranchesPanel() {
                 <>
                   <span className="text-border">·</span>
                   <button
-                    onClick={() => openBranchStream(b.id)}
-                    className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    Full view
-                  </button>
-                  <span className="text-border">·</span>
-                  <button
                     onClick={() => adoptBranch(b.id, selectedConversationId)}
                     className="text-[10px] text-status-approved hover:underline"
                   >

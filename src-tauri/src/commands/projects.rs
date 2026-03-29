@@ -243,13 +243,13 @@ pub fn get_rawq_status(project_path: String) -> Result<RawqStatus, AppError> {
 }
 
 /// Ensure rawq index exists, returning structured status.
+/// NOTE: This is a blocking command. For non-blocking use `start_rawq_index`.
 #[tauri::command]
 pub fn ensure_rawq_index(project_path: String) -> Result<RawqStatus, AppError> {
     use crate::agents::rawq;
 
     match rawq::ensure_index(&project_path) {
         Ok(0) => {
-            // Already indexed — fetch current stats
             let (files, chunks) = rawq::index_status(&project_path)
                 .ok()
                 .flatten()
@@ -277,4 +277,56 @@ pub fn ensure_rawq_index(project_path: String) -> Result<RawqStatus, AppError> {
             })
         }
     }
+}
+
+/// Start rawq index build in background thread. Emits events:
+/// - `rawq:indexing` — { projectPath, message }
+/// - `rawq:indexed`  — RawqStatus (success)
+/// - `rawq:error`    — RawqStatus (failure)
+#[tauri::command]
+pub fn start_rawq_index(project_path: String, app: tauri::AppHandle) -> Result<(), AppError> {
+    use crate::agents::rawq;
+    use tauri::Emitter;
+
+    let _ = app.emit("rawq:indexing", serde_json::json!({
+        "projectPath": &project_path,
+        "message": "Building code index..."
+    }));
+
+    std::thread::spawn(move || {
+        let result = match rawq::ensure_index(&project_path) {
+            Ok(0) => {
+                let (files, chunks) = rawq::index_status(&project_path)
+                    .ok()
+                    .flatten()
+                    .map(|i| (Some(i.files), Some(i.chunks)))
+                    .unwrap_or((None, None));
+                RawqStatus {
+                    available: true, indexed: true,
+                    status: "ready".into(), message: "already indexed".into(),
+                    files, chunks,
+                }
+            }
+            Ok(n) => RawqStatus {
+                available: true, indexed: true,
+                status: "built".into(), message: format!("indexed {} files", n),
+                files: Some(n), chunks: None,
+            },
+            Err(e) => {
+                eprintln!("[start_rawq_index] {}", e);
+                let available = !matches!(e, rawq::RawqError::NotFound(_));
+                RawqStatus {
+                    available, indexed: false,
+                    status: if available { "error" } else { "unavailable" }.into(),
+                    message: format!("{}", e),
+                    files: None, chunks: None,
+                }
+            }
+        };
+
+        let event = if result.indexed { "rawq:indexed" } else { "rawq:error" };
+        let _ = app.emit(event, &result);
+    });
+
+    Ok(())
 }

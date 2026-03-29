@@ -80,6 +80,7 @@ export function TracePanel() {
   const [jobs, setJobs] = useState<AgentJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [tick, setTick] = useState(0);
 
   const convId = activeBranchId
     ? `branch:${activeBranchId}`
@@ -107,11 +108,11 @@ export function TracePanel() {
     loadJobs();
   }, [convId]);
 
-  // Auto-refresh jobs while running
+  // Auto-refresh jobs while running + tick for elapsed counter
   const threadRunning = convId ? runningThreadIds.includes(convId) : false;
   useEffect(() => {
     if (!threadRunning) return;
-    const interval = setInterval(() => { loadJobs(); }, 2000);
+    const interval = setInterval(() => { loadJobs(); setTick((t) => t + 1); }, 1000);
     return () => clearInterval(interval);
   }, [threadRunning]);
 
@@ -119,10 +120,25 @@ export function TracePanel() {
     ? messageQueue.filter((q) => q.threadId === convId).length
     : 0;
 
-  // Aggregate stats
+  // Aggregate stats — total + per-engine
   const totalInputTokens = spans.reduce((s, sp) => s + sp.inputTokens, 0);
   const totalOutputTokens = spans.reduce((s, sp) => s + sp.outputTokens, 0);
   const totalCost = spans.reduce((s, sp) => s + sp.costUsd, 0);
+
+  const engineAggregates = (() => {
+    const map = new Map<string, { input: number; output: number; cost: number; count: number }>();
+    for (const sp of spans) {
+      const eng = sp.engine || "unknown";
+      const prev = map.get(eng) || { input: 0, output: 0, cost: 0, count: 0 };
+      map.set(eng, {
+        input: prev.input + sp.inputTokens,
+        output: prev.output + sp.outputTokens,
+        cost: prev.cost + sp.costUsd,
+        count: prev.count + 1,
+      });
+    }
+    return [...map.entries()].sort((a, b) => b[1].count - a[1].count);
+  })();
 
   if (!convId) {
     return <p className="text-xs text-muted-foreground px-2">No conversation selected.</p>;
@@ -157,7 +173,7 @@ export function TracePanel() {
                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" />
                 <span className="text-[11px] font-semibold text-foreground">{j.engine}</span>
                 <span className="text-[10px] text-muted-foreground/50">{j.kind}</span>
-                <span className="ml-auto text-[10px] font-mono text-primary/60">{formatElapsed(j.startedAt)}</span>
+                <span className="ml-auto text-[10px] font-mono text-primary/60">{/* tick={tick} triggers re-render */}{formatElapsed(j.startedAt)}</span>
               </div>
               {j.error && <p className="text-[9px] text-destructive/60 mt-1 truncate">{j.error}</p>}
             </div>
@@ -192,21 +208,37 @@ export function TracePanel() {
         )}
       </div>
 
-      {/* Aggregate stats */}
+      {/* Aggregate stats — total */}
       {spans.length > 0 && (
-        <div className="grid grid-cols-3 gap-1.5">
-          <div className="rounded-md bg-accent/50 px-2 py-1.5 text-center">
-            <p className="text-[8px] text-muted-foreground/60 uppercase">Input</p>
-            <p className="text-[11px] font-semibold text-foreground">{totalInputTokens.toLocaleString()}</p>
+        <div className="space-y-1.5">
+          <div className="grid grid-cols-3 gap-1.5">
+            <div className="rounded-md bg-accent/50 px-2 py-1.5 text-center">
+              <p className="text-[8px] text-muted-foreground/60 uppercase">Input</p>
+              <p className="text-[11px] font-semibold text-foreground">{totalInputTokens.toLocaleString()}</p>
+            </div>
+            <div className="rounded-md bg-accent/50 px-2 py-1.5 text-center">
+              <p className="text-[8px] text-muted-foreground/60 uppercase">Output</p>
+              <p className="text-[11px] font-semibold text-foreground">{totalOutputTokens.toLocaleString()}</p>
+            </div>
+            <div className="rounded-md bg-accent/50 px-2 py-1.5 text-center">
+              <p className="text-[8px] text-muted-foreground/60 uppercase">Cost</p>
+              <p className="text-[11px] font-semibold text-foreground">{formatCost(totalCost, null)}</p>
+            </div>
           </div>
-          <div className="rounded-md bg-accent/50 px-2 py-1.5 text-center">
-            <p className="text-[8px] text-muted-foreground/60 uppercase">Output</p>
-            <p className="text-[11px] font-semibold text-foreground">{totalOutputTokens.toLocaleString()}</p>
-          </div>
-          <div className="rounded-md bg-accent/50 px-2 py-1.5 text-center">
-            <p className="text-[8px] text-muted-foreground/60 uppercase">Cost</p>
-            <p className="text-[11px] font-semibold text-foreground">{formatCost(totalCost, null)}</p>
-          </div>
+
+          {/* Per-engine breakdown */}
+          {engineAggregates.length > 1 && (
+            <div className="space-y-0.5">
+              {engineAggregates.map(([eng, agg]) => (
+                <div key={eng} className="flex items-center gap-2 px-1 text-[9px] text-muted-foreground/50">
+                  <span className="font-medium text-foreground/60 w-14 truncate">{eng}</span>
+                  <span className="flex-1 text-right font-mono">{formatTokens(agg.input + agg.output, eng)} tok</span>
+                  <span className="w-12 text-right font-mono">{formatCost(agg.cost, eng)}</span>
+                  <span className="w-6 text-right text-muted-foreground/30">{agg.count}×</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

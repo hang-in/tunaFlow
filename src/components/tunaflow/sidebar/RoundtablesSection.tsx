@@ -53,7 +53,7 @@ export function RoundtablesSection({
               <Trash2 className="w-3 h-3" />
             </button>
           ) : undefined}
-          onClick={() => openBranchStream(b.id)} />
+          onClick={() => openThread(b.id)} />
         {children.map((child) => renderBranch(child, depth + 1))}
       </div>
     );

@@ -34,4 +34,7 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-29/chat_ui_parity_with_tunachat_master_prompt](./2026-03-29/chat_ui_parity_with_tunachat_master_prompt.md): Claude가 의견을 먼저 제시하고 단계적으로 채팅 UI parity 작업을 수행하게 하는 마스터 프롬프트
 - [2026-03-29/chat_virtualization_prompt](./2026-03-29/chat_virtualization_prompt.md): 긴 대화 virtualization 구현 프롬프트 (보류 — 성능 문제 체감 시 착수)
 - [2026-03-29/trace_panel_runtime_first_prompt](./2026-03-29/trace_panel_runtime_first_prompt.md): TracePanel을 runtime 대시보드로 전환하는 실행 프롬프트
+- [2026-03-29/trace_panel_runtime_metrics_cards_prompt](./2026-03-29/trace_panel_runtime_metrics_cards_prompt.md): TracePanel 실시간 경과 시간 + 엔진별 aggregate 카드 프롬프트
 - [2026-03-29/token_cost_tracking_engine_parity_prompt](./2026-03-29/token_cost_tracking_engine_parity_prompt.md): 4개 엔진 token/cost tracking parity 실행 프롬프트
+- [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
+- [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

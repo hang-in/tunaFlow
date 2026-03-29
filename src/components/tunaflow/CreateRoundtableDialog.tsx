@@ -22,7 +22,7 @@ interface CreateRoundtableDialogProps {
 }
 
 export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRoundtableDialogProps) {
-  const { selectedProjectKey, selectedConversationId, createConversation, createBranch, selectConversation, openBranchStream, engineModels } = useChatStore();
+  const { selectedProjectKey, selectedConversationId, createConversation, createBranch, selectConversation, engineModels } = useChatStore();
 
   const [label, setLabel] = useState("");
   const [mode, setMode] = useState<RtMode>("sequential");
@@ -97,8 +97,8 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
           const shadowId = `branch:${newBranch.id}`;
           const configJson = JSON.stringify({ participants: activeParticipants, mode });
           invoke("save_rt_config", { conversationId: shadowId, configJson }).catch(() => {});
-          // Open RT branch in full view (not drawer) — drawer doesn't support RT controls
-          await openBranchStream(newBranch.id);
+          // Open RT branch in drawer
+          await useChatStore.getState().openThread(newBranch.id);
         }
       } else {
         // Create RT conversation

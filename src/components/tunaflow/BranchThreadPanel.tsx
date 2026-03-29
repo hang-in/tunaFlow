@@ -1,103 +1,44 @@
-import { useRef, useEffect, useState, useMemo } from "react";
-import { X, Check, GitBranch, Users, Maximize2, SendHorizonal, ChevronDown, Trash2 } from "lucide-react";
+import { useRef, useEffect } from "react";
+import { X, Check, GitBranch, Users, Trash2 } from "lucide-react";
 import { AgentAvatar } from "./AgentAvatar";
 import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageItem } from "./MessageItem";
+import { NewMessageInput } from "./NewMessageInput";
 import { InlineRename } from "./InlineRename";
-
-type Engine = "claude" | "codex" | "gemini" | "opencode";
-const ENGINE_LIST: { id: Engine; label: string }[] = [
-  { id: "claude", label: "Claude" },
-  { id: "codex", label: "Codex" },
-  { id: "gemini", label: "Gemini" },
-  { id: "opencode", label: "OpenCode" },
-];
 
 export function BranchThreadPanel() {
   const {
     threadBranchId,
+    threadBranchConvId,
     threadMessages,
     threadBranchLabel,
     threadParentMessage,
     selectedConversationId,
-    isRunning,
     runningThreadIds,
     closeThread,
     adoptBranch,
-    openBranchStream,
     sendThreadMessage,
     renameBranch,
     deleteBranch,
+    createBranch,
+    createMemo,
+    openThread,
     branches,
-    engineModels,
   } = useChatStore();
 
   const bottomRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState("");
-  const [engine, setEngine] = useState<Engine>("claude");
-  const [selectedModel, setSelectedModel] = useState<string>("");
-  const [showEnginePicker, setShowEnginePicker] = useState(false);
-  const enginePickerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showEnginePicker) return;
-    const handle = (e: MouseEvent) => {
-      if (enginePickerRef.current && !enginePickerRef.current.contains(e.target as Node)) {
-        setShowEnginePicker(false);
-      }
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [showEnginePicker]);
-
-  const currentModels = useMemo(
-    () => engineModels.filter((m) => m.engine === engine),
-    [engineModels, engine],
-  );
-
-  useEffect(() => {
-    const rec = currentModels.find((m) => m.recommended);
-    setSelectedModel(rec?.id ?? currentModels[0]?.id ?? "");
-  }, [engine, currentModels.length]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [threadMessages]);
 
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }, [text]);
-
   if (!threadBranchId) return null;
-
-  const handleSend = async () => {
-    const prompt = text.trim();
-    if (!prompt) return;
-    setText("");
-    await sendThreadMessage(prompt, engine, selectedModel || undefined);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
 
   const handleAdopt = async () => {
     if (!selectedConversationId) return;
     await adoptBranch(threadBranchId, selectedConversationId);
     closeThread();
-  };
-
-  const handleOpenFull = async () => {
-    closeThread();
-    await openBranchStream(threadBranchId);
   };
 
   // Parent message meta
@@ -136,9 +77,6 @@ export function BranchThreadPanel() {
         <div className="flex items-center gap-0.5 shrink-0">
           <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
             <Check className="w-2.5 h-2.5" /> Adopt
-          </button>
-          <button onClick={handleOpenFull} title="Full view" className="p-1 rounded text-muted-foreground/50 hover:text-foreground hover:bg-accent transition-colors">
-            <Maximize2 className="w-3 h-3" />
           </button>
           <button onClick={() => {
             if (window.confirm(`"${threadBranchLabel}" 브랜치를 삭제하시겠습니까?`)) {
@@ -189,9 +127,31 @@ export function BranchThreadPanel() {
           </div>
         ) : (
           <div className="py-2 space-y-0.5">
-            {threadMessages.map((msg) => (
-              <MessageItem key={msg.id} message={msg} showActions={false} />
-            ))}
+            {threadMessages.map((msg, idx) => {
+              const prev = idx > 0 ? threadMessages[idx - 1] : null;
+              const grouped = !!prev
+                && prev.role === msg.role
+                && prev.engine === msg.engine
+                && prev.persona === msg.persona
+                && msg.status !== "streaming";
+              // Branch badges for this message within the thread
+              const msgBranches = branches.filter((b) => b.checkpointId === msg.id);
+              return (
+                <MessageItem
+                  key={msg.id}
+                  message={msg}
+                  grouped={grouped}
+                  onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id) : undefined}
+                  onMemo={(id) => createMemo(id, msg.content)}
+                  onFollowup={(engine, content) => sendThreadMessage(content, engine as any)}
+                  threadBranches={msgBranches.length > 0 ? msgBranches : undefined}
+                  onOpenThread={(branchId) => {
+                    closeThread();
+                    setTimeout(() => openThread(branchId), 100);
+                  }}
+                />
+              );
+            })}
             {runningThreadIds.length > 0 && threadMessages[threadMessages.length - 1]?.status !== "streaming" && (
               <div className="flex items-center gap-1 px-4 py-2 text-muted-foreground text-xs">
                 <span className="typing-dot w-1.5 h-1.5 rounded-full bg-muted-foreground" />
@@ -204,84 +164,8 @@ export function BranchThreadPanel() {
         )}
       </div>
 
-      {/* Input */}
-      <div className="px-3 pb-3 pt-1.5 shrink-0">
-        <div className="rounded-lg border border-border/30 bg-card/50 focus-within:border-ring/30 transition-colors">
-          {/* Toolbar */}
-          <div className="flex items-center gap-1 px-2 pt-1.5 pb-1 border-b border-border/20">
-            <div className="relative" ref={enginePickerRef}>
-              <button
-                onClick={() => setShowEnginePicker(!showEnginePicker)}
-                className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-foreground transition-colors px-1 py-0.5 rounded hover:bg-accent/50"
-              >
-                <span className={cn("w-1.5 h-1.5 rounded-full", `bg-agent-${engine}`)} />
-                <span className="font-medium">{ENGINE_LIST.find((e) => e.id === engine)?.label}</span>
-                <ChevronDown className="w-2 h-2" />
-              </button>
-              {showEnginePicker && (
-                <div className="absolute bottom-full left-0 mb-1 bg-popover border border-border/30 rounded-md shadow-lg p-0.5 min-w-[100px] z-50">
-                  {ENGINE_LIST.map((eng) => (
-                    <button
-                      key={eng.id}
-                      onClick={() => { setEngine(eng.id); setShowEnginePicker(false); }}
-                      className={cn(
-                        "w-full flex items-center gap-1.5 px-2 py-1 rounded text-[9px] transition-colors",
-                        engine === eng.id ? "text-foreground bg-accent" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                      )}
-                    >
-                      <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", engine === eng.id ? `bg-agent-${eng.id}` : "bg-muted")} />
-                      {eng.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {currentModels.length > 0 && (
-              <>
-                <span className="h-2.5 w-px bg-border/20" />
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="bg-transparent rounded px-0.5 py-0 text-[9px] outline-none text-muted-foreground/40 max-w-[100px]"
-                >
-                  {currentModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.recommended ? "★ " : ""}{m.label}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Continue thread… (↵)"
-            rows={1}
-            className="w-full px-2.5 py-1.5 text-[12px] bg-transparent resize-none outline-none text-foreground placeholder:text-muted-foreground/30 leading-relaxed"
-          />
-          <div className="flex items-center gap-1 px-2 pb-1.5 pt-0.5">
-            <span className="text-[8px] text-muted-foreground/25 font-mono">↵</span>
-            <span className="flex-1" />
-            <button
-              onClick={handleSend}
-              disabled={!text.trim()}
-              className={cn(
-                "flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium transition-colors",
-                text.trim()
-                  ? "bg-primary/90 text-primary-foreground hover:bg-primary"
-                  : "bg-muted text-muted-foreground/30 cursor-not-allowed"
-              )}
-            >
-              <SendHorizonal className="w-2.5 h-2.5" />
-              Send
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Input — same as main panel */}
+      <NewMessageInput threadMode />
     </div>
   );
 }

@@ -12,7 +12,11 @@ import { RoundtableControls } from "./input/RoundtableControls";
 import { ContextBadges } from "./input/ContextBadges";
 import { useSendActions } from "./input/useSendActions";
 
-export function NewMessageInput() {
+interface NewMessageInputProps {
+  threadMode?: boolean;
+}
+
+export function NewMessageInput({ threadMode = false }: NewMessageInputProps) {
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const conversations = useChatStore((s) => s.conversations);
   const activeBranchId = useChatStore((s) => s.activeBranchId);
@@ -73,7 +77,9 @@ export function NewMessageInput() {
     }).catch(() => setRtParticipants(ROUNDTABLE_PARTICIPANTS));
   }, [selectedConversationId, activeBranchId]);
 
-  const isCurrentThreadRunning = !!selectedConversationId && runningThreadIds.includes(selectedConversationId);
+  const threadBranchConvId = useChatStore((s) => s.threadBranchConvId);
+  const effectiveThreadId = threadMode ? threadBranchConvId : selectedConversationId;
+  const isCurrentThreadRunning = !!effectiveThreadId && runningThreadIds.includes(effectiveThreadId);
   const currentQueueLength = messageQueue.filter((q) => q.threadId === selectedConversationId).length;
 
   // 현재 엔진의 모델 목록
@@ -93,6 +99,7 @@ export function NewMessageInput() {
   const { handleSend, handleKeyDown, isRoundtable, hasRtMessages } = useSendActions({
     text, setText, engine, selectedModel, rtMode,
     activeParticipants, setActiveParticipants,
+    threadMode,
   });
 
   const toggleParticipant = (name: string) => {
@@ -116,8 +123,8 @@ export function NewMessageInput() {
 
   return (
     <div className="px-4 pb-3 pt-1.5 shrink-0">
-      {/* Branch stream banner */}
-      {activeBranchId && (() => {
+      {/* Branch stream banner — hide in thread mode (drawer has its own header) */}
+      {!threadMode && activeBranchId && (() => {
         const { branches } = useChatStore.getState();
         const ab = branches.find((b) => b.id === activeBranchId);
         const abIsRT = ab?.mode === "roundtable";

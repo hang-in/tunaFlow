@@ -113,16 +113,21 @@ interface UseSendActionsParams {
   rtMode: RtMode;
   activeParticipants: Set<string>;
   setActiveParticipants: React.Dispatch<React.SetStateAction<Set<string>>>;
+  /** When true, routes sends through sendThreadMessage instead of main send functions */
+  threadMode?: boolean;
 }
 
 export function useSendActions({
   text, setText, engine, selectedModel, rtMode,
   activeParticipants, setActiveParticipants,
+  threadMode = false,
 }: UseSendActionsParams) {
   const {
     selectedConversationId,
+    threadBranchConvId,
     conversations,
     messages,
+    threadMessages,
     isRunning,
     sendMessage,
     sendWithCodex,
@@ -131,16 +136,20 @@ export function useSendActions({
     sendRoundtable,
     sendRoundtableFollowup,
     sendFollowup,
+    sendThreadMessage,
     loadEngineModels,
   } = useChatStore();
 
-  const currentConv = conversations.find((c) => c.id === selectedConversationId);
+  // In thread mode, use thread's shadow conversation for RT detection
+  const effectiveConvId = threadMode ? threadBranchConvId : selectedConversationId;
+  const effectiveMessages = threadMode ? threadMessages : messages;
+  const currentConv = conversations.find((c) => c.id === effectiveConvId);
   const isRoundtable = currentConv?.mode === "roundtable";
-  const hasRtMessages = isRoundtable && messages.some((m) => m.persona);
+  const hasRtMessages = isRoundtable && effectiveMessages.some((m) => m.persona);
 
   const handleSend = async () => {
     let prompt = text.trim();
-    if (!prompt || !selectedConversationId) return;
+    if (!prompt || !effectiveConvId) return;
 
     // !models 명령 처리
     if (prompt === "!models" || prompt === "!models --refresh") {
@@ -162,7 +171,7 @@ export function useSendActions({
       useChatStore.setState((state) => ({
         messages: [...state.messages, {
           id: `local-models-${now}`,
-          conversationId: selectedConversationId,
+          conversationId: effectiveConvId!,
           role: "assistant" as const,
           content: lines.join("\n"),
           timestamp: now,
@@ -185,14 +194,14 @@ export function useSendActions({
         await sendFollowup(handoff.engine, explicitSource.type, explicitSource.content, handoff.goal || undefined);
         return;
       }
-      const lastAssistant = messages.filter((m) => m.role === "assistant" && m.status === "done").pop();
+      const lastAssistant = effectiveMessages.filter((m) => m.role === "assistant" && m.status === "done").pop();
       if (!lastAssistant) {
         // No source — block handoff, show inline guide
         const now = Date.now();
         useChatStore.setState((state) => ({
           messages: [...state.messages, {
             id: `local-guide-${now}`,
-            conversationId: selectedConversationId,
+            conversationId: effectiveConvId!,
             role: "assistant" as const,
             content: `⚠️ **넘길 이전 응답이 없습니다.**\n\n먼저 에이전트에게 질문하고, 응답을 받은 후 handoff를 사용하세요.\n\n입력: \`${prompt}\` → ${handoff.engine}`,
             timestamp: now,
@@ -213,7 +222,7 @@ export function useSendActions({
     if (isRoundtable) {
       // Determine participants: /follow override → RT config (DB) → warn on missing config
       let participants: RoundtableParticipant[];
-      const configParticipants = await getRtConfigParticipants(selectedConversationId);
+      const configParticipants = await getRtConfigParticipants(effectiveConvId);
       const allParticipants = configParticipants ?? ROUNDTABLE_PARTICIPANTS;
       const followCmd = parseFollowCommand(prompt, allParticipants);
       if (followCmd) {
@@ -224,12 +233,12 @@ export function useSendActions({
         participants = configParticipants;
       } else {
         // No RT config found — warn user instead of silent Haiku fallback
-        console.warn("[RT] No rt_config found for", selectedConversationId, "— using default participants");
+        console.warn("[RT] No rt_config found for", effectiveConvId, "— using default participants");
         const now = Date.now();
         useChatStore.setState((state) => ({
           messages: [...state.messages, {
             id: `local-rt-warn-${now}`,
-            conversationId: selectedConversationId,
+            conversationId: effectiveConvId!,
             role: "assistant" as const,
             content: "⚠️ **RT 설정을 불러오지 못했습니다.** 기본 참가자로 실행합니다.\n\n새 RT를 만들거나 사이드바에서 [+]로 다시 설정하세요.",
             timestamp: now,
@@ -243,7 +252,7 @@ export function useSendActions({
       }
 
       // Log actual participants being sent
-      console.log("[RT send] convId:", selectedConversationId, "hasRtMessages:", hasRtMessages,
+      console.log("[RT send] convId:", effectiveConvId, "hasRtMessages:", hasRtMessages,
         "participants:", participants.map((p) => `${p.name}(${p.engine}/${p.model ?? "NO MODEL"})`));
       const noModel = participants.filter((p) => !p.model);
       if (noModel.length > 0) {
@@ -255,6 +264,9 @@ export function useSendActions({
       } else {
         await sendRoundtable(prompt, participants, rtMode);
       }
+    } else if (threadMode) {
+      // Thread mode: route through sendThreadMessage
+      await sendThreadMessage(prompt, engine, selectedModel || undefined);
     } else if (engine === "codex") {
       await sendWithCodex(prompt, selectedModel || undefined);
     } else if (engine === "gemini") {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
 import { getSetting, setSetting } from "@/lib/appStore";
@@ -7,6 +7,8 @@ import { ChatPanel } from "./ChatPanel";
 import { ContextPanel } from "./ContextPanel";
 import { BranchThreadPanel } from "./BranchThreadPanel";
 import { ResizeHandle } from "./ResizeHandle";
+import { FileViewer } from "./chat/FileViewer";
+import { FileViewerContext } from "./chat/fileViewerContext";
 
 // ─── Panel width constraints ─────────────────────────────────────────────────
 const SIDEBAR_MIN = 220;
@@ -97,9 +99,22 @@ export function AppShell() {
 
   const drawerOpen = !!threadBranchId;
 
+  // FileViewer — shared across ChatPanel and BranchThreadPanel
+  const [viewerFile, setViewerFile] = useState<{ path: string; line?: number } | null>(null);
+  const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
+  const projects = useChatStore((s) => s.projects);
+  const projectPath = useMemo(() => {
+    const proj = projects.find((p) => p.key === selectedProjectKey);
+    return proj?.path ?? null;
+  }, [projects, selectedProjectKey]);
+  const fileViewerCtx = useMemo(() => ({
+    openFile: (path: string, line?: number) => setViewerFile({ path, line }),
+  }), []);
+
   if (!loaded) return null;
 
   return (
+    <FileViewerContext.Provider value={fileViewerCtx}>
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">
       {/* ── Sidebar ── */}
       <div style={{ width: sidebarW }} className="shrink-0 h-full">
@@ -173,6 +188,15 @@ export function AppShell() {
           </>
         )}
       </div>
+      {viewerFile && projectPath && (
+        <FileViewer
+          filePath={viewerFile.path}
+          projectPath={projectPath}
+          lineNumber={viewerFile.line}
+          onClose={() => setViewerFile(null)}
+        />
+      )}
     </div>
+    </FileViewerContext.Provider>
   );
 }

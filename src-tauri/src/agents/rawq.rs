@@ -168,6 +168,52 @@ pub fn is_available() -> bool {
     resolve_rawq_bin().is_ok()
 }
 
+// ─── Daemon management ──────────────────────────────────────────────────────
+
+/// Ensure the rawq embedding daemon is running in background.
+/// The daemon pre-loads the ONNX model and serves embedding requests via IPC,
+/// making subsequent index/search operations near-instant instead of 30-60s cold start.
+pub fn ensure_daemon() {
+    let Ok(bin) = resolve_rawq_bin() else { return; };
+
+    // Check if already running
+    let status = Command::new(&bin)
+        .args(["daemon", "status"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    if let Ok(s) = status {
+        if s.success() {
+            eprintln!("[rawq] daemon already running");
+            return;
+        }
+    }
+
+    // Start daemon in background
+    eprintln!("[rawq] starting daemon...");
+    let result = Command::new(&bin)
+        .args(["daemon", "start", "--background", "--idle-timeout", "30"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    match result {
+        Ok(_) => eprintln!("[rawq] daemon started"),
+        Err(e) => eprintln!("[rawq] daemon start failed: {}", e),
+    }
+}
+
+/// Stop the rawq daemon if running.
+#[allow(dead_code)]
+pub fn stop_daemon() {
+    let Ok(bin) = resolve_rawq_bin() else { return; };
+    let _ = Command::new(&bin)
+        .args(["daemon", "stop"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    eprintln!("[rawq] daemon stopped");
+}
+
 // ─── Index management ────────────────────────────────────────────────────────
 
 /// Structured index info from `rawq index status --json`.
@@ -254,11 +300,34 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
     }
 
     let bin = resolve_rawq_bin()?;
-    let output = Command::new(&bin)
+    // Note: rawq's WalkBuilder respects .gitignore automatically.
+    // Explicit -x patterns are not needed for standard ignores.
+    let mut child = Command::new(&bin)
         .args(["index", "build", project_path, "--json"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
-        .output()
+        .spawn()
+        .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
+
+    // Timeout: 180 seconds max for index build (embedding model loading + vectorization)
+    let timeout = std::time::Duration::from_secs(180);
+    let t0 = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if t0.elapsed() > timeout {
+                    let _ = child.kill();
+                    eprintln!("[rawq] index build timed out after {}s", t0.elapsed().as_secs());
+                    return Err(RawqError::ExecFailed("index build timed out (60s)".into()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(e) => return Err(RawqError::ExecFailed(e.to_string())),
+        }
+    }
+
+    let output = child.wait_with_output()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);

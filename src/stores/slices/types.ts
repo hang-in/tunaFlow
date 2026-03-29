@@ -87,6 +87,7 @@ export interface ChatState {
   activeSkills: string[];
   crossSessionIds: string[];
   rawqStatus: RawqStatus | null;
+  projectLoading: string | null;
   engineModels: EngineModel[];
   /** Pending handoff source set by UI actions (artifact forward, plan forward, etc.) */
   handoffSource: { type: string; content: string } | null;

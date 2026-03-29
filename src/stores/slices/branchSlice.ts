@@ -230,45 +230,74 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
   },
 
   sendThreadMessage: async (prompt: string, engine?: string, model?: string) => {
-    const { threadBranchConvId, selectedProjectKey } = get();
-    if (!threadBranchConvId || !selectedProjectKey) return;
+    const { threadBranchConvId, threadBranchId, selectedProjectKey, activeSkills, crossSessionIds } = get();
+    if (!threadBranchConvId || !selectedProjectKey || !threadBranchId) return;
 
-    const tempMsg: Message = {
-      id: `temp-thread-${Date.now()}`,
-      conversationId: threadBranchConvId,
-      role: "user",
-      content: prompt,
-      timestamp: Date.now(),
-      status: "done",
-    };
+    // Add to runningThreadIds for thread-aware tracking
+    get()._startRun(threadBranchConvId);
+
+    const now = Date.now();
     set((state) => ({
-      isRunning: true,
-      threadMessages: [...state.threadMessages, tempMsg],
+      threadMessages: [
+        ...state.threadMessages,
+        { id: `temp-user-${now}`, conversationId: threadBranchConvId, role: "user", content: prompt, timestamp: now, status: "done" },
+        { id: `temp-thinking-${now}`, conversationId: threadBranchConvId, role: "assistant", content: "", progressContent: `${engine ?? "claude"} starting...`, timestamp: now, status: "streaming", engine: engine ?? "claude", model },
+      ],
     }));
 
-    try {
-      const input: SendWithClaudeInput = {
-        projectKey: selectedProjectKey,
-        conversationId: threadBranchConvId,
-        prompt,
-        model,
-      };
-      const engineKey = engine ?? "claude";
-      if (engineKey === "codex") {
-        await invoke<Message>("send_with_codex", { input });
-      } else if (engineKey === "gemini") {
-        await invoke<Message>("send_with_gemini", { input });
-      } else if (engineKey === "opencode") {
-        await invoke<Message>("send_with_opencode", { input });
-      } else {
-        await invoke<Message>("stream_with_claude", { input });
-      }
-      const threadMessages = await invoke<Message[]>("list_messages", {
-        conversationId: threadBranchConvId,
+    const input: SendWithClaudeInput = {
+      projectKey: selectedProjectKey,
+      conversationId: threadBranchConvId,
+      prompt,
+      model,
+      activeSkills,
+      crossSessionIds,
+    };
+
+    // Event listeners for streaming updates
+    const { listen } = await import("@tauri-apps/api/event");
+    const engineKey = engine ?? "claude";
+    const progressEvent = `${engineKey}:progress`;
+    const chunkEvent = `${engineKey}:chunk`;
+
+    const replaceOrAdd = (messageId: string, field: "content" | "progressContent", text: string) => {
+      set((state) => {
+        const existing = state.threadMessages.find((m) => m.id === messageId);
+        if (existing) {
+          return { threadMessages: state.threadMessages.map((m) => m.id === messageId ? { ...m, [field]: text } : m) };
+        }
+        const withoutPlaceholder = state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-"));
+        return { threadMessages: [...withoutPlaceholder, { id: messageId, conversationId: threadBranchConvId!, role: "assistant" as const, content: field === "content" ? text : "", progressContent: field === "progressContent" ? text : undefined, timestamp: Date.now(), status: "streaming" as const, engine: engineKey, model }] };
       });
-      set({ threadMessages, isRunning: false });
+    };
+
+    const ulP = await listen<{ messageId: string; text: string }>(progressEvent, (e) => replaceOrAdd(e.payload.messageId, "progressContent", e.payload.text));
+    const ulC = chunkEvent ? await listen<{ messageId: string; text: string }>(chunkEvent, (e) => replaceOrAdd(e.payload.messageId, "content", e.payload.text)) : () => {};
+    const cleanup = () => { ulP(); ulC(); ulD(); ulE(); };
+
+    const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      cleanup();
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId! });
+      set({ threadMessages }); get()._endRun(threadBranchConvId!);
+    });
+    const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      cleanup(); set({ error: e.payload.error });
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId! });
+      set({ threadMessages }); get()._endRun(threadBranchConvId!);
+    });
+
+    try {
+      const cmd = engineKey === "codex" ? "start_codex_run"
+        : engineKey === "gemini" ? "start_gemini_stream"
+        : engineKey === "opencode" ? "start_opencode_run"
+        : "start_claude_stream";
+      await invoke<{ messageId: string }>(cmd, { input });
     } catch (e) {
-      set({ error: String(e), isRunning: false });
+      cleanup();
+      set((state) => ({ error: String(e), threadMessages: state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")) }));
+      get()._endRun(threadBranchConvId);
     }
   },
 });

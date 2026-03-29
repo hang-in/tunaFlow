@@ -39,8 +39,8 @@ TracePanel을 "trace 이력 뷰어"에서 "런타임 상태 대시보드"로 전
 
 - `src/components/tunaflow/context-panel/TracePanel.tsx`
 
-## Phase 2 (후순위)
+## Phase 2 (완료)
 
-- [ ] 실행 중 경과 시간 실시간 카운터 (현재는 갱신 시점 기준)
-- [ ] span 그룹핑 (trace_id 기반)
-- [ ] 엔진별 aggregate 분리 표시
+- [x] 실행 중 경과 시간 실시간 카운터 (1초 tick interval)
+- [x] 엔진별 aggregate 분리 표시 (다중 엔진 사용 시 breakdown)
+- [ ] span 그룹핑 (trace_id 기반) — 후순위

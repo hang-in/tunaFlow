@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { StatusBar } from "./StatusBar";
@@ -8,8 +8,6 @@ import { NewMessageInput } from "./NewMessageInput";
 import { ChatObjectTabs } from "./ChatObjectTabs";
 import { InlineRename } from "./InlineRename";
 import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
-import { FileViewer } from "./chat/FileViewer";
-import { FileViewerContext } from "./chat/fileViewerContext";
 import { Users, MessageSquare } from "lucide-react";
 
 export function ChatPanel() {
@@ -20,6 +18,7 @@ export function ChatPanel() {
   const conversations = useChatStore((s) => s.conversations);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
   const error = useChatStore((s) => s.error);
+  const projectLoading = useChatStore((s) => s.projectLoading);
   const activeBranchId = useChatStore((s) => s.activeBranchId);
   const createBranch = useChatStore((s) => s.createBranch);
   const createMemo = useChatStore((s) => s.createMemo);
@@ -28,22 +27,9 @@ export function ChatPanel() {
   const renameConversation = useChatStore((s) => s.renameConversation);
   const deleteMessagePair = useChatStore((s) => s.deleteMessagePair);
 
-  const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
-  const projects = useChatStore((s) => s.projects);
-
   const bottomRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<"stream" | "roundtable">("stream");
   const [rtDialogCheckpoint, setRtDialogCheckpoint] = useState<string | null>(null);
-  const [viewerFile, setViewerFile] = useState<{ path: string; line?: number } | null>(null);
-
-  const projectPath = useMemo(() => {
-    const proj = projects.find((p) => p.key === selectedProjectKey);
-    return proj?.path ?? null;
-  }, [projects, selectedProjectKey]);
-
-  const fileViewerCtx = useMemo(() => ({
-    openFile: (path: string, line?: number) => setViewerFile({ path, line }),
-  }), []);
 
   const currentConv = conversations.find((c) => c.id === selectedConversationId);
   const isRoundtable = currentConv?.mode === "roundtable";
@@ -70,7 +56,6 @@ export function ChatPanel() {
   }
 
   return (
-    <FileViewerContext.Provider value={fileViewerCtx}>
     <div data-testid="chat-panel" className="flex flex-col flex-1 min-w-0 h-full bg-background">
       {/* Breadcrumb path */}
       <StatusBar />
@@ -198,15 +183,21 @@ export function ChatPanel() {
         onClose={() => setRtDialogCheckpoint(null)}
         checkpointId={rtDialogCheckpoint}
       />
-      {viewerFile && projectPath && (
-        <FileViewer
-          filePath={viewerFile.path}
-          projectPath={projectPath}
-          lineNumber={viewerFile.line}
-          onClose={() => setViewerFile(null)}
-        />
+      {/* Project loading modal */}
+      {projectLoading && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px]" />
+          <div className="relative bg-background border border-border/40 rounded-lg shadow-xl px-8 py-6 flex flex-col items-center gap-3">
+            <div className="flex gap-1">
+              <span className="typing-dot w-2 h-2 rounded-full bg-primary" />
+              <span className="typing-dot w-2 h-2 rounded-full bg-primary" />
+              <span className="typing-dot w-2 h-2 rounded-full bg-primary" />
+            </div>
+            <p className="text-[13px] font-medium text-foreground">{projectLoading}</p>
+            <p className="text-[10px] text-muted-foreground/50">This may take a moment for large projects</p>
+          </div>
+        </div>
       )}
     </div>
-    </FileViewerContext.Provider>
   );
 }

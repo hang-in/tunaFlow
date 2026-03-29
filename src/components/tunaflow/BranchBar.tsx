@@ -120,12 +120,6 @@ export function BranchBar() {
                 {b.status === "active" && (
                   <>
                     <button
-                      onClick={() => openBranchStream(b.id)}
-                      className="text-[9px] text-muted-foreground hover:text-foreground hover:underline"
-                    >
-                      Full
-                    </button>
-                    <button
                       onClick={() => adoptBranch(b.id, selectedConversationId!)}
                       className="text-[9px] text-status-approved hover:underline"
                     >

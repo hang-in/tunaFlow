@@ -57,6 +57,12 @@ pub fn run() {
                 read: std::sync::Arc::new(std::sync::Mutex::new(read_conn)),
             });
             app.manage(CancelRegistry(std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()))));
+
+            // Start rawq daemon in background — pre-loads embedding model for fast indexing/search
+            std::thread::spawn(|| {
+                crate::agents::rawq::ensure_daemon();
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -66,6 +72,7 @@ pub fn run() {
             commands::projects::get_project,
             commands::projects::validate_project_path,
             commands::projects::ensure_rawq_index,
+            commands::projects::start_rawq_index,
             commands::projects::get_rawq_status,
             // Conversation
             commands::conversations::list_conversations,
