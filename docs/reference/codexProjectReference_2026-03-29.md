@@ -40,11 +40,13 @@
 
 ### 1. Conversation / Branch / Roundtable
 
-- main conversation
-- branch shadow conversation
-- roundtable mode
+- main conversation (chat)
+- branch = conversation의 하위 분기 (shadow conversation `branch:{branchId}`에 저장)
+- RT(Roundtable) = branch의 협업 모드 (`branches.mode = "roundtable"`)
+- **RT는 독립 conversation이 아니라 항상 채팅의 branch로 생성**
+- 사이드바: Chats 하위 트리로 RT/Branch를 계층 표시
 
-즉 하나의 프로젝트 안에서 chat, branch, RT가 함께 돌아간다.
+즉 하나의 프로젝트 안에서 chat이 루트이고, branch와 RT는 chat의 하위에서 동작한다.
 
 ### 2. ContextPack 기반 agent 실행
 
@@ -140,12 +142,12 @@ Codex 기준 판단:
 
 `tunaFlow`는 기능은 강하지만 채팅 표면 UI는 `tunaChat`보다 덜 다듬어져 있다.
 
-우선순위:
+현황:
 
-1. codeblock UX
-2. file viewer / path click
-3. message density
-4. virtualization
+1. codeblock UX — 완료 (헤더 바, collapse/expand, copy 피드백). 사용자 테스트 후 추가 개선 가능
+2. file viewer / path click — 완료 (inline 경로 감지 + FileViewer 모달). 사용자 테스트 후 추가 개선 가능
+3. message density — 진행 필요
+4. virtualization — 200+ 메시지 성능 이슈 시 착수
 
 ## 지금 새 세션에서 Claude가 특히 조심할 것
 

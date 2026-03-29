@@ -1,6 +1,6 @@
 # tunaFlow 구현 현황
 
-최종 갱신: 2026-03-28 (실제 코드 기준 검증)
+최종 갱신: 2026-03-29 (실제 코드 기준 검증)
 SSOT: `docs/reference/dataModelRevised.md`
 
 ---
@@ -81,11 +81,11 @@ SSOT: `docs/reference/dataModelRevised.md`
 | Agent collaboration Phase 1-3 | done | shared brief, findings, artifact handoff, ownership, follow-up |
 | Progress-first streaming | done | Phase 1-3 완료 |
 | Thread-local queue Phase A+B | done | runningThreadIds 복수 지원, 프로젝트간 병렬 |
-| RT branch | done | branches.mode, RT분기, brief visibility, adopt summary |
+| RT branch | done | branches.mode, RT분기, brief visibility, adopt summary, 드로어 RT 완전 동작 (RoundtableView, sendThreadRoundtable, participant telemetry) |
 | 자연어 handoff Phase A | done | alias 파서, source 우선순위, no-source guard |
 | Markdown 렌더링 | done | react-markdown + remark-gfm + MarkdownComponents |
 | Branch-git 기반 정리 | done (1차) | 모델 주석 강화, UI 표시 자리 마련 |
-| Sidebar 프로젝트 트리 | done (1차) | Projects / Roundtables / Branches / Files 4섹션, 프로젝트 트리 기반 탐색 |
+| Sidebar 프로젝트 트리 | done | Chats 하위 트리로 RT/Branch 통합, RoundtablesSection/BranchesSection 폐기 |
 
 ### 2026-03-27 세션
 
@@ -114,16 +114,16 @@ SSOT: `docs/reference/dataModelRevised.md`
 | Model discovery | done | Codex ~/.codex/models_cache.json + Gemini node discovery + fallback |
 | Engine normalizeEngine | done | "claude-code" → "claude" 매핑 + AGENT_TEXT_COLORS |
 | Enter=send, Shift+Enter=newline | done | NewMessageInput + BranchThreadPanel |
-| Sidebar selection-centric | done | Projects flat select, Chats/RT/Branches/Files 현재 프로젝트 전용 |
+| Sidebar selection-centric | done | Projects flat select, Chats (RT/Branch 하위 트리) / Files 현재 프로젝트 전용 |
 | Sidebar VS Code tree style | done | TreeRow + indent guides + isParent depth 보정 |
 | Non-streaming thread spawn | done | codex/gemini/opencode/claude 모두 std::thread::spawn으로 UI freeze 방지 |
 | Click-outside dropdown close | done | NewMessageInput + BranchThreadPanel + MessageItem followup |
-| RT creation dialog | done | CreateRoundtableDialog + participant/model/mode 설정 + sidebar [+] 진입 |
+| RT creation dialog | done | CreateRoundtableDialog + participant/model/mode 설정 + sidebar [+] 진입 + 항상 branch로 생성 + 부모 채팅 선택 UI |
 | RT config → first run | done | sessionStorage per-conversation + useSendActions 연결 |
 | Message pair deletion | done | delete_message_pair command + FK cleanup + UI confirm |
 | Adopt empty branch → delete | done | empty_branch 에러 → confirm 삭제 + drawer 정리 |
 | Adopt engine/model tracking | done | 마지막 assistant의 engine/model을 adopt 요약에 포함 |
-| Branch parent conv auto-load | done | openThread에서 부모 conversation 먼저 로드 |
+| Branch parent conv auto-load | done | openThread에서 부모 conversation 먼저 로드 + 미선택 상태에서 shadow conv parentId 기반 해석 |
 | Scalability refactor Phase 1-5 | done | chatStore 6 slices, Sidebar 8 sections, Input 5 sub-components, Message 3 shared, agents.rs send_common |
 | User message background | done | bg-white/[0.035] 말풍선 텍스트 배경 |
 | Project-centric docs | done | 프로젝트 중심 설계 원칙 문서화 |
@@ -153,6 +153,17 @@ SSOT: `docs/reference/dataModelRevised.md`
 | rawq sidecar bundle | done (macOS) | externalBin + build scripts + binary resolution 4단계. Windows는 미검증 |
 | Gemini model discovery 수정 | done | `npm root -g` 기반 동적 탐색 + fallback 목록 갱신 (3.x 시리즈 추가) |
 | Skills runtime snapshot | done | `scripts/publish-skills.sh` — 6 vendor 246 skills → `~/.tunaflow/skills` 발행 |
+
+### 2026-03-29 세션
+
+| 기능 | 상태 | 비고 |
+|---|---|---|
+| 드로어 RT 렌더링 | done | BranchThreadPanel → RoundtableView 조건부 렌더링 |
+| sendThreadRoundtable | done | branchSlice thread-context RT 전용 함수 (sendThreadRoundtable/sendThreadRoundtableFollowup) |
+| openThread shadow conv 추가 | done | shadow conversation을 conversations 배열에 추가 (RT 감지 전제 조건) |
+| checkpointId 없는 branch Adopt 숨김 | done | 사이드바 직접 생성 RT에서 Adopt 제거 |
+| RT branch-only 생성 | done | CreateRoundtableDialog에서 독립 RT conversation 폐기, 항상 branch로 생성 |
+| 사이드바 Chats 하위 트리 | done | RT/Branch를 Chats 하위로 계층화, RoundtablesSection/BranchesSection 폐기 |
 
 ### 미구현
 

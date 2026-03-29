@@ -31,7 +31,7 @@
 
 ### 1. Skills가 workspace 안에 있다
 
-현재 `ContextPanel > Artifacts > Skills` 구조는
+현재 `ContextPanel` 내 `Skills` 탭 (`src/components/tunaflow/context-panel/SkillsPanel.tsx`) 구조는
 작업 중에 사용자가 skill을 직접 토글하는 흐름을 전제한다.
 
 이 구조는 아래 문제를 만든다.
@@ -62,7 +62,7 @@
 
 - 좌측: Workspace Tree
   - Projects
-  - Chats / RT / Branches
+  - Chats (RT/Branch는 하위 트리)
   - Artifacts
   - Files
 - 중앙 상단 탭:
@@ -188,6 +188,7 @@
 - 입력창에서 skill이 아니라 agent profile 선택
 - 기존 activeSkills는 내부 구현 detail로 후퇴
 - profile에 model/persona/default skills 연결
+- 제약: RT는 독립 conversation이 아니라 branch-only로 생성됨 — Agent Profile은 branch/RT 양쪽에서 동작해야 함
 
 ### Phase 3. chops-style Skill Registry
 
@@ -212,7 +213,7 @@
 
 ## 완료 기준
 
-1. workspace에서 skill toggle이 사라진다
+1. workspace에서 skill toggle이 Settings로 이동한다
 2. chat input은 agent profile 중심이 된다
 3. settings에서 skill/persona/agent를 관리할 수 있다
 4. applied skills가 실행 결과에 연결된다
