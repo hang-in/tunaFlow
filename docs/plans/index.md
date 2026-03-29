@@ -38,6 +38,7 @@
 | [projectOnboardingLifecyclePlan](./projectOnboardingLifecyclePlan.md) | folder picker + validation + auto main conv + rawq indexing | workspace scan, template, guided setup |
 | [threadModelRoundtableRedesign](./threadModelRoundtableRedesign.md) | branch.mode + RT branch + shadow conversation + 드로어 RT 완성 + 사이드바 통합 | reviewer thread |
 | [gitSyncBranchModelPlan_2026-03-29](./gitSyncBranchModelPlan_2026-03-29.md) | branch↔git 동기화 모델 설계. adopt=merge, delete=pointer-only, message 보존 | git CLI 연동, .tunaflow/ 구조 |
+| [settingsShellIaPlan_2026-03-29](./settingsShellIaPlan_2026-03-29.md) | Settings Shell MVP — Agents/Personas/Skills/Runtime 섹션 구조 | Skills 이식 완료, 나머지 placeholder |
 | [projectScopedConcurrencyPlan](./projectScopedConcurrencyPlan.md) | thread-local queue 구현 (선행 조건 충족) | 프로젝트 간 병렬 UI 표시, cross-project queue |
 | [rawqRequiredSidecarPlan](./rawqRequiredSidecarPlan.md) | rawq를 optional fallback이 아니라 필수 sidecar로 다루는 전환 계획 | vendor/sidecar 정착, 배포 경로 정리 |
 | [skillRegistryPlan](./skillRegistryPlan.md) | chops 참고 메모 기반 상위 계획 | UI registry, collections, applied skill visibility |

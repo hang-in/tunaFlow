@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useChatStore } from "@/stores/chatStore";
-import { Waves, ChevronDown, FolderOpen, Folder, Trash2, Loader2 } from "lucide-react";
+import { Waves, ChevronDown, FolderOpen, Folder, Trash2, Loader2, Settings } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { Branch } from "@/types";
 
@@ -9,8 +9,7 @@ import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 import { FilesSection } from "./sidebar/FilesSection";
 import { AddProjectForm } from "./sidebar/AddProjectForm";
 import { useProjectBranches } from "./sidebar/useProjectBranches";
-import { SkillsPanel } from "./context-panel/SkillsPanel";
-import { SectionHeader } from "./sidebar/TreeRow";
+import { SettingsPanel } from "./SettingsPanel";
 
 export function Sidebar() {
   const projects = useChatStore((s) => s.projects);
@@ -31,12 +30,10 @@ export function Sidebar() {
   const openThread = useChatStore((s) => s.openThread);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
   const messageQueue = useChatStore((s) => s.messageQueue);
-  const activeSkills = useChatStore((s) => s.activeSkills);
-
   const [renameCounter, setRenameCounter] = useState(0);
-  const [skillsOpen, setSkillsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [showCreateRT, setShowCreateRT] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Project dropdown state
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
@@ -219,16 +216,6 @@ export function Sidebar() {
               onCreateRT={() => setShowCreateRT(true)}
             />
 
-            <SectionHeader title="Skills" expanded={skillsOpen} onToggle={() => setSkillsOpen(!skillsOpen)}
-              actions={activeSkills.length > 0 ? (
-                <span className="text-[8px] bg-primary/10 text-primary/60 px-1 rounded">{activeSkills.length}</span>
-              ) : undefined} />
-            {skillsOpen && (
-              <div className="px-1 pb-1 max-h-[300px] overflow-y-auto">
-                <SkillsPanel />
-              </div>
-            )}
-
             <FilesSection
               filesOpen={filesOpen}
               setFilesOpen={setFilesOpen}
@@ -238,7 +225,19 @@ export function Sidebar() {
         )}
       </nav>
 
+      {/* Settings button — bottom left */}
+      <div className="shrink-0 px-3 py-2">
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-colors w-full"
+        >
+          <Settings className="w-4 h-4" />
+          Settings
+        </button>
+      </div>
+
       <CreateRoundtableDialog open={showCreateRT} onClose={() => setShowCreateRT(false)} />
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </aside>
   );
 }
