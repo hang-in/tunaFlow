@@ -93,6 +93,8 @@ export interface ChatState {
   handoffSource: { type: string; content: string } | null;
   /** Message ID to scroll to and highlight (set by memo click, cleared after scroll) */
   scrollToMessageId: string | null;
+  /** Current persona prompt fragment — set by profile/persona selection, included in agent requests */
+  personaFragment: string | null;
 
   setHandoffSource: (source: { type: string; content: string } | null) => void;
   _startRun: (threadId: string) => void;

@@ -43,5 +43,7 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-29/agent_profile_chat_input_binding_prompt](./2026-03-29/agent_profile_chat_input_binding_prompt.md): Agent Profile을 실제 채팅 입력과 실행 흐름에 연결하는 프롬프트
 - [2026-03-29/agent_profile_usage_polish_prompt](./2026-03-29/agent_profile_usage_polish_prompt.md): Agent Profile 선택 결과와 Custom 규칙을 더 명확히 보이게 하는 UX 보강 프롬프트
 - [2026-03-29/persona_baseline_review_prompt](./2026-03-29/persona_baseline_review_prompt.md): 기본 persona 6종 문서를 현재 Agent Profile 구조와 비교 검토하는 프롬프트
+- [2026-03-29/persona_runtime_binding_prompt](./2026-03-29/persona_runtime_binding_prompt.md): 선택된 persona를 실제 runtime prompt 조립과 applied persona 표시에 연결하는 프롬프트
+- [2026-03-29/chops_context_hub_integration_review_prompt](./2026-03-29/chops_context_hub_integration_review_prompt.md): chops/context-hub/tunaFlow 역할 분리와 flow agent 선행 조건을 검토하는 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

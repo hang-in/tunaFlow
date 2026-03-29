@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { getSetting, setSetting } from "@/lib/appStore";
+import { DEFAULT_PERSONAS } from "@/lib/defaultPersonas";
 import { ROUNDTABLE_PARTICIPANTS } from "@/lib/constants";
 import { SendHorizonal, Users } from "lucide-react";
 import type { RtMode, RoundtableParticipant, AgentProfile } from "@/types";
@@ -67,6 +68,9 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     for (const skill of profile.defaultSkills) {
       if (!currentSkills.has(skill)) toggleSkill(skill);
     }
+    // Set persona fragment in store for runtime injection
+    const persona = profile.personaId ? DEFAULT_PERSONAS.find((p) => p.id === profile.personaId) : null;
+    useChatStore.setState({ personaFragment: persona?.promptFragment ?? null });
   };
 
   const handleProfileSelect = (profileId: string | null) => {
@@ -75,6 +79,9 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     if (profileId) {
       const profile = profiles.find((p) => p.id === profileId);
       if (profile) applyProfile(profile);
+    } else {
+      // Custom mode — clear persona
+      useChatStore.setState({ personaFragment: null });
     }
   };
   const [activeParticipants, setActiveParticipants] = useState<Set<string>>(

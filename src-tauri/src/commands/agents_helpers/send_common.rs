@@ -75,6 +75,7 @@ pub fn build_normalized_prompt(
     project_path: Option<&str>,
     active_skills: &[String],
     cross_session_ids: &[String],
+    persona_fragment: Option<&str>,
 ) -> String {
     use super::context_pack::*;
     use crate::guardrail;
@@ -97,6 +98,13 @@ pub fn build_normalized_prompt(
     // Project
     if let Some(p) = project_path {
         sections.push(format!("Project: {}", p));
+    }
+
+    // Persona section (role contract)
+    if let Some(fragment) = persona_fragment {
+        if !fragment.trim().is_empty() {
+            sections.push(format!("## Persona\n\n{}", fragment.trim()));
+        }
     }
 
     // Recent conversation context

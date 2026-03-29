@@ -170,6 +170,8 @@ export interface SendWithClaudeInput {
   activeSkills?: string[];
   /** Conversation IDs for cross-session context (step 3.5) */
   crossSessionIds?: string[];
+  /** Persona prompt fragment — injected as persona section in normalized prompt */
+  personaFragment?: string;
 }
 
 export interface RoundtableParticipant {
