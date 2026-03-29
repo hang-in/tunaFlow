@@ -112,7 +112,7 @@ export interface ChatState {
   sendRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
   sendRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
   loadBranches: (conversationId: string) => Promise<void>;
-  createBranch: (conversationId: string, checkpointId?: string, label?: string, mode?: string) => Promise<void>;
+  createBranch: (conversationId: string, checkpointId?: string, label?: string, mode?: string, parentBranchId?: string) => Promise<void>;
   deleteBranch: (branchId: string) => Promise<void>;
   renameConversation: (id: string, customLabel: string) => Promise<void>;
   deleteMessagePair: (messageId: string) => Promise<void>;

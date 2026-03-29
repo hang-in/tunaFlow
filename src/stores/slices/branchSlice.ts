@@ -56,9 +56,9 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
     }
   },
 
-  createBranch: async (conversationId: string, checkpointId?: string, label?: string, mode?: string) => {
+  createBranch: async (conversationId: string, checkpointId?: string, label?: string, mode?: string, parentBranchId?: string) => {
     try {
-      const input: CreateBranchInput = { conversationId, checkpointId, label, mode };
+      const input: CreateBranchInput = { conversationId, checkpointId, label, mode, parentBranchId };
       await invoke<Branch>("create_branch", { input });
       const branches = await invoke<Branch[]>("list_branches", { conversationId });
       set({ branches });

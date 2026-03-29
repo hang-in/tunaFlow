@@ -339,6 +339,18 @@ pub fn adopt_branch(
         [&input.branch_id],
     )?;
 
+    // Archive all descendant branches recursively
+    conn.execute_batch(&format!(
+        "WITH RECURSIVE descendants AS (
+           SELECT id FROM branches WHERE parent_branch_id = '{bid}'
+           UNION ALL
+           SELECT b.id FROM branches b JOIN descendants d ON b.parent_branch_id = d.id
+         )
+         UPDATE branches SET status = 'archived'
+         WHERE id IN (SELECT id FROM descendants) AND status = 'active';",
+        bid = input.branch_id,
+    ))?;
+
     // Get engine/model from the last assistant message in the branch
     let (last_engine, last_model): (Option<String>, Option<String>) = conn
         .query_row(

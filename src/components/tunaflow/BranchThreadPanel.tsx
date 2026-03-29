@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { X, Check, GitBranch, Users, Trash2 } from "lucide-react";
+import { X, Check, GitBranch, Users, Trash2, ChevronLeft } from "lucide-react";
 import { AgentAvatar } from "./AgentAvatar";
 import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -26,6 +26,7 @@ export function BranchThreadPanel() {
     createMemo,
     openThread,
     branches,
+    conversations,
   } = useChatStore();
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -39,10 +40,33 @@ export function BranchThreadPanel() {
   const threadBranch = branches.find((b) => b.id === threadBranchId);
   const isRT = threadBranch?.mode === "roundtable";
 
+  // Parent branch for breadcrumb navigation
+  const parentBranch = threadBranch?.parentBranchId
+    ? branches.find((b) => b.id === threadBranch.parentBranchId)
+    : null;
+  const parentConv = selectedConversationId
+    ? conversations.find((c) => c.id === selectedConversationId)
+    : null;
+  // Show back button: depth 1 → "← Main", depth 2+ → "← parentLabel"
+  const hasParent = !!threadBranch?.parentBranchId || !!threadBranch?.checkpointId;
+
   const handleAdopt = async () => {
     if (!selectedConversationId) return;
     await adoptBranch(threadBranchId, selectedConversationId);
-    closeThread();
+    // Navigate to parent branch or close
+    if (threadBranch?.parentBranchId) {
+      openThread(threadBranch.parentBranchId);
+    } else {
+      closeThread();
+    }
+  };
+
+  const handleBack = () => {
+    if (parentBranch) {
+      openThread(parentBranch.id);
+    } else {
+      closeThread();
+    }
   };
 
   // Parent message meta
@@ -57,25 +81,39 @@ export function BranchThreadPanel() {
 
   return (
     <div className="flex flex-col w-full h-full bg-background">
-      {/* Header — RT vs Branch differentiation */}
-      <div className="flex items-center gap-2.5 px-3.5 h-10 border-b border-border/40 shrink-0">
+      {/* Header with breadcrumb */}
+      <div className="flex items-center gap-1.5 px-3 h-10 shrink-0">
+        {/* Back button / breadcrumb */}
+        {hasParent && (
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/50 hover:text-foreground hover:bg-accent/50 transition-colors shrink-0"
+            title={parentBranch ? (parentBranch.customLabel ?? parentBranch.label) : (parentConv?.customLabel ?? parentConv?.label ?? "Main")}
+          >
+            <ChevronLeft className="w-3 h-3" />
+            <span className="truncate max-w-[80px]">
+              {parentBranch ? (parentBranch.customLabel ?? parentBranch.label) : "Main"}
+            </span>
+          </button>
+        )}
+
+        {/* Current branch */}
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           {isRT
             ? <Users className="w-3.5 h-3.5 text-agent-gemini/60 shrink-0" />
             : <GitBranch className="w-3 h-3 text-primary/60 shrink-0" />}
           <h2 className="text-[12px] font-medium text-foreground truncate min-w-0">
-            {threadBranchId ? (
-              <InlineRename value={threadBranchLabel ?? ""} onSave={(v) => renameBranch(threadBranchId, v)} inputClassName="text-[11px] w-full" />
-            ) : threadBranchLabel}
+            <InlineRename value={threadBranchLabel ?? ""} onSave={(v) => renameBranch(threadBranchId, v)} inputClassName="text-[11px] w-full" />
           </h2>
           <span className={cn("text-[8px] font-medium px-1 py-0.5 rounded uppercase tracking-wider shrink-0",
             isRT ? "text-agent-gemini/60 bg-agent-gemini/8" : "text-primary/50 bg-primary/6"
           )}>
-            {isRT ? "Roundtable" : "Branch"}
+            {isRT ? "RT" : "Branch"}
           </span>
         </div>
+
+        {/* Actions */}
         <div className="flex items-center gap-0.5 shrink-0">
-          {/* Adopt only for branches with a checkpoint (forked from a message) */}
           {threadBranch?.checkpointId && (
             <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
               <Check className="w-2.5 h-2.5" /> Adopt
@@ -97,7 +135,7 @@ export function BranchThreadPanel() {
 
       {/* Parent anchor */}
       {threadParentMessage && (
-        <div className="flex gap-2.5 px-3.5 py-2 border-b border-border/30 bg-accent/10 shrink-0">
+        <div className="flex gap-2.5 px-3.5 py-2 bg-accent/10 shrink-0">
           <div className="shrink-0 mt-0.5">
             <AgentAvatar engine={threadParentMessage.engine} isUser={threadParentMessage.role === "user"} size="md" />
           </div>
@@ -132,7 +170,7 @@ export function BranchThreadPanel() {
             <RoundtableView
               messages={threadMessages}
               conversationId={threadBranchConvId ?? undefined}
-              onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id) : undefined}
+              onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id, undefined, undefined, threadBranchId) : undefined}
             />
             <div ref={bottomRef} />
           </>
@@ -145,21 +183,17 @@ export function BranchThreadPanel() {
                 && prev.engine === msg.engine
                 && prev.persona === msg.persona
                 && msg.status !== "streaming";
-              // Branch badges for this message within the thread
               const msgBranches = branches.filter((b) => b.checkpointId === msg.id);
               return (
                 <MessageItem
                   key={msg.id}
                   message={msg}
                   grouped={grouped}
-                  onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id) : undefined}
+                  onBranch={threadBranchConvId ? (id) => createBranch(threadBranchConvId, id, undefined, undefined, threadBranchId) : undefined}
                   onMemo={(id) => createMemo(id, msg.content)}
                   onFollowup={(engine, content) => sendThreadMessage(content, engine as any)}
                   threadBranches={msgBranches.length > 0 ? msgBranches : undefined}
-                  onOpenThread={(branchId) => {
-                    closeThread();
-                    setTimeout(() => openThread(branchId), 100);
-                  }}
+                  onOpenThread={(branchId) => openThread(branchId)}
                 />
               );
             })}
@@ -175,7 +209,7 @@ export function BranchThreadPanel() {
         )}
       </div>
 
-      {/* Input — same as main panel */}
+      {/* Input */}
       <NewMessageInput threadMode />
     </div>
   );
