@@ -320,6 +320,22 @@ pub fn build_rawq_section(project_path: Option<&str>, prompt: &str) -> Option<St
         return None;
     }
 
+    // Skip search if no index exists (empty project, not yet indexed)
+    match rawq::index_status(path) {
+        Ok(Some(info)) => {
+            // info has files/chunks — proceed with search
+            eprintln!("[context_pack] rawq index: {} files", info.files);
+            if info.files == 0 {
+                eprintln!("[context_pack] rawq skipped — index empty (no code files)");
+                return None;
+            }
+        }
+        _ => {
+            eprintln!("[context_pack] rawq skipped — no index for project");
+            return None;
+        }
+    }
+
     // Fetch more than needed to allow post-processing headroom
     match rawq::search(path, prompt, RAWQ_MAX_RESULTS + 3) {
         Ok(mut results) => {
