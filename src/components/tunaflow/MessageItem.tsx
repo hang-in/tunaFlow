@@ -7,7 +7,7 @@ import { AgentAvatar } from "./AgentAvatar";
 import { markdownComponents } from "./chat/MarkdownComponents";
 import { MessageMeta } from "./message/MessageMeta";
 import { MessageActions } from "./message/MessageActions";
-import { TypingIndicator, ProgressBlock, ProgressSummary } from "./message/ProgressSurface";
+import { TypingIndicator, ThinkingBlock, ThinkingSummary } from "./message/ProgressSurface";
 
 function MarkdownBody({ content, className }: { content: string; className?: string }) {
   return (
@@ -68,15 +68,21 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
 
         {/* Body */}
         <div className={cn("text-foreground/90 leading-relaxed", isCompact ? "text-xs" : "text-[13px]")}>
-          {isStreaming && message.content === "" && !message.progressContent ? (
+          {isUser ? (
+            <p className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block", isCompact && "line-clamp-3")}>{message.content}</p>
+          ) : isStreaming && message.content === "" && !message.progressContent ? (
             <TypingIndicator />
           ) : isStreaming ? (
-            <ProgressBlock content={message.progressContent || message.content} />
-          ) : isUser ? (
-            <p className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block", isCompact && "line-clamp-3")}>{message.content}</p>
+            <>
+              {/* Thinking block — live, separate from response */}
+              {message.progressContent && <ThinkingBlock content={message.progressContent} />}
+              {/* Response streaming below thinking */}
+              {message.content && <MarkdownBody content={message.content} />}
+            </>
           ) : (
             <>
-              {message.progressContent && <ProgressSummary content={message.progressContent} />}
+              {/* Collapsed thinking summary — separate block above response */}
+              {message.progressContent && <ThinkingSummary content={message.progressContent} />}
               <MarkdownBody content={message.content} className={cn(isCompact && "line-clamp-3")} />
             </>
           )}

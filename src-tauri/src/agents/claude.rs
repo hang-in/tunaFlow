@@ -229,12 +229,12 @@ where
             }
             "assistant" => {
                 if let Some(msg) = &parsed.message {
-                    // Thinking → progress (not final answer)
+                    // Thinking → progress (show full thinking content, not just last line)
                     if let Some(thinking) = extract_thinking(msg) {
-                        // Take last line of thinking as progress summary
-                        if let Some(last_line) = thinking.lines().last() {
-                            if !last_line.trim().is_empty() {
-                                on_progress(format!("💭 {}", last_line.trim()));
+                        for line in thinking.lines() {
+                            let trimmed = line.trim();
+                            if !trimmed.is_empty() {
+                                on_progress(format!("💭 {}", trimmed));
                             }
                         }
                     }
