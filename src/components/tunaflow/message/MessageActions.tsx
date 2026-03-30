@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 import { GitBranch, Copy, Bookmark, Users, Forward, Trash2, FileText } from "lucide-react";
 
 const FOLLOWUP_ENGINES = [
@@ -79,7 +80,7 @@ export function MessageActions({ messageId, messageContent, isUser, onBranch, on
           )}
         </div>
       )}
-      <button onClick={() => navigator.clipboard.writeText(messageContent)} title="Copy"
+      <button onClick={() => copyToClipboard(messageContent)} title="Copy"
         className="p-1 rounded hover:bg-accent hover:text-foreground text-muted-foreground/50 transition-colors">
         <Copy className="w-3.5 h-3.5" />
       </button>

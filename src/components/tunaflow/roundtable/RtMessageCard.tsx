@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { cn, AGENT_DOT_COLORS, formatTimestamp, normalizeEngine } from "@/lib/utils";
+import { copyToClipboard } from "@/lib/clipboard";
 import { AgentAvatar } from "../AgentAvatar";
 import { markdownComponents } from "../chat/MarkdownComponents";
 import { RtReferenceBadge } from "./RtReferenceBadge";
@@ -118,7 +119,7 @@ export function RtMessageCard({ message, isLast, onBranch, onBranchRT, onMemo, o
               <Forward className="w-3 h-3" />
             </button>
           )}
-          <button onClick={() => navigator.clipboard.writeText(message.content)} title="Copy"
+          <button onClick={() => copyToClipboard(message.content)} title="Copy"
             className="p-1 rounded text-muted-foreground/40 hover:text-foreground hover:bg-accent transition-colors">
             <Copy className="w-3 h-3" />
           </button>

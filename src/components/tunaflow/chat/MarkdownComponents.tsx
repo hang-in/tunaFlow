@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useContext, type ComponentPropsWithoutRef, type ReactElement, isValidElement, Children } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 import type { Components } from "react-markdown";
 import { Check, Copy, ChevronDown, ChevronRight, FileCode } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,7 @@ function CodeBlock({ children, ...rest }: ComponentPropsWithoutRef<"pre">) {
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(text);
+    copyToClipboard(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { X, Search, FileText, ChevronRight, Copy, Send, Archive } from "lucide-react";
@@ -121,7 +122,7 @@ function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
     finally { setLoadingDoc(false); }
   };
 
-  const handleCopy = () => { if (!selectedDoc) return; navigator.clipboard.writeText(selectedDoc.content); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  const handleCopy = () => { if (!selectedDoc) return; copyToClipboard(selectedDoc.content); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   const handleSendToContext = () => {
     if (!selectedDoc) return;
     useChatStore.getState().setHandoffSource({ type: "knowledge", content: `[Knowledge: ${selectedDoc.title || selectedDoc.id} (${selectedDoc.source})]\n\n${selectedDoc.content}` });

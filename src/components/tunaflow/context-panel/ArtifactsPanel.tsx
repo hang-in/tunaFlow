@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import {
@@ -378,7 +379,7 @@ function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact; onClos
               className="text-muted-foreground hover:underline">Draft</button>
           )}
           <span className="flex-1" />
-          <button onClick={() => navigator.clipboard.writeText(artifact.content)}
+          <button onClick={() => copyToClipboard(artifact.content)}
             className="text-muted-foreground/50 hover:text-foreground hover:underline">Copy</button>
           {FORWARD_ENGINES.map((eng) => (
             <button key={eng.id} onClick={() => { sendFollowup(eng.id, "artifact", `[${artifact.title}] ${artifact.content}`); onClose(); }}

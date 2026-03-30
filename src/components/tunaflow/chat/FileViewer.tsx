@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Copy, Check, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,13 +40,13 @@ export function FileViewer({ filePath, projectPath, lineNumber, onClose }: FileV
 
   const handleCopyContent = () => {
     if (!file) return;
-    navigator.clipboard.writeText(file.content);
+    copyToClipboard(file.content);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
 
   const handleCopyPath = () => {
-    navigator.clipboard.writeText(filePath);
+    copyToClipboard(filePath);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };

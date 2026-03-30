@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -175,7 +176,7 @@ export function EvaluationPanel() {
                           {result.costUsd != null && <span>${result.costUsd < 0.01 ? result.costUsd.toFixed(4) : result.costUsd.toFixed(2)}</span>}
                           {result.durationMs != null && <span>{(result.durationMs / 1000).toFixed(1)}s</span>}
                           <span className="flex-1" />
-                          <button onClick={() => navigator.clipboard.writeText(result.content)}
+                          <button onClick={() => copyToClipboard(result.content)}
                             className="text-muted-foreground/20 hover:text-foreground transition-colors">Copy</button>
                         </div>
                       </div>
