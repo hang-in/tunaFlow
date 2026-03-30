@@ -86,6 +86,7 @@ export function ChatsSection({
             <span className="flex items-center gap-1">
               <InlineRename value={b.customLabel ?? b.label} onSave={(v) => handleRenameBranch(b.id, v)} inputClassName="text-[10px] w-full" />
               {isRT && <span className="text-[7px] text-agent-gemini/40 shrink-0">RT</span>}
+              {b.gitBranch && <span className="text-[7px] text-sidebar-foreground/20 font-mono shrink-0 truncate max-w-[60px]">{b.gitBranch}</span>}
             </span>
           }
           suffix={

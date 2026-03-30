@@ -134,6 +134,11 @@ export function BranchThreadPanel() {
         )}>
           {isRT ? "RT" : "Branch"}
         </span>
+        {threadBranch?.gitBranch && (
+          <span className="text-[8px] font-mono text-muted-foreground/30 px-1 py-0.5 rounded bg-muted/50 shrink-0 truncate max-w-[80px]">
+            {threadBranch.gitBranch}
+          </span>
+        )}
         {isReadOnly && (
           <span className={cn("text-[8px] font-medium px-1 py-0.5 rounded uppercase tracking-wider shrink-0",
             threadBranch?.status === "adopted" ? "text-status-approved/60 bg-status-approved/8" : "text-muted-foreground/40 bg-muted"
