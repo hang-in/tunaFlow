@@ -76,6 +76,7 @@ pub fn run() {
             commands::projects::ensure_rawq_index,
             commands::projects::start_rawq_index,
             commands::projects::get_rawq_status,
+            commands::projects::get_git_status,
             // Conversation
             commands::conversations::list_conversations,
             commands::conversations::create_conversation,

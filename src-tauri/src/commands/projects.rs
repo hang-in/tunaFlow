@@ -383,3 +383,61 @@ pub fn start_rawq_index(
 
     Ok(())
 }
+
+/// Git status for a project path.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatus {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    pub dirty: bool,
+    pub git_root: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_git_status(project_path: String) -> Result<GitStatus, AppError> {
+    use std::process::Command;
+    let path = std::path::Path::new(&project_path);
+    if !path.exists() {
+        return Ok(GitStatus { is_repo: false, branch: None, dirty: false, git_root: None });
+    }
+
+    // Check if git repo
+    let is_repo = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(&project_path)
+        .output()
+        .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "true")
+        .unwrap_or(false);
+
+    if !is_repo {
+        return Ok(GitStatus { is_repo: false, branch: None, dirty: false, git_root: None });
+    }
+
+    let branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&project_path)
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else { None });
+
+    let dirty = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&project_path)
+        .output()
+        .map(|o| !o.stdout.is_empty())
+        .unwrap_or(false);
+
+    let git_root = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(&project_path)
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() {
+            Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+        } else { None });
+
+    Ok(GitStatus { is_repo, branch, dirty, git_root })
+}

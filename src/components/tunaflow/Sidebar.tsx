@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
-import { Waves, ChevronDown, FolderOpen, Folder, Trash2, Loader2, Settings } from "lucide-react";
+import { Waves, ChevronDown, FolderOpen, Folder, Trash2, Loader2, Settings, GitBranch } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { Branch } from "@/types";
 
@@ -54,6 +55,16 @@ export function Sidebar() {
   }, [projectDropdownOpen]);
 
   const currentProject = projects.find((p) => p.key === selectedProjectKey);
+
+  // Git status
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
+  const [gitDirty, setGitDirty] = useState(false);
+  useEffect(() => {
+    if (!currentProject?.path) { setGitBranch(null); return; }
+    invoke<{ isRepo: boolean; branch: string | null; dirty: boolean }>("get_git_status", { projectPath: currentProject.path })
+      .then((s) => { setGitBranch(s.isRepo ? s.branch : null); setGitDirty(s.dirty); })
+      .catch(() => setGitBranch(null));
+  }, [currentProject?.path]);
 
   // Current project data
   const chatConvs = conversations.filter((c) => !c.id.startsWith("branch:") && c.mode !== "roundtable");
@@ -129,6 +140,13 @@ export function Sidebar() {
           <span className="flex-1 text-[14px] font-[550] tracking-[-0.1px] text-sidebar-accent-foreground truncate text-left">
             {currentProject?.name ?? "Select project"}
           </span>
+          {gitBranch && (
+            <span className="flex items-center gap-0.5 text-[9px] text-sidebar-foreground/30 font-mono shrink-0">
+              <GitBranch className="w-2.5 h-2.5" />
+              {gitBranch}
+              {gitDirty && <span className="text-status-draft">●</span>}
+            </span>
+          )}
           {currentRunning > 0 && (
             <Loader2 className="w-3 h-3 animate-spin text-primary/70 shrink-0" />
           )}
