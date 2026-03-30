@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { FlaskConical, ChevronRight, ChevronDown, Clock, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { FlaskConical, Clock, CheckCircle2, XCircle, RefreshCw, Plus } from "lucide-react";
 import { AgentAvatar } from "../AgentAvatar";
 
 interface EvalRun {
@@ -43,6 +43,7 @@ export function EvaluationPanel() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [results, setResults] = useState<EvalResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
 
   // Load runs for current conversation
   useEffect(() => {
@@ -84,11 +85,24 @@ export function EvaluationPanel() {
     <div>
       <div className="flex items-center gap-2 mb-4">
         <h2 className="text-[14px] font-[550] text-foreground flex-1">Evaluation</h2>
+        <button onClick={() => setShowCreate((v) => !v)}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-primary/70 hover:bg-primary/10 transition-colors">
+          <Plus className="w-3 h-3" /> New Run
+        </button>
         <button onClick={refresh}
           className="p-1.5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent transition-colors">
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
       </div>
+
+      {/* Create form */}
+      {showCreate && selectedConversationId && (
+        <CreateRunForm
+          conversationId={selectedConversationId}
+          onCreated={(id) => { refresh(); setSelectedRunId(id); setShowCreate(false); }}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
 
       {runs.length === 0 ? (
         <div className="text-center py-8">
@@ -174,6 +188,84 @@ export function EvaluationPanel() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Create Run Form ────────────────────────────────────────────────────────
+
+function CreateRunForm({ conversationId, onCreated, onCancel }: {
+  conversationId: string;
+  onCreated: (runId: string) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState("sequential");
+  const [rounds, setRounds] = useState(1);
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async () => {
+    if (!title.trim() || !prompt.trim()) return;
+    setCreating(true);
+    try {
+      const run = await invoke<{ id: string }>("create_eval_run", {
+        input: {
+          conversationId,
+          title: title.trim(),
+          prompt: prompt.trim(),
+          mode,
+          rounds,
+        },
+      });
+      onCreated(run.id);
+    } catch {
+      // silent
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border/30 bg-background/50 p-4 mb-4 space-y-3">
+      <h3 className="text-[13px] font-medium text-foreground">New Evaluation Run</h3>
+
+      <div>
+        <label className="text-[11px] text-muted-foreground mb-1 block">Title</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. JWT auth comparison"
+          className="w-full bg-background rounded-lg px-3 py-1.5 text-[12px] outline-none border border-border/30 focus:border-ring/40" autoFocus />
+      </div>
+
+      <div>
+        <label className="text-[11px] text-muted-foreground mb-1 block">Prompt</label>
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} placeholder="Evaluation prompt..."
+          className="w-full bg-background rounded-lg px-3 py-1.5 text-[12px] outline-none border border-border/30 focus:border-ring/40 resize-none" />
+      </div>
+
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="text-[11px] text-muted-foreground mb-1 block">Mode</label>
+          <select value={mode} onChange={(e) => setMode(e.target.value)}
+            className="w-full bg-background rounded-lg px-3 py-1.5 text-[12px] outline-none border border-border/30 focus:border-ring/40 cursor-pointer">
+            <option value="sequential">Sequential</option>
+            <option value="deliberative">Deliberative</option>
+          </select>
+        </div>
+        <div className="w-[80px]">
+          <label className="text-[11px] text-muted-foreground mb-1 block">Rounds</label>
+          <input type="number" min={1} max={5} value={rounds} onChange={(e) => setRounds(Number(e.target.value))}
+            className="w-full bg-background rounded-lg px-3 py-1.5 text-[12px] outline-none border border-border/30 focus:border-ring/40" />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <span className="flex-1" />
+        <button onClick={onCancel} className="px-3 py-1.5 rounded-lg text-[11px] text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+        <button onClick={handleCreate} disabled={creating || !title.trim() || !prompt.trim()}
+          className="px-4 py-1.5 rounded-lg text-[11px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors disabled:opacity-40">
+          {creating ? "Creating…" : "Create"}
+        </button>
+      </div>
     </div>
   );
 }

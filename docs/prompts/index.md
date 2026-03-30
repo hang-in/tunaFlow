@@ -65,6 +65,7 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/token_cost_db_parity_prompt](./2026-03-30/token_cost_db_parity_prompt.md): token/cost를 DB 레벨에서 unavailable/unknown과 구분되게 보강하는 프롬프트
 - [2026-03-30/evaluation_ui_connection_prompt](./2026-03-30/evaluation_ui_connection_prompt.md): 기존 evaluation backend를 frontend UI에 연결하는 프롬프트
 - [2026-03-30/evaluation_under_test_prompt](./2026-03-30/evaluation_under_test_prompt.md): Evaluation UI를 메인 탭이 아니라 Test 하위 뷰로 재배치하는 프롬프트
+- [2026-03-30/evaluation_run_creation_ui_prompt](./2026-03-30/evaluation_run_creation_ui_prompt.md): Test > Evaluation에서 새 eval run을 시작하는 최소 생성 UI 프롬프트
 - [2026-03-30/git_sync_phase1_prompt](./2026-03-30/git_sync_phase1_prompt.md): git automation 없이 프로젝트/branch의 git 상태와 연결 정보를 보여주는 1차 프롬프트
 - [2026-03-30/git_branch_link_visibility_prompt](./2026-03-30/git_branch_link_visibility_prompt.md): branch별 linked git branch를 표시하고 수동 편집 가능하게 하는 프롬프트
 - [2026-03-30/git_branch_defaulting_prompt](./2026-03-30/git_branch_defaulting_prompt.md): branch 생성 시 linked git branch 기본값을 제안/채우는 프롬프트
