@@ -148,7 +148,7 @@ tunaFlow/
 
 ---
 
-## 5. 현재 상태와 알려진 이슈 (2026-03-30 세션 3)
+## 5. 현재 상태와 알려진 이슈 (2026-03-31 세션 3-4)
 
 ### ✅ 해결됨 (이전 세션 1-2)
 - 드로어 RT 기능, 사이드바 계층 구조, Linear UI 리팩토링, rawq 안정화, 프로젝트 soft-delete, Agent Profile/Persona, Branch/RT 고도화, Artifacts 워크플로, Settings, 문서 IA 거버넌스
@@ -156,21 +156,30 @@ tunaFlow/
 - context-hub 연동, Agent identity framing, Message author attribution, Compressed conversation memory
 - runtimeSlice 팩토리, SettingsPanel 분할, deprecated isRunning 제거, OpenCode discovery
 
-### ✅ 해결됨 (이번 세션 3)
-- **Claude parity fix**: `start_claude_stream`이 레거시 수동 context 조립 → `build_normalized_prompt_with_budget()` 통합 전환. compressed memory, retrieval, auto mode, budget override, skills, rawq, cross-session이 Claude에서도 정상 동작
-- **Auto mode +1 bias 수정**: `persona_fragment` 항상 Some() → identity 포함 시 영구 bias. 이제 `"## Persona"` 포함 여부로 실제 persona만 score 반영
-- **Lite mode 완화**: `retrieval_min_remaining` 6k→3k, `compressed_min_remaining` 3k→1.5k, `retrieval_content_max` 120→150. Lite에서도 retrieval/compressed memory 실제 주입
-- **Compression lock 분리**: `compress_conversation_memory`에서 Claude API 호출 중 DB write lock 미보유. 3-phase: read→release→call→re-lock→write
-- **Trace surface 호환**: `baseMode()` 헬퍼로 `"Standard(auto:standard(baseline))"` → `"Std"` 정확 추출. TracePanel + RuntimeStatusBar 모두 수정
-- **Dead code 대규모 정리**: agents.rs 1168줄→347줄 (-70%). 레거시 `send_with_*` / `stream_with_*` 6개 함수 제거, lib.rs 등록 해제
-- **branchSlice ENGINE_CONFIGS 통합**: 하드코딩 ENGINE_COMMANDS → runtimeSlice의 ENGINE_CONFIGS import
+### ✅ 해결됨 (세션 3: Claude parity + dead code)
+- Claude parity fix → unified `build_normalized_prompt_with_budget()` 전환
+- Auto mode +1 bias 수정 (persona_fragment → explicit persona check)
+- Lite mode retrieval/compressed thresholds 완화
+- Compression DB lock 분리 (3-phase)
+- Trace surface mode 포맷 호환 (`baseMode()` 헬퍼)
+- agents.rs 1168→260줄 (레거시 6개 삭제 + prepare/finalize 공유 추출)
+- branchSlice ENGINE_CONFIGS 통합
+
+### ✅ 해결됨 (세션 4: multi-agent context + quality)
+- **Multi-agent context 3-layer**: participants meta + budget-based dynamic window + per-agent last-message guarantee. 문서: `docs/reference/multiAgentContextStrategy.md`
+- **Retrieval 품질 튜닝**: FTS5 stopwords, scoring rebalance (fts 0.5/recency 0.2), overlap penalty 상향 (0.75), adaptive limit (Lite=3/Std=6/Full=10), content truncation 확대
+- **Compressed memory 참여자 보존**: SUMMARY_PROMPT에 `## Participants` 섹션 필수화
+- **Gemini Auto model**: discovery에 `auto` 기본 추가, preview 모델 "(용량 미보장)" 라벨
+- **fnm/nvm 바이너리 경로**: Gemini + Codex resolve에 fnm/nvm 탐색 추가
+- **Persona 리셋**: 엔진 변경 시 프로필 불일치 → persona 자동 초기화
+- **스트리밍 UX 정리**: CLI가 thinking을 안 주므로 progress block 제거 → typing indicator만. progress_content는 DB에 lazy-load 방식으로 보존
+- **ContextPack DB 분리 준비**: `load_context_data()` + `assemble_prompt()` 2-phase 분리 완료. DB/assembly 완전 분리 프롬프트 준비됨
 
 ### 기타 알려진 이슈
-- 기존 smoke-sidebar/smoke-workspace 테스트 실패 (store mock 불일치)
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- 실질적 테스트 부재 (Rust 53개 unit test + Frontend 55개 test이나, integration test 부재)
-- 레거시 동기 `send_with_claude` 함수 제거됨 — 관련 import/상수도 정리 완료
-- 품질 튜닝 미적용: FTS5 stopwords, scoring 가중치, overlap penalty, 메시지 truncation, compression 모델 (실사용 데이터 기반 조정 필요)
+- Rust 57 unit test + Frontend 55 test이나, integration test 부재
+- RT에서 `run()` 동기 사용 — progress 가시성 없음 (stream_run 전환 고려)
+- 긴 multi-agent 대화 (24+ 메시지) 실사용 검증 미완
 
 ---
 
@@ -376,27 +385,22 @@ tunaFlow/
 
 ## 11. 다음 우선순위
 
-### P0: 런타임 검증 (tauri dev 실행 필요)
-- `tauri dev` 실행 후 4-engine trace/meta parity 확인 (context_mode, sections, chars, truncated)
-- Compressed memory: 긴 대화에서 생성 → trace에 `compressed-memory` 섹션 표시 확인
-- Retrieval: 다중 대화 프로젝트에서 `retrieval` 섹션 표시 확인
-- Auto mode: 짧은/긴 prompt에서 Lite/Standard/Full 전환 + trace reason 확인
-- Budget override: Settings 변경 → trace 반영 확인
-- RT 기능 안정성: blind verifier, role cap, completion-order
+### P0: 실사용 검증 (기능 구현 후)
+- 긴 multi-agent 대화 (4엔진 × 3턴 = 24msg) — dynamic window + participant meta 동작 확인
+- Compressed memory 참여자 보존 — 긴 대화 후 에이전트 인식 검증
+- Cross-conversation retrieval — 다중 대화 프로젝트에서 chunk 회수 확인
 
-### P1: 품질 튜닝 (실사용 데이터 기반)
-- FTS5 stopword 필터링 (common 2-3자 단어 제외)
-- Retrieval scoring 가중치 조정 (fts 0.4→0.5, recency 0.3→0.2)
-- Overlap penalty 임계값 상향 (0.6→0.75) + stopword 필터링
-- 메시지 truncation 확대 (compression 입력: 500→1500자)
-- Compression 모델 비용 최적화 (default → haiku)
-- RoundtableView 분할 (현재 450줄+)
+### P1: 구조 개선
+- **스킬 선택적 주입**: 전체 SKILL.md 대신 관련 섹션만 발췌 (8k→3k 절감 예상)
+- **ContextPack DB/assembly 완전 분리**: `assemble_prompt()` 순수 함수화 → 단위 테스트 가능. 프롬프트 준비됨: `docs/prompts/2026-03-30/contextpack_db_separation_prompt.md`
+- **RoundtableView 분할** (현재 450줄+)
 
 ### P2: 후순위
-- Startup UX 마감 (워크플로우 안정화 후)
+- Vector DB Phase 1 (rawq embedding → 메시지 의미 검색). 로드맵: `docs/reference/multiAgentContextStrategy.md`
+- Startup UX 마감
 - RT preset / workflow preset
 - Chat virtualization (200+ 메시지)
-- context-hub 설치 후 실연동 검증
+- RT stream_run 전환 (progress 가시성)
 - smoke test 복구
 
 ---
@@ -414,7 +418,7 @@ cd src-tauri && cargo check   # Rust
 
 # 테스트
 npx vitest run                # Frontend (55 tests)
-cd src-tauri && cargo test --lib  # Rust unit tests (53 tests)
+cd src-tauri && cargo test --lib  # Rust unit tests (57 tests)
 
 # rawq sidecar 준비
 ./scripts/build-rawq.sh       # macOS/Linux
@@ -487,7 +491,7 @@ cd src-tauri && cargo test --lib  # Rust unit tests (53 tests)
 - **DB migration**: `add_column_if_missing`으로 idempotent, 버전 번호 순차 증가
 - **에러 처리**: dev 단계에서 silent fallback 최소화, 명시적 경고/에러 표시
 - **테스트**: vitest + jsdom (frontend, 55개), cargo test --lib (Rust unit, 53개)
-- **4-engine parity**: 새 기능 추가 시 4개 엔진 모두에서 동작하는지 확인. 모든 엔진이 `build_normalized_prompt_with_budget()` 단일 경로 사용
+- **4-engine parity**: 새 기능 추가 시 4개 엔진 모두에서 동작하는지 확인. 모든 엔진이 `build_normalized_prompt_with_budget()` 단일 경로 사용. Multi-agent context 전략: `docs/reference/multiAgentContextStrategy.md`
 - **send 함수 패턴**: `runtimeSlice.sendWithEngine(engine)` + `branchSlice.sendThreadMessage()` 모두 `ENGINE_CONFIGS[engine]`로 command/event 매핑. 엔진별 함수 복사 금지. 레거시 동기 `send_with_*` 명령은 완전 제거됨
 - **Settings 구조**: `settings/` 폴더에 섹션별 분리 파일. SettingsPanel은 thin shell
 
