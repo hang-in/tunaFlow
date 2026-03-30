@@ -64,5 +64,6 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/code_hygiene_pass_prompt](./2026-03-30/code_hygiene_pass_prompt.md): dead code 정리와 smoke test 복구를 현재 구조 기준으로 진행하는 프롬프트
 - [2026-03-30/token_cost_db_parity_prompt](./2026-03-30/token_cost_db_parity_prompt.md): token/cost를 DB 레벨에서 unavailable/unknown과 구분되게 보강하는 프롬프트
 - [2026-03-30/evaluation_ui_connection_prompt](./2026-03-30/evaluation_ui_connection_prompt.md): 기존 evaluation backend를 frontend UI에 연결하는 프롬프트
+- [2026-03-30/evaluation_under_test_prompt](./2026-03-30/evaluation_under_test_prompt.md): Evaluation UI를 메인 탭이 아니라 Test 하위 뷰로 재배치하는 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

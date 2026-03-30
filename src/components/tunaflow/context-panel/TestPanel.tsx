@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { TestTube, CheckCircle2, Clock, XCircle } from "lucide-react";
 import type { Artifact } from "@/types";
+import { EvaluationPanel } from "./EvaluationPanel";
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
   draft: <Clock className="w-2.5 h-2.5" />,
@@ -61,42 +63,59 @@ function TestCard({ artifact }: { artifact: Artifact }) {
 
 export function TestPanel() {
   const { artifacts } = useChatStore();
+  const [subView, setSubView] = useState<"reports" | "evaluation">("reports");
 
   const testReports = artifacts
     .filter((a) => a.type === "test-report")
     .sort((a, b) => b.updatedAt - a.updatedAt);
 
-  // Summary counts
   const approved = testReports.filter((a) => a.status === "approved").length;
   const rejected = testReports.filter((a) => a.status === "rejected").length;
   const draft = testReports.filter((a) => a.status === "draft").length;
 
   return (
     <div className="space-y-3">
-      {/* Summary */}
-      {testReports.length > 0 && (
-        <div className="flex items-center gap-3 text-[9px] text-sidebar-foreground/50">
-          <span className="flex items-center gap-1">
-            <TestTube className="w-3 h-3 text-agent-codex/50" />
-            {testReports.length} report{testReports.length > 1 ? "s" : ""}
-          </span>
-          {approved > 0 && <span className="text-status-approved/60">{approved} passed</span>}
-          {rejected > 0 && <span className="text-status-rejected/60">{rejected} failed</span>}
-          {draft > 0 && <span className="text-muted-foreground/40">{draft} pending</span>}
-        </div>
+      {/* Sub-view tabs */}
+      <div className="flex items-center gap-1 mb-2">
+        <button onClick={() => setSubView("reports")}
+          className={cn("px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors",
+            subView === "reports" ? "bg-accent text-foreground" : "text-muted-foreground/50 hover:text-foreground hover:bg-accent/50")}>
+          Reports
+        </button>
+        <button onClick={() => setSubView("evaluation")}
+          className={cn("px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors",
+            subView === "evaluation" ? "bg-accent text-foreground" : "text-muted-foreground/50 hover:text-foreground hover:bg-accent/50")}>
+          Evaluation
+        </button>
+      </div>
+
+      {subView === "reports" && (
+        <>
+          {testReports.length > 0 && (
+            <div className="flex items-center gap-3 text-[9px] text-sidebar-foreground/50">
+              <span className="flex items-center gap-1">
+                <TestTube className="w-3 h-3 text-agent-codex/50" />
+                {testReports.length} report{testReports.length > 1 ? "s" : ""}
+              </span>
+              {approved > 0 && <span className="text-status-approved/60">{approved} passed</span>}
+              {rejected > 0 && <span className="text-status-rejected/60">{rejected} failed</span>}
+              {draft > 0 && <span className="text-muted-foreground/40">{draft} pending</span>}
+            </div>
+          )}
+          {testReports.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {testReports.map((a) => <TestCard key={a.id} artifact={a} />)}
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <TestTube className="w-5 h-5 text-muted-foreground/20 mx-auto mb-2" />
+              <p className="text-[11px] text-muted-foreground/40">No test reports yet</p>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Reports */}
-      {testReports.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {testReports.map((a) => <TestCard key={a.id} artifact={a} />)}
-        </div>
-      ) : (
-        <div className="text-center py-6">
-          <TestTube className="w-5 h-5 text-muted-foreground/20 mx-auto mb-2" />
-          <p className="text-[11px] text-muted-foreground/40">No test reports yet</p>
-        </div>
-      )}
+      {subView === "evaluation" && <EvaluationPanel />}
     </div>
   );
 }
