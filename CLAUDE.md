@@ -148,39 +148,29 @@ tunaFlow/
 
 ---
 
-## 5. 현재 상태와 알려진 이슈 (2026-03-30 세션 2)
+## 5. 현재 상태와 알려진 이슈 (2026-03-30 세션 3)
 
-### ✅ 해결됨 (이전 세션)
+### ✅ 해결됨 (이전 세션 1-2)
 - 드로어 RT 기능, 사이드바 계층 구조, Linear UI 리팩토링, rawq 안정화, 프로젝트 soft-delete, Agent Profile/Persona, Branch/RT 고도화, Artifacts 워크플로, Settings, 문서 IA 거버넌스
+- 4-engine context metadata parity, ContextPack visibility, rawq 후처리, Compression, Context budget control UI
+- context-hub 연동, Agent identity framing, Message author attribution, Compressed conversation memory
+- runtimeSlice 팩토리, SettingsPanel 분할, deprecated isRunning 제거, OpenCode discovery
 
-### ✅ 해결됨 (이번 세션)
-- **4-engine context metadata parity**: 모든 엔진이 trace_log에 context_mode/sections/length/truncated 기록
-- **ContextPack visibility**: TracePanel에 context mode badge + section pills + truncated 경고, RuntimeStatusBar에 context mode 약어
-- **rawq 후처리**: confidence 필터/dedup/재정렬/snippet 300자 확장/scope 표시
-- **Compression 개선**: section 유형별 압축 목표/보존 우선순위 (context=800, cross-session=600, findings=400)
-- **Context budget control UI**: Settings > Runtime에서 mode(Auto/Lite/Standard/Full) + total cap(20k-120k) 조정
-- **context-hub 최소 연동**: health/search/get CLI 호출 + source policy(bundled/local/private only) + Settings UI
-- **context-hub explicit handoff**: Copy / Send to Context / Save as Artifact
-- **Agent identity framing**: `## Identity` 블록으로 profile/engine/persona 3층 분리, 혼합 표현 금지
-- **Message author attribution**: 과거 메시지에 author 태그, 소유권 혼동 방지 규칙
-- **Compressed conversation memory**: 12+ 메시지 시 구조화 요약 → DB 저장 → ContextPack 주입 (v17 migration)
-- **Memory operational polish**: not_generated/fresh/stale 상태 모델, provenance, TracePanel 표시
-- **runtimeSlice 팩토리 추출**: 4개 중복 send 함수 → 1개 `sendWithEngine` (509줄 → 311줄)
-- **SettingsPanel 분할**: 904줄 → 74줄 shell + 3개 분리 파일
-- **deprecated isRunning 제거**: `runningThreadIds`로 완전 전환
-- **OpenCode model discovery**: `opencode models` CLI 호출 → 동적 모델 목록
-- **OpenCode 바이너리 경로**: `~/.opencode/bin/` 최우선 탐색 추가
-- **Engine 선택 버그 수정**: Settings stale closure → 한 번의 save로 동시 업데이트
-- **대화 컨텍스트 framing 개선**: "Conversation history (you are continuing this conversation)" 헤더
-- **창 위치**: 주 모니터 중앙 배치 (멀티모니터 대응)
-- **사이드바 인디케이터**: 삭제 버튼과 status dot 위치 교체
-- **RuntimeStatusBar 버그**: `list_trace_spans` → `list_traces` 명령 이름 수정
+### ✅ 해결됨 (이번 세션 3)
+- **Claude parity fix**: `start_claude_stream`이 레거시 수동 context 조립 → `build_normalized_prompt_with_budget()` 통합 전환. compressed memory, retrieval, auto mode, budget override, skills, rawq, cross-session이 Claude에서도 정상 동작
+- **Auto mode +1 bias 수정**: `persona_fragment` 항상 Some() → identity 포함 시 영구 bias. 이제 `"## Persona"` 포함 여부로 실제 persona만 score 반영
+- **Lite mode 완화**: `retrieval_min_remaining` 6k→3k, `compressed_min_remaining` 3k→1.5k, `retrieval_content_max` 120→150. Lite에서도 retrieval/compressed memory 실제 주입
+- **Compression lock 분리**: `compress_conversation_memory`에서 Claude API 호출 중 DB write lock 미보유. 3-phase: read→release→call→re-lock→write
+- **Trace surface 호환**: `baseMode()` 헬퍼로 `"Standard(auto:standard(baseline))"` → `"Std"` 정확 추출. TracePanel + RuntimeStatusBar 모두 수정
+- **Dead code 대규모 정리**: agents.rs 1168줄→347줄 (-70%). 레거시 `send_with_*` / `stream_with_*` 6개 함수 제거, lib.rs 등록 해제
+- **branchSlice ENGINE_CONFIGS 통합**: 하드코딩 ENGINE_COMMANDS → runtimeSlice의 ENGINE_CONFIGS import
 
 ### 기타 알려진 이슈
 - 기존 smoke-sidebar/smoke-workspace 테스트 실패 (store mock 불일치)
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- branchSlice sendThreadMessage는 아직 엔진별 분기 남아있음 (runtimeSlice만 팩토리 전환됨)
-- 실질적 테스트 부재 (Rust 29개 unit test + Frontend 8개 smoke test뿐)
+- 실질적 테스트 부재 (Rust 53개 unit test + Frontend 55개 test이나, integration test 부재)
+- 레거시 동기 `send_with_claude` 함수 제거됨 — 관련 import/상수도 정리 완료
+- 품질 튜닝 미적용: FTS5 stopwords, scoring 가중치, overlap penalty, 메시지 truncation, compression 모델 (실사용 데이터 기반 조정 필요)
 
 ---
 
@@ -226,7 +216,7 @@ tunaFlow/
 
 ### 주요 실행 패턴
 - **메인 패널 전송**: `runtimeSlice.sendWithEngine(engine, prompt)` → `ENGINE_CONFIGS[engine].command` + event listener
-- **드로어 전송**: `branchSlice.sendThreadMessage()` → `start_*` + event listener (background)
+- **드로어 전송**: `branchSlice.sendThreadMessage()` → `ENGINE_CONFIGS[engine].command` + event listener (background)
 - **드로어 RT 전송**: `branchSlice.sendThreadRoundtable()` → `start_roundtable_run` + event listener (threadMessages)
 - **메인 RT 전송**: `runtimeSlice.sendRoundtable()` → `start_roundtable_run` + event listener (messages)
 - **입력 라우팅**: `useSendActions({ threadMode })` — RT + threadMode → `sendThreadRoundtable`, RT → `sendRoundtable`, threadMode → `sendThreadMessage`, 일반 → `sendWithEngine(engine)`
@@ -386,24 +376,28 @@ tunaFlow/
 
 ## 11. 다음 우선순위
 
-### P0: 실사용 검증 (다음 세션 즉시)
-- Compressed memory 검증: 긴 대화(12+ msg)에서 생성/stale 전환/ContextPack 주입
-- Conversation retrieval 검증: 다중 대화 프로젝트에서 FTS5 chunk 회수 + 중복 억제
-- Auto mode 검증: 짧은 follow-up → Lite, 구조화 작업 → Full, 나머지 → Standard
-- Budget control UI 실반영: Settings 변경 → 실제 prompt/trace 반영
-- RT 기능 안정성: blind verifier, role cap, completion-order, identity 주입
+### P0: 런타임 검증 (tauri dev 실행 필요)
+- `tauri dev` 실행 후 4-engine trace/meta parity 확인 (context_mode, sections, chars, truncated)
+- Compressed memory: 긴 대화에서 생성 → trace에 `compressed-memory` 섹션 표시 확인
+- Retrieval: 다중 대화 프로젝트에서 `retrieval` 섹션 표시 확인
+- Auto mode: 짧은/긴 prompt에서 Lite/Standard/Full 전환 + trace reason 확인
+- Budget override: Settings 변경 → trace 반영 확인
+- RT 기능 안정성: blind verifier, role cap, completion-order
 
-### P1: 코드 정합성
-- branchSlice sendThreadMessage 추가 정리
+### P1: 품질 튜닝 (실사용 데이터 기반)
+- FTS5 stopword 필터링 (common 2-3자 단어 제외)
+- Retrieval scoring 가중치 조정 (fts 0.4→0.5, recency 0.3→0.2)
+- Overlap penalty 임계값 상향 (0.6→0.75) + stopword 필터링
+- 메시지 truncation 확대 (compression 입력: 500→1500자)
+- Compression 모델 비용 최적화 (default → haiku)
 - RoundtableView 분할 (현재 450줄+)
-- smoke test 복구 (store mock — isRunning 제거 반영)
 
 ### P2: 후순위
 - Startup UX 마감 (워크플로우 안정화 후)
 - RT preset / workflow preset
 - Chat virtualization (200+ 메시지)
 - context-hub 설치 후 실연동 검증
-- context-hub auto ContextPack injection
+- smoke test 복구
 
 ---
 
@@ -419,8 +413,8 @@ npx vite build                # Frontend
 cd src-tauri && cargo check   # Rust
 
 # 테스트
-npx vitest run                # Frontend (69 tests)
-cd src-tauri && cargo test --lib  # Rust unit tests
+npx vitest run                # Frontend (55 tests)
+cd src-tauri && cargo test --lib  # Rust unit tests (53 tests)
 
 # rawq sidecar 준비
 ./scripts/build-rawq.sh       # macOS/Linux
@@ -492,9 +486,9 @@ cd src-tauri && cargo test --lib  # Rust unit tests
 - **Tauri command**: 인자는 `camelCase` (serde rename), 긴 실행은 `start_*` background 패턴
 - **DB migration**: `add_column_if_missing`으로 idempotent, 버전 번호 순차 증가
 - **에러 처리**: dev 단계에서 silent fallback 최소화, 명시적 경고/에러 표시
-- **테스트**: vitest + jsdom (frontend), cargo test --lib (Rust unit, 29개)
-- **4-engine parity**: 새 기능 추가 시 4개 엔진 모두에서 동작하는지 확인
-- **send 함수 패턴**: `runtimeSlice.sendWithEngine(engine)` → `ENGINE_CONFIGS[engine]`로 command/event 매핑. 엔진별 함수 복사 금지
+- **테스트**: vitest + jsdom (frontend, 55개), cargo test --lib (Rust unit, 53개)
+- **4-engine parity**: 새 기능 추가 시 4개 엔진 모두에서 동작하는지 확인. 모든 엔진이 `build_normalized_prompt_with_budget()` 단일 경로 사용
+- **send 함수 패턴**: `runtimeSlice.sendWithEngine(engine)` + `branchSlice.sendThreadMessage()` 모두 `ENGINE_CONFIGS[engine]`로 command/event 매핑. 엔진별 함수 복사 금지. 레거시 동기 `send_with_*` 명령은 완전 제거됨
 - **Settings 구조**: `settings/` 폴더에 섹션별 분리 파일. SettingsPanel은 thin shell
 
 ---
