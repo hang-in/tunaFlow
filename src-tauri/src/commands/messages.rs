@@ -148,6 +148,23 @@ pub fn update_message_status(
     Ok(())
 }
 
+/// Save thinking/tool-use progress content for a message.
+/// Called by frontend after streaming completes, to persist progressContent to DB.
+/// This data is NOT included in context building — display only.
+#[tauri::command]
+pub fn save_progress_content(
+    message_id: String,
+    progress_content: String,
+    state: State<DbState>,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    conn.execute(
+        "UPDATE messages SET progress_content = ?1 WHERE id = ?2",
+        params![progress_content, message_id],
+    )?;
+    Ok(())
+}
+
 /// Delete a user+assistant message pair.
 ///
 /// Given any message ID:

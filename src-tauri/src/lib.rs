@@ -117,6 +117,7 @@ pub fn run() {
             commands::messages::create_user_message,
             commands::messages::append_assistant_message,
             commands::messages::update_message_status,
+            commands::messages::save_progress_content,
             commands::messages::delete_message_pair,
             commands::messages::search_messages,
             // Branch

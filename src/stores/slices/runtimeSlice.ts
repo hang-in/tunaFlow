@@ -164,6 +164,11 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const unlistenDone = await listen<{ messageId: string; conversationId: string }>("agent:completed", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;
       cleanup();
+      // Save thinking/progress to DB before reloading (display only, not in context)
+      const streamingMsg = get().messages.find((m) => m.id === e.payload.messageId || m.status === "streaming");
+      if (streamingMsg?.progressContent) {
+        invoke("save_progress_content", { messageId: e.payload.messageId, progressContent: streamingMsg.progressContent }).catch(() => {});
+      }
       const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
       set({ messages });
       get()._endRun(selectedConversationId);
