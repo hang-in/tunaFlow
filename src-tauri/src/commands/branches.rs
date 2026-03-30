@@ -270,6 +270,48 @@ pub fn link_git_branch(id: String, git_branch: Option<String>, state: State<DbSt
     Ok(())
 }
 
+/// Create a real git branch linked to a tunaFlow branch.
+#[tauri::command]
+pub fn create_git_branch(branch_id: String, state: State<DbState>) -> Result<String, AppError> {
+    use std::process::Command;
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let (conv_id, git_branch): (String, Option<String>) = conn
+        .query_row("SELECT conversation_id, git_branch FROM branches WHERE id = ?1", [&branch_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|_| AppError::NotFound("Branch not found".into()))?;
+    let git_branch = git_branch.ok_or_else(|| AppError::Agent("No git branch linked".into()))?;
+    let project_path: String = conn
+        .query_row("SELECT path FROM projects WHERE key = (SELECT project_key FROM conversations WHERE id = ?1)", [&conv_id], |row| row.get(0))
+        .map_err(|_| AppError::Agent("Project path not found".into()))?;
+
+    let exists = Command::new("git").args(["rev-parse", "--verify", &git_branch]).current_dir(&project_path).output().map(|o| o.status.success()).unwrap_or(false);
+    if exists { return Ok(format!("Git branch '{}' already exists", git_branch)); }
+
+    let out = Command::new("git").args(["branch", &git_branch]).current_dir(&project_path).output().map_err(|e| AppError::Agent(e.to_string()))?;
+    if !out.status.success() { return Err(AppError::Agent(String::from_utf8_lossy(&out.stderr).trim().to_string())); }
+    Ok(format!("Created git branch '{}'", git_branch))
+}
+
+/// Checkout linked git branch. Blocks if workspace is dirty.
+#[tauri::command]
+pub fn checkout_git_branch(branch_id: String, state: State<DbState>) -> Result<String, AppError> {
+    use std::process::Command;
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let (conv_id, git_branch): (String, Option<String>) = conn
+        .query_row("SELECT conversation_id, git_branch FROM branches WHERE id = ?1", [&branch_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|_| AppError::NotFound("Branch not found".into()))?;
+    let git_branch = git_branch.ok_or_else(|| AppError::Agent("No git branch linked".into()))?;
+    let project_path: String = conn
+        .query_row("SELECT path FROM projects WHERE key = (SELECT project_key FROM conversations WHERE id = ?1)", [&conv_id], |row| row.get(0))
+        .map_err(|_| AppError::Agent("Project path not found".into()))?;
+
+    let dirty = Command::new("git").args(["status", "--porcelain"]).current_dir(&project_path).output().map(|o| !o.stdout.is_empty()).unwrap_or(false);
+    if dirty { return Err(AppError::Agent("작업 디렉토리에 변경사항이 있습니다. 먼저 commit하거나 stash하세요.".into())); }
+
+    let out = Command::new("git").args(["checkout", &git_branch]).current_dir(&project_path).output().map_err(|e| AppError::Agent(e.to_string()))?;
+    if !out.status.success() { return Err(AppError::Agent(String::from_utf8_lossy(&out.stderr).trim().to_string())); }
+    Ok(format!("Checked out '{}'", git_branch))
+}
+
 /// Delete a branch and its descendants.
 /// - Active branches: full delete (branch + shadow conv + messages + memos + artifacts)
 /// - Adopted/archived branches: pointer-only delete (branch row removed, shadow conv + messages preserved)

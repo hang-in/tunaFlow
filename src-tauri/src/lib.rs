@@ -99,6 +99,8 @@ pub fn run() {
             commands::branches::delete_branch,
             commands::branches::rename_branch,
             commands::branches::link_git_branch,
+            commands::branches::create_git_branch,
+            commands::branches::checkout_git_branch,
             commands::branches::open_branch_stream,
             // Agent
             commands::agents::send_with_claude,

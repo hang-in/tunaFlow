@@ -332,7 +332,20 @@ export function BranchThreadPanel() {
 function GitLinkBadge({ branchId, gitBranch, isReadOnly }: { branchId: string; gitBranch: string | null; isReadOnly: boolean }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(gitBranch ?? "");
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const linkGitBranch = useChatStore((s) => s.linkGitBranch);
+
+  const handleGitAction = async (action: "create" | "checkout") => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    try {
+      const result = await invoke<string>(action === "create" ? "create_git_branch" : "checkout_git_branch", { branchId });
+      setActionMsg(result);
+      setTimeout(() => setActionMsg(null), 3000);
+    } catch (e) {
+      setActionMsg(String(e));
+      setTimeout(() => setActionMsg(null), 4000);
+    }
+  };
 
   if (editing && !isReadOnly) {
     return (
@@ -348,16 +361,30 @@ function GitLinkBadge({ branchId, gitBranch, isReadOnly }: { branchId: string; g
     );
   }
 
+  if (actionMsg) {
+    return <span className="text-[8px] text-primary/60 shrink-0 truncate max-w-[150px]">{actionMsg}</span>;
+  }
+
   if (gitBranch) {
     return (
-      <button
-        onClick={() => !isReadOnly && setEditing(true)}
-        className={cn("text-[8px] font-mono text-muted-foreground/30 px-1 py-0.5 rounded bg-muted/50 shrink-0 truncate max-w-[80px]",
-          !isReadOnly && "hover:text-muted-foreground/60 hover:bg-muted cursor-pointer")}
-        title={isReadOnly ? gitBranch : `Click to edit: ${gitBranch}`}
-      >
-        {gitBranch}
-      </button>
+      <span className="flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={() => !isReadOnly && setEditing(true)}
+          className={cn("text-[8px] font-mono text-muted-foreground/30 px-1 py-0.5 rounded bg-muted/50 truncate max-w-[80px]",
+            !isReadOnly && "hover:text-muted-foreground/60 hover:bg-muted cursor-pointer")}
+          title={isReadOnly ? gitBranch : `Click to edit: ${gitBranch}`}
+        >
+          {gitBranch}
+        </button>
+        {!isReadOnly && (
+          <>
+            <button onClick={() => handleGitAction("create")} title="Create git branch"
+              className="text-[7px] text-muted-foreground/20 hover:text-primary/60 transition-colors">+</button>
+            <button onClick={() => handleGitAction("checkout")} title="Checkout git branch"
+              className="text-[7px] text-muted-foreground/20 hover:text-primary/60 transition-colors">↗</button>
+          </>
+        )}
+      </span>
     );
   }
 

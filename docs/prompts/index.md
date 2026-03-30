@@ -68,5 +68,6 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/git_sync_phase1_prompt](./2026-03-30/git_sync_phase1_prompt.md): git automation 없이 프로젝트/branch의 git 상태와 연결 정보를 보여주는 1차 프롬프트
 - [2026-03-30/git_branch_link_visibility_prompt](./2026-03-30/git_branch_link_visibility_prompt.md): branch별 linked git branch를 표시하고 수동 편집 가능하게 하는 프롬프트
 - [2026-03-30/git_branch_defaulting_prompt](./2026-03-30/git_branch_defaulting_prompt.md): branch 생성 시 linked git branch 기본값을 제안/채우는 프롬프트
+- [2026-03-30/git_sync_phase2_guarded_actions_prompt](./2026-03-30/git_sync_phase2_guarded_actions_prompt.md): 제한적인 git branch create/checkout만 안전하게 여는 2차 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트
