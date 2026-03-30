@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::db::{migrations::now_epoch_ms, models::Message};
 use crate::errors::AppError;
 
-use super::trace_log::{insert_trace_log, new_span_id, new_trace_id, SpanInfo};
+use super::trace_log::{insert_trace_log, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
 
 /// Persist a user message if no pre-existing user_message_id was provided.
 pub fn persist_user_message(
@@ -76,12 +76,13 @@ pub fn build_normalized_prompt(
     active_skills: &[String],
     cross_session_ids: &[String],
     persona_fragment: Option<&str>,
-) -> String {
+) -> (String, ContextPackMeta) {
     use super::context_pack::*;
     use crate::guardrail;
     use super::compression::maybe_compress_section;
 
     let is_branch = conversation_id.starts_with("branch:");
+    let mut included_sections: Vec<String> = Vec::new();
 
     // Determine context mode — same logic as Claude path
     let ctx_mode = if is_branch {
@@ -98,12 +99,14 @@ pub fn build_normalized_prompt(
     // Project
     if let Some(p) = project_path {
         sections.push(format!("Project: {}", p));
+        included_sections.push("project".into());
     }
 
     // Persona section (role contract)
     if let Some(fragment) = persona_fragment {
         if !fragment.trim().is_empty() {
             sections.push(format!("## Persona\n\n{}", fragment.trim()));
+            included_sections.push("persona".into());
         }
     }
 
@@ -131,6 +134,7 @@ pub fn build_normalized_prompt(
             guardrail::MAX_CONTEXT_SECTION,
         ) {
             sections.push(ctx);
+            included_sections.push("context".into());
         }
     }
 
@@ -142,18 +146,21 @@ pub fn build_normalized_prompt(
             guardrail::MAX_PLAN_SECTION,
         ) {
             sections.push(s);
+            included_sections.push("plan".into());
         }
         if let Some(s) = guardrail::truncate_section(
             build_findings_section(conn, &plan_conv_id),
             guardrail::MAX_FINDINGS_SECTION,
         ) {
             sections.push(s);
+            included_sections.push("findings".into());
         }
         if let Some(s) = guardrail::truncate_section(
             build_artifact_handoff_section(conn, &plan_conv_id),
             guardrail::MAX_ARTIFACTS_SECTION,
         ) {
             sections.push(s);
+            included_sections.push("artifacts".into());
         }
     }
 
@@ -164,6 +171,7 @@ pub fn build_normalized_prompt(
             guardrail::MAX_SKILLS_SECTION,
         ) {
             sections.push(s);
+            included_sections.push("skills".into());
         }
     }
     // rawq: mode-independent — prompt_needs_rawq() internally decides
@@ -172,6 +180,7 @@ pub fn build_normalized_prompt(
         guardrail::MAX_RAWQ_SECTION,
     ) {
         sections.push(s);
+        included_sections.push("rawq".into());
     }
     if !cross_session_ids.is_empty() {
         use crate::commands::context_queries::{load_recent_messages, conversation_label};
@@ -189,6 +198,7 @@ pub fn build_normalized_prompt(
             guardrail::MAX_CROSS_SESSION_SECTION,
         ) {
             sections.push(s);
+            included_sections.push("cross-session".into());
         }
     }
 
@@ -196,18 +206,33 @@ pub fn build_normalized_prompt(
     if is_branch {
         if let Some(s) = build_thread_inheritance_section(conn, conversation_id) {
             sections.push(s);
+            included_sections.push("thread-inheritance".into());
         }
     }
 
     // Assemble final prompt
-    if sections.is_empty() {
-        return prompt.to_string();
-    }
-    let context = sections.join("\n\n");
-    // Enforce total limit
-    let limited = guardrail::enforce_total_limit(Some(context), guardrail::MAX_TOTAL_PROMPT)
-        .unwrap_or_default();
-    format!("{}\n\n---\n\n{}", limited, prompt)
+    let assembled = if sections.is_empty() {
+        prompt.to_string()
+    } else {
+        let context = sections.join("\n\n");
+        let limited = guardrail::enforce_total_limit(Some(context), guardrail::MAX_TOTAL_PROMPT)
+            .unwrap_or_default();
+        format!("{}\n\n---\n\n{}", limited, prompt)
+    };
+
+    let ctx_mode_str = format!("{:?}", ctx_mode);
+    let total_len = assembled.len();
+    let truncated = total_len >= guardrail::MAX_TOTAL_PROMPT;
+
+    let meta = ContextPackMeta {
+        mode: ctx_mode_str,
+        sections: included_sections,
+        length: total_len,
+        hash: String::new(), // skip hash for now
+        truncated,
+    };
+
+    (assembled, meta)
 }
 
 /// Result from an agent run, before DB persistence.

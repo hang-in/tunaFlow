@@ -308,7 +308,7 @@ pub fn send_with_codex(
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let prompt = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
+        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
         (prompt, pp)
     };
 
@@ -362,7 +362,7 @@ pub fn send_with_gemini(
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let prompt = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
+        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
         (prompt, pp)
     };
 
@@ -419,7 +419,7 @@ pub fn stream_with_gemini(
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let prompt = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
+        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
         (prompt, pp)
     };
 
@@ -506,7 +506,7 @@ pub fn send_with_opencode(
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let prompt = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
+        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
         (prompt, pp)
     };
 
@@ -923,7 +923,7 @@ pub fn start_gemini_stream(input:SendWithClaudeInput,app:AppHandle,state:State<D
     use super::agents_helpers::send_common::*;
     let(ep,pp,mid)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
         persist_user_message(&conn,&input.conversation_id,&input.prompt,&input.user_message_id)?;
-        let pp=load_project_path(&conn,&input.project_key);let ep=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
+        let pp=load_project_path(&conn,&input.project_key);let (ep,_ep_meta)=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
         let mid=format!("msg-{}",Uuid::new_v4());let now=now_epoch_ms();
         conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,model,persona)VALUES(?1,?2,'assistant','',?3,'streaming','gemini',?4,?5)",params![mid,input.conversation_id,now,input.model,input.persona_label])?;
         (ep,pp,mid)};
@@ -960,7 +960,7 @@ pub fn start_codex_run(input:SendWithClaudeInput,app:AppHandle,state:State<DbSta
     use super::agents_helpers::send_common::*;
     let(ep,pp,mid)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
         persist_user_message(&conn,&input.conversation_id,&input.prompt,&input.user_message_id)?;
-        let pp=load_project_path(&conn,&input.project_key);let ep=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
+        let pp=load_project_path(&conn,&input.project_key);let (ep,_ep_meta)=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
         let mid=format!("msg-{}",Uuid::new_v4());let now=now_epoch_ms();
         conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,model,persona)VALUES(?1,?2,'assistant','',?3,'streaming','codex',?4,?5)",params![mid,input.conversation_id,now,input.model,input.persona_label])?;
         (ep,pp,mid)};
@@ -1048,7 +1048,7 @@ pub fn start_opencode_run(input:SendWithClaudeInput,app:AppHandle,state:State<Db
     use super::agents_helpers::send_common::*;
     let(ep,pp,mid)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
         persist_user_message(&conn,&input.conversation_id,&input.prompt,&input.user_message_id)?;
-        let pp=load_project_path(&conn,&input.project_key);let ep=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
+        let pp=load_project_path(&conn,&input.project_key);let (ep,_ep_meta)=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
         let mid=format!("msg-{}",Uuid::new_v4());let now=now_epoch_ms();
         conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,model,persona)VALUES(?1,?2,'assistant','',?3,'streaming','opencode',?4,?5)",params![mid,input.conversation_id,now,input.model,input.persona_label])?;
         (ep,pp,mid)};
