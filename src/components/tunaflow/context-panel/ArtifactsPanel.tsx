@@ -75,9 +75,14 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
         </span>
       </div>
       {!expanded && (
-        <p className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-2 ml-6">
-          {artifact.content.slice(0, 100)}
-        </p>
+        <>
+          <p className="text-[10px] text-muted-foreground/60 leading-snug line-clamp-2 ml-6">
+            {artifact.content.slice(0, 100)}
+          </p>
+          <p className="text-[9px] text-muted-foreground/30 ml-6 mt-0.5 font-mono">
+            {new Date(artifact.updatedAt * 1000).toLocaleDateString()}
+          </p>
+        </>
       )}
       {expanded && (
         <div className="ml-6 mt-2 space-y-2">
@@ -173,12 +178,28 @@ function HarnessStrip({ artifacts }: { artifacts: Artifact[] }) {
 
 // ─── ArtifactsPanel (main export) ────────────────────────────────────────────
 
+const FILTER_TABS = [
+  { id: "all", label: "All" },
+  { id: "note", label: "Notes" },
+  { id: "code", label: "Code" },
+  { id: "spec", label: "Specs" },
+  { id: "harness", label: "Harness" },
+];
+
+const SORT_OPTIONS = [
+  { id: "newest", label: "Newest" },
+  { id: "oldest", label: "Oldest" },
+  { id: "title", label: "Title" },
+];
+
 export function ArtifactsPanel() {
   const { artifacts, selectedConversationId, createArtifact } = useChatStore();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [artType, setArtType] = useState("note");
+  const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("newest");
 
   const handleCreate = async () => {
     if (!title.trim() || !content.trim() || !selectedConversationId) return;
@@ -186,38 +207,54 @@ export function ArtifactsPanel() {
     setTitle(""); setContent(""); setShowForm(false);
   };
 
-  // Split artifacts into harness vs other
-  const harnessArtifacts = artifacts.filter((a) => HARNESS_TYPES.has(a.type));
-  const otherArtifacts = artifacts.filter((a) => !HARNESS_TYPES.has(a.type));
+  // Filter
+  const filtered = artifacts.filter((a) => {
+    if (filter === "all") return true;
+    if (filter === "harness") return HARNESS_TYPES.has(a.type);
+    return a.type === filter;
+  });
+
+  // Sort
+  const sorted = [...filtered].sort((a, b) => {
+    if (sort === "newest") return b.updatedAt - a.updatedAt;
+    if (sort === "oldest") return a.updatedAt - b.updatedAt;
+    return a.title.localeCompare(b.title);
+  });
 
   return (
     <div className="space-y-3">
-      {/* Harness section */}
-      {harnessArtifacts.length > 0 && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <h4 className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest">Harness</h4>
-          </div>
-          <HarnessStrip artifacts={harnessArtifacts} />
-          <div className="space-y-1.5">
-            {harnessArtifacts.map((a) => <ArtifactCard key={a.id} artifact={a} />)}
-          </div>
+      {/* Filter + Sort bar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-0.5">
+          {FILTER_TABS.map((tab) => (
+            <button key={tab.id} onClick={() => setFilter(tab.id)}
+              className={cn("px-2 py-0.5 rounded text-[11px] font-medium transition-colors",
+                filter === tab.id ? "bg-accent text-foreground" : "text-muted-foreground/50 hover:text-foreground hover:bg-accent/50"
+              )}>
+              {tab.label}
+            </button>
+          ))}
         </div>
-      )}
+        <span className="flex-1" />
+        <select value={sort} onChange={(e) => setSort(e.target.value)}
+          className="bg-transparent text-[10px] text-muted-foreground/50 outline-none cursor-pointer">
+          {SORT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </div>
 
-      {/* Other artifacts section */}
-      {otherArtifacts.length > 0 && (
-        <div>
-          {harnessArtifacts.length > 0 && (
-            <h4 className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-1.5 mt-1">
-              Other
-            </h4>
-          )}
-          <div className="space-y-1.5">
-            {otherArtifacts.map((a) => <ArtifactCard key={a.id} artifact={a} />)}
-          </div>
+      {/* Summary strip */}
+      {artifacts.length > 0 && <HarnessStrip artifacts={artifacts} />}
+
+      {/* Artifact cards */}
+      {sorted.length > 0 ? (
+        <div className="space-y-1.5">
+          {sorted.map((a) => <ArtifactCard key={a.id} artifact={a} />)}
         </div>
-      )}
+      ) : artifacts.length > 0 ? (
+        <div className="text-center py-4 text-[12px] text-muted-foreground/40">
+          No artifacts match this filter
+        </div>
+      ) : null}
 
       {/* Empty state */}
       {artifacts.length === 0 && !showForm && (

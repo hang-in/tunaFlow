@@ -52,5 +52,6 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/document_naming_rule_prompt](./2026-03-30/document_naming_rule_prompt.md): 파일명은 짧게, title/metas/index는 설명적으로 가는 규칙을 정리하는 프롬프트
 - [2026-03-30/runtime_settings_implementation_prompt](./2026-03-30/runtime_settings_implementation_prompt.md): Settings > Runtime을 실제 진단/설정 섹션으로 먼저 채우는 프롬프트
 - [2026-03-30/artifact_manual_promotion_mvp_prompt](./2026-03-30/artifact_manual_promotion_mvp_prompt.md): assistant 메시지에서 Artifact 수동 승격 흐름을 붙이는 프롬프트
+- [2026-03-30/artifacts_tab_usability_prompt](./2026-03-30/artifacts_tab_usability_prompt.md): Artifacts 탭에 필터/정렬/상세 보기를 추가하는 사용성 개선 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트
