@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { MessageSquare, ClipboardList, FileSearch, TestTube, FileText, GitBranch, Users, Loader2, Search, StickyNote } from "lucide-react";
+import { MessageSquare, ClipboardList, FileSearch, TestTube, FileText, GitBranch, Users, Loader2, Search, StickyNote, FlaskConical } from "lucide-react";
 
 import { ChatPanel } from "./ChatPanel";
 import { PlansPanel } from "./context-panel/PlansPanel";
@@ -10,9 +10,10 @@ import { HarnessSummary } from "./context-panel/HarnessSummary";
 import { ReviewPanel } from "./context-panel/ReviewPanel";
 import { TestPanel } from "./context-panel/TestPanel";
 import { ArtifactsPanel } from "./context-panel/ArtifactsPanel";
+import { EvaluationPanel } from "./context-panel/EvaluationPanel";
 import { InlineRename } from "./InlineRename";
 
-type CenterTab = "chat" | "plan" | "artifacts" | "review" | "test";
+type CenterTab = "chat" | "plan" | "artifacts" | "review" | "test" | "eval";
 
 const TABS: { id: CenterTab; label: string; icon: React.ReactNode }[] = [
   { id: "chat", label: "Chat", icon: <MessageSquare className="w-3.5 h-3.5" /> },
@@ -20,6 +21,7 @@ const TABS: { id: CenterTab; label: string; icon: React.ReactNode }[] = [
   { id: "artifacts", label: "Artifacts", icon: <FileText className="w-3.5 h-3.5" /> },
   { id: "review", label: "Review", icon: <FileSearch className="w-3.5 h-3.5" /> },
   { id: "test", label: "Test", icon: <TestTube className="w-3.5 h-3.5" /> },
+  { id: "eval", label: "Eval", icon: <FlaskConical className="w-3.5 h-3.5" /> },
 ];
 
 export function CenterPanel() {
@@ -263,6 +265,14 @@ export function CenterPanel() {
             <div className="max-w-4xl mx-auto">
               <h3 className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-3">Test</h3>
               <TestPanel />
+            </div>
+          </div>
+        )}
+
+        {activeTab === "eval" && (
+          <div className="flex-1 overflow-y-auto p-5">
+            <div className="max-w-4xl mx-auto">
+              <EvaluationPanel />
             </div>
           </div>
         )}
