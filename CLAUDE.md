@@ -165,7 +165,7 @@ tunaFlow/
 - agents.rs 1168→260줄 (레거시 6개 삭제 + prepare/finalize 공유 추출)
 - branchSlice ENGINE_CONFIGS 통합
 
-### ✅ 해결됨 (세션 4: multi-agent context + quality)
+### ✅ 해결됨 (세션 4: multi-agent context + quality + deps)
 - **Multi-agent context 3-layer**: participants meta + budget-based dynamic window + per-agent last-message guarantee. 문서: `docs/reference/multiAgentContextStrategy.md`
 - **Retrieval 품질 튜닝**: FTS5 stopwords, scoring rebalance (fts 0.5/recency 0.2), overlap penalty 상향 (0.75), adaptive limit (Lite=3/Std=6/Full=10), content truncation 확대
 - **Compressed memory 참여자 보존**: SUMMARY_PROMPT에 `## Participants` 섹션 필수화
@@ -175,10 +175,25 @@ tunaFlow/
 - **스트리밍 UX 정리**: CLI가 thinking을 안 주므로 progress block 제거 → typing indicator만. progress_content는 DB에 lazy-load 방식으로 보존
 - **ContextPack DB 분리 준비**: `load_context_data()` + `assemble_prompt()` 2-phase 분리 완료. DB/assembly 완전 분리 프롬프트 준비됨
 
+### ✅ 해결됨 (세션 4 후반: project scaffold + deps)
+- **프로젝트 scaffolding**: 프로젝트 생성 시 CLAUDE.md + docs/ 자동 생성. restore 시에도 동작
+- **plan-first 규칙**: ContextPack identity block + CLAUDE.md 양쪽에 "승인 전 구현 금지" 규칙
+- **Claude --permission-mode acceptEdits**: 편집 자동 승인, 터미널 확인 제거
+- **Gemini Auto model**: discovery에 auto 기본, preview 모델 "(용량 미보장)" 라벨
+- **fnm/nvm 바이너리 경로**: Gemini + Codex resolve에 fnm/nvm 탐색 추가
+- **rawq 빈 인덱스 체크**: 인덱스 없으면 search skip (5초 타임아웃 제거)
+- **rawq fs watcher**: tauri-plugin-fs watch + 에이전트 완료 시 re-index
+- **스킬 선택적 주입**: 키워드 매칭 섹션만 포함 (8k→3k 절감)
+- **RoundtableView 분할**: 468→212줄 + roundtable/ 폴더 3파일
+- **스트리밍 UX 정리**: CLI thinking 미제공 → typing indicator만
+- **의존성 도입 Phase 1-3**: clipboard-manager, shell, opener, fs (Tauri) + chrono, tokio (Rust) + react-virtuoso, cmdk, sonner (npm)
+- **Phase 4-1 clipboard**: navigator.clipboard → native plugin 전환 (7파일)
+- **Phase 4-2 sonner**: toast 알림 도입 (scaffold 알림)
+
 ### 기타 알려진 이슈
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
 - Rust 57 unit test + Frontend 55 test이나, integration test 부재
-- RT에서 `run()` 동기 사용 — progress 가시성 없음 (stream_run 전환 고려)
+- RT에서 `run()` 동기 사용 — progress 가시성 없음
 - 긴 multi-agent 대화 (24+ 메시지) 실사용 검증 미완
 
 ---
@@ -390,17 +405,19 @@ tunaFlow/
 - Compressed memory 참여자 보존 — 긴 대화 후 에이전트 인식 검증
 - Cross-conversation retrieval — 다중 대화 프로젝트에서 chunk 회수 확인
 
+### P1: 의존성 마이그레이션 (Phase 4 잔여)
+- **Phase 4-3: react-virtuoso** — ChatPanel 가상 스크롤 (200+ 메시지 성능). 설치됨, 마이그레이션 대기
+- **Phase 4-4: cmdk** — 커맨드 팔레트 (Cmd+K 에이전트/대화 전환). 설치됨, 구현 대기
+- 계획 문서: `docs/plans/dependencyAdoptionPlan.md`
+
 ### P1: 구조 개선
-- **스킬 선택적 주입**: 전체 SKILL.md 대신 관련 섹션만 발췌 (8k→3k 절감 예상)
-- **ContextPack DB/assembly 완전 분리**: `assemble_prompt()` 순수 함수화 → 단위 테스트 가능. 프롬프트 준비됨: `docs/prompts/2026-03-30/contextpack_db_separation_prompt.md`
-- **RoundtableView 분할** (현재 450줄+)
+- **ContextPack DB/assembly 완전 분리**: `assemble_prompt()` 순수 함수화. 프롬프트: `docs/prompts/2026-03-30/contextpack_db_separation_prompt.md`
+- **Phase 5: tokio async** — 에이전트 실행 경로 전체 async 전환. dual-path 전략. 별도 세션 규모
 
 ### P2: 후순위
 - Vector DB Phase 1 (rawq embedding → 메시지 의미 검색). 로드맵: `docs/reference/multiAgentContextStrategy.md`
-- Startup UX 마감
-- RT preset / workflow preset
-- Chat virtualization (200+ 메시지)
 - RT stream_run 전환 (progress 가시성)
+- 긴 multi-agent 대화 실사용 검증
 - smoke test 복구
 
 ---
