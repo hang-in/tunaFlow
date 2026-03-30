@@ -132,6 +132,11 @@ pub fn create_project(
         params![conv_id, input.key, conv_now],
     )?;
 
+    // Scaffold project directory with convention files
+    if let Some(ref path) = store_path {
+        scaffold_project_dir(path, &input.name);
+    }
+
     Ok(Project {
         key: input.key,
         name: input.name,
@@ -143,6 +148,148 @@ pub fn create_project(
         updated_at: now,
     })
 }
+
+/// Create minimal project directory structure and convention files.
+///
+/// Only creates files that don't already exist — safe to call on existing projects.
+fn scaffold_project_dir(project_path: &str, project_name: &str) {
+    use std::fs;
+    use std::path::Path;
+
+    let root = Path::new(project_path);
+    if !root.is_dir() { return; }
+
+    // Create standard directories
+    for dir in &["docs/plans", "docs/reference", "docs/prompts"] {
+        let _ = fs::create_dir_all(root.join(dir));
+    }
+
+    // CLAUDE.md — agent convention file (only if not present)
+    let claude_md = root.join("CLAUDE.md");
+    if !claude_md.exists() {
+        let content = generate_claude_md(project_name);
+        let _ = fs::write(&claude_md, content);
+        eprintln!("[scaffold] created {}", claude_md.display());
+    }
+
+    // docs/plans/index.md
+    let plans_index = root.join("docs/plans/index.md");
+    if !plans_index.exists() {
+        let _ = fs::write(&plans_index, "# Plans\n\nPlan document index. Register new plans here.\n");
+    }
+
+    // docs/reference/index.md
+    let ref_index = root.join("docs/reference/index.md");
+    if !ref_index.exists() {
+        let _ = fs::write(&ref_index, "# Reference\n\nReference document index.\n");
+    }
+}
+
+/// Generate a comprehensive CLAUDE.md for a new project.
+fn generate_claude_md(project_name: &str) -> String {
+    format!(r#"# {project_name} — Agent Instructions
+
+> This file defines project-level rules for all agents in tunaFlow.
+> All agents (Claude, Gemini, Codex, OpenCode) must follow these rules.
+
+---
+
+## 1. Project Overview
+
+- Name: {project_name}
+- Status: initial setup
+
+> Describe project purpose and tech stack here.
+
+---
+
+## 2. File Storage Rules
+
+**All documents and artifacts must be created within this project directory.**
+
+- Do NOT create files in `~/.claude/`, `~/.gemini/`, or any external path
+- Plans: `docs/plans/`
+- Reference docs: `docs/reference/`
+- Prompts: `docs/prompts/`
+- Code: follow project structure
+
+---
+
+## 3. Documentation Rules
+
+### File Naming
+- Short, 2-4 core tokens (camelCase)
+- Reference: stable names without dates (e.g., `implementationStatus.md`)
+- Plan: `featureNamePlan.md` or `featureNamePlan_YYYY-MM-DD.md`
+- Prompt: `docs/prompts/YYYY-MM-DD/short_name.md`
+
+### Document Metadata
+- Top of every document: `type`, `status`, `updated_at`
+- Status values: `draft` → `in_progress` → `done` → `archived`
+- Reference docs: update same file (no date-based duplication)
+- Plans/prompts: new documents per task allowed (must update index.md)
+
+### Versioning
+- Use `status: archived` + `superseded_by` instead of deletion
+- Brainstorm/comparison docs: mark `canonical: false`
+
+---
+
+## 4. Coding Rules
+
+### Language
+- Respond in the language the user uses (match user's message language)
+- Code, paths, identifiers: keep in original language
+
+### Code Quality
+- Only modify what was requested. Do not clean up surrounding code
+- Error handling: minimize silent fallbacks during development
+- No speculative abstractions or future-proofing
+- Modify one path at a time → verify → proceed to next
+
+### Testing
+- Verify existing tests pass after changes
+- Consider unit tests for new logic
+
+---
+
+## 5. Work Safety Rules
+
+- **Verify replacement works** before removing existing functionality
+- **Confirm before destructive operations** (file deletion, schema changes)
+- **Single-path modification** — never change multiple execution paths simultaneously
+- Check all consumers before modifying shared state
+
+---
+
+## 6. Agent Behavior Rules
+
+- Introduce yourself by profile name first, then engine. No mixed expressions
+- Do not claim ownership of other agents' messages
+- Respond in the user's language
+- Lead with conclusions, then reasoning
+
+---
+
+## 7. Current Status
+
+### Completed
+- (record here)
+
+### In Progress
+- (record here)
+
+### Known Issues
+- (record here)
+
+---
+
+## 8. Next Priorities
+
+1. (record here)
+"#)
+}
+
 
 /// Hide a project from the list without deleting any data.
 #[tauri::command]
