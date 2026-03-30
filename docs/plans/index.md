@@ -155,6 +155,7 @@
 - [documentationIaGovernancePlan_2026-03-30](./documentationIaGovernancePlan_2026-03-30.md)
 - [documentMetadataAdoptionPlan_2026-03-30](./documentMetadataAdoptionPlan_2026-03-30.md)
 - [runtimeSettingsImplementationPlan_2026-03-30](./runtimeSettingsImplementationPlan_2026-03-30.md)
+- [artifactManualPromotionMvpPlan_2026-03-30](./artifactManualPromotionMvpPlan_2026-03-30.md)
 - [backgroundAgentExecutionPlan](./backgroundAgentExecutionPlan.md)
 - [sidebarThreeSectionPlan](./sidebarThreeSectionPlan.md)
 - [sidecarMigrationPlan](./sidecarMigrationPlan.md)

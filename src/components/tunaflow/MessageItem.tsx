@@ -26,6 +26,7 @@ interface MessageItemProps {
   onMemo?: (messageId: string) => void;
   onFollowup?: (engine: string, content: string) => void;
   onDeletePair?: (messageId: string) => void;
+  onSaveArtifact?: (content: string) => void;
   threadBranches?: Branch[];
   onOpenThread?: (branchId: string) => void;
   showActions?: boolean;
@@ -34,7 +35,7 @@ interface MessageItemProps {
   grouped?: boolean;
 }
 
-export const MessageItem = memo(function MessageItem({ message, onBranch, onBranchRT, onMemo, onFollowup, onDeletePair, threadBranches, onOpenThread, showActions = true, variant = "default", grouped = false }: MessageItemProps) {
+export const MessageItem = memo(function MessageItem({ message, onBranch, onBranchRT, onMemo, onFollowup, onDeletePair, onSaveArtifact, threadBranches, onOpenThread, showActions = true, variant = "default", grouped = false }: MessageItemProps) {
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
   const isCompact = variant === "compact";
@@ -95,6 +96,7 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
           onMemo={onMemo}
           onFollowup={onFollowup}
           onDeletePair={onDeletePair}
+          onSaveArtifact={onSaveArtifact}
         />
       )}
     </div>

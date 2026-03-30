@@ -1,7 +1,7 @@
 import { cn, AGENT_DOT_COLORS, formatTimestamp, normalizeEngine } from "@/lib/utils";
 import { AgentAvatar } from "./AgentAvatar";
 import type { Message } from "@/types";
-import { Copy, Users, Loader2, GitBranch, StickyNote, Forward } from "lucide-react";
+import { Copy, Users, Loader2, GitBranch, StickyNote, Forward, FileText } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "@/stores/chatStore";
@@ -21,6 +21,7 @@ interface RoundtableViewProps {
   onBranchRT?: (messageId: string) => void;
   onMemo?: (messageId: string) => void;
   onFollowup?: (engine: string, content: string) => void;
+  onSaveArtifact?: (content: string) => void;
   /** Override conversationId for thread/drawer context */
   conversationId?: string;
 }
@@ -138,9 +139,10 @@ interface RtMessageProps {
   onBranchRT?: (messageId: string) => void;
   onMemo?: (messageId: string) => void;
   onFollowup?: (engine: string, content: string) => void;
+  onSaveArtifact?: (content: string) => void;
 }
 
-function RoundtableMessage({ message, isLast, onBranch, onBranchRT, onMemo, onFollowup }: RtMessageProps) {
+function RoundtableMessage({ message, isLast, onBranch, onBranchRT, onMemo, onFollowup, onSaveArtifact }: RtMessageProps) {
   const [hovered, setHovered] = useState(false);
   const name = message.persona ?? message.engine ?? "Agent";
   const engine = message.engine ?? "";
@@ -228,6 +230,12 @@ function RoundtableMessage({ message, isLast, onBranch, onBranchRT, onMemo, onFo
               <StickyNote className="w-3 h-3" />
             </button>
           )}
+          {onSaveArtifact && (
+            <button onClick={() => onSaveArtifact(message.content)} title="Save as Artifact"
+              className="p-1 rounded text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors">
+              <FileText className="w-3 h-3" />
+            </button>
+          )}
           {onFollowup && (
             <button onClick={() => onFollowup(message.engine ?? "claude", message.content)} title="Forward"
               className="p-1 rounded text-muted-foreground/40 hover:text-foreground hover:bg-accent transition-colors">
@@ -251,7 +259,7 @@ const RT_MODE_LABELS: Record<string, string> = {
   deliberative: "Deliberative",
 };
 
-export function RoundtableView({ messages, conversationId, onBranch, onBranchRT, onMemo, onFollowup }: RoundtableViewProps) {
+export function RoundtableView({ messages, conversationId, onBranch, onBranchRT, onMemo, onFollowup, onSaveArtifact }: RoundtableViewProps) {
   const participants = getParticipants(messages);
   const rounds = groupIntoRounds(messages);
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
@@ -403,7 +411,7 @@ export function RoundtableView({ messages, conversationId, onBranch, onBranchRT,
             <div>
               {round.map((msg, i) => (
                 <RoundtableMessage key={msg.id} message={msg} isLast={i === round.length - 1}
-                  onBranch={onBranch} onBranchRT={onBranchRT} onMemo={onMemo} onFollowup={onFollowup} />
+                  onBranch={onBranch} onBranchRT={onBranchRT} onMemo={onMemo} onFollowup={onFollowup} onSaveArtifact={onSaveArtifact} />
               ))}
             </div>
           </div>

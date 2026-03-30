@@ -5,6 +5,7 @@ import { MessageItem } from "./MessageItem";
 import { RoundtableView } from "./RoundtableView";
 import { NewMessageInput } from "./NewMessageInput";
 import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
+import { SaveArtifactDialog } from "./SaveArtifactDialog";
 
 export function ChatPanel() {
   // Selective subscriptions — only re-render when these specific fields change
@@ -28,6 +29,7 @@ export function ChatPanel() {
   const [view, setView] = useState<"stream" | "roundtable">("stream");
   const [rtDialogCheckpoint, setRtDialogCheckpoint] = useState<string | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
+  const [artifactContent, setArtifactContent] = useState<string | null>(null);
 
   const currentConv = conversations.find((c) => c.id === selectedConversationId);
   const isRoundtable = currentConv?.mode === "roundtable";
@@ -97,6 +99,7 @@ export function ChatPanel() {
             onBranchRT={!activeBranchId ? (id) => setRtDialogCheckpoint(id) : undefined}
             onMemo={!activeBranchId ? (id) => createMemo(id, messages.find((m) => m.id === id)?.content ?? "") : undefined}
             onFollowup={(engine, content) => sendFollowup(engine, "message", content)}
+            onSaveArtifact={(content) => setArtifactContent(content)}
           />
         ) : (
           <div className="py-3 space-y-0.5">
@@ -125,6 +128,7 @@ export function ChatPanel() {
                   onMemo={!activeBranchId ? (id) => createMemo(id, msg.content) : undefined}
                   onFollowup={(engine, content) => sendFollowup(engine, "message", content)}
                   onDeletePair={(id) => deleteMessagePair(id)}
+                  onSaveArtifact={(content) => setArtifactContent(content)}
                   threadBranches={msgBranches.length > 0 ? msgBranches : undefined}
                   onOpenThread={!activeBranchId ? (branchId) => openThread(branchId) : undefined}
                 />
@@ -151,6 +155,11 @@ export function ChatPanel() {
         open={rtDialogCheckpoint !== null}
         onClose={() => setRtDialogCheckpoint(null)}
         checkpointId={rtDialogCheckpoint || null}
+      />
+      <SaveArtifactDialog
+        open={artifactContent !== null}
+        onClose={() => setArtifactContent(null)}
+        initialContent={artifactContent ?? ""}
       />
       {/* Project loading modal */}
       {projectLoading && (
