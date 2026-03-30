@@ -14,6 +14,8 @@ pub struct SearchResult {
     pub file: String,
     pub line: usize,
     pub snippet: String,
+    pub scope: Option<String>,
+    pub confidence: f64,
 }
 
 #[derive(Debug)]
@@ -442,20 +444,21 @@ fn parse_json(json_str: &str, limit: usize) -> Result<Vec<SearchResult>, RawqErr
         let confidence = item.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
-        // First non-empty line as snippet
-        let snippet = content
-            .lines()
-            .find(|l| !l.trim().is_empty())
-            .unwrap_or(content)
-            .trim()
-            .to_string();
+        // Use full content (trimmed) as snippet, not just the first line
+        let snippet = content.trim().to_string();
 
         if !snippet.is_empty() {
             eprintln!(
                 "[rawq] {}:{} [{}] {:.0}%",
                 file, line, scope, confidence * 100.0
             );
-            results.push(SearchResult { file: file.to_string(), line, snippet });
+            results.push(SearchResult {
+                file: file.to_string(),
+                line,
+                snippet,
+                scope: if scope.is_empty() { None } else { Some(scope.to_string()) },
+                confidence,
+            });
         }
     }
 

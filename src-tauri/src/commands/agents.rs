@@ -16,8 +16,8 @@ use super::agents_helpers::context_pack::{
     build_thread_inheritance_section,
     combine_prompt_parts, resolve_plan_conversation_id, ContextMode,
 };
-use super::agents_helpers::compression::maybe_compress_section;
-use super::agents_helpers::trace_log::{insert_trace_log, insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
+use super::agents_helpers::compression::maybe_compress_section_typed;
+use super::agents_helpers::trace_log::{insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
 use super::jobs;
 
 #[derive(Clone, Serialize)]
@@ -46,11 +46,26 @@ pub struct SendWithClaudeInput {
     pub persona_fragment: Option<String>,
     #[serde(default)]
     pub persona_label: Option<String>,
+    /// Context mode override: "lite", "standard", "full", or null (auto)
+    #[serde(default)]
+    pub context_mode_override: Option<String>,
+    /// Total context budget cap override (chars). null = use default (60000)
+    #[serde(default)]
+    pub context_budget_cap: Option<usize>,
 }
 
 const CONTEXT_MESSAGES_LIMIT: i64 = 6;
 const PARENT_CONTEXT_MESSAGES_LIMIT: i64 = 4;
 const CROSS_SESSION_MESSAGES_LIMIT: i64 = 3;
+
+/// Wrap persona_fragment with identity framing block for a given engine.
+fn identity_fragment(input: &SendWithClaudeInput, engine: &str) -> Option<String> {
+    super::agents_helpers::send_common::build_identity_persona_fragment(
+        input.persona_label.as_deref(),
+        engine,
+        input.persona_fragment.as_deref(),
+    )
+}
 
 /// Send a one-shot request to the local `claude` CLI and persist the result.
 ///
@@ -169,9 +184,10 @@ pub fn send_with_claude(
         project_path.as_deref(),
         input.system_prompt.as_deref(),
     );
-    let context_summary = maybe_compress_section(
+    let context_summary = maybe_compress_section_typed(
         build_context_summary(&current_context, &parent_context, is_branch),
         guardrail::MAX_CONTEXT_SECTION,
+        Some("context"),
     );
 
     // Standard+ 섹션 (plan, findings, artifacts)
@@ -185,7 +201,7 @@ pub fn send_with_claude(
     let (skills_s, cross_s) = if ctx_mode >= ContextMode::Full || !input.active_skills.is_empty() {
         (
             guardrail::truncate_section(build_skills_section(&input.active_skills), guardrail::MAX_SKILLS_SECTION),
-            maybe_compress_section(build_cross_session_section(&cross_session_data), guardrail::MAX_CROSS_SESSION_SECTION),
+            maybe_compress_section_typed(build_cross_session_section(&cross_session_data), guardrail::MAX_CROSS_SESSION_SECTION, Some("cross-session")),
         )
     } else {
         (None, None)
@@ -197,13 +213,36 @@ pub fn send_with_claude(
         guardrail::MAX_RAWQ_SECTION,
     );
 
+    // Identity section
+    let identity_s = identity_fragment(&input, "claude-code");
+
+    // Track included sections for trace metadata
+    let mut ctx_sections: Vec<String> = Vec::new();
+    if identity_s.is_some() { ctx_sections.push("identity".into()); }
+    if project_context.is_some() { ctx_sections.push("project".into()); }
+    if context_summary.is_some() { ctx_sections.push("context".into()); }
+    if plan_s.is_some() { ctx_sections.push("plan".into()); }
+    if findings_s.is_some() { ctx_sections.push("findings".into()); }
+    if artifacts_s.is_some() { ctx_sections.push("artifacts".into()); }
+    if skills_s.is_some() { ctx_sections.push("skills".into()); }
+    if rawq_s.is_some() { ctx_sections.push("rawq".into()); }
+    if cross_s.is_some() { ctx_sections.push("cross-session".into()); }
+    if thread_inheritance.is_some() { ctx_sections.push("thread-inheritance".into()); }
+
     let system_prompt = guardrail::enforce_total_limit(
-        combine_prompt_parts([project_context, base_system_prompt, plan_s, findings_s, artifacts_s, skills_s, rawq_s, cross_s, thread_inheritance.clone(), context_summary]),
+        combine_prompt_parts([identity_s, project_context, base_system_prompt, plan_s, findings_s, artifacts_s, skills_s, rawq_s, cross_s, thread_inheritance.clone(), context_summary]),
         guardrail::MAX_TOTAL_PROMPT,
     );
 
     // Step 2: run claude subprocess in background thread — prevents UI freeze
     let prompt_len = input.prompt.len() + system_prompt.as_ref().map_or(0, |s| s.len());
+    let ctx_meta = ContextPackMeta {
+        mode: format!("{:?}", ctx_mode),
+        sections: ctx_sections,
+        length: prompt_len,
+        hash: String::new(),
+        truncated: prompt_len >= guardrail::MAX_TOTAL_PROMPT,
+    };
     let t0 = std::time::Instant::now();
     let run_input = claude::RunInput {
         prompt: input.prompt.clone(),
@@ -268,7 +307,7 @@ pub fn send_with_claude(
         ],
     )?;
 
-    insert_trace_log(&conn, &input.conversation_id, in_tokens, out_tokens, cost_usd, now, &SpanInfo {
+    insert_trace_log_with_context(&conn, &input.conversation_id, in_tokens, out_tokens, cost_usd, now, &SpanInfo {
         trace_id: &new_trace_id(),
         span_id: new_span_id(),
         parent_span_id: None,
@@ -276,7 +315,7 @@ pub fn send_with_claude(
         engine: "claude-code",
         duration_ms: duration_ms as i64,
         status: if status == "done" { "ok" } else { "error" },
-    });
+    }, &ctx_meta);
 
     Ok(Message {
         id: msg_id,
@@ -304,12 +343,13 @@ pub fn send_with_codex(
     use super::agents_helpers::send_common::*;
 
     // Step 1: persist user message + build normalized context
-    let (enriched_prompt, project_path) = {
+    let id_frag = identity_fragment(&input, "codex");
+    let (enriched_prompt, project_path, ctx_meta) = {
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
-        (prompt, pp)
+        let (prompt, meta) = build_normalized_prompt_with_budget(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, id_frag.as_deref(), input.context_mode_override.as_deref(), input.context_budget_cap);
+        (prompt, pp, meta)
     };
 
     // Step 2: run codex subprocess in background thread — prevents UI freeze
@@ -344,7 +384,7 @@ pub fn send_with_codex(
 
     // Step 3: persist assistant message + update usage
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    persist_assistant_message(&conn, &input.conversation_id, "codex", &input.model, &run, duration_ms)
+    persist_assistant_message(&conn, &input.conversation_id, "codex", &input.model, &run, duration_ms, Some(&ctx_meta))
 }
 
 /// Send a one-shot request to the local `gemini` CLI and persist the result.
@@ -358,12 +398,13 @@ pub fn send_with_gemini(
     use super::agents_helpers::send_common::*;
 
     // Step 1: persist user message + build normalized context
-    let (enriched_prompt, project_path) = {
+    let id_frag = identity_fragment(&input, "gemini");
+    let (enriched_prompt, project_path, ctx_meta) = {
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
-        (prompt, pp)
+        let (prompt, meta) = build_normalized_prompt_with_budget(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, id_frag.as_deref(), input.context_mode_override.as_deref(), input.context_budget_cap);
+        (prompt, pp, meta)
     };
 
     // Step 2: run gemini subprocess in background thread — prevents UI freeze
@@ -398,7 +439,7 @@ pub fn send_with_gemini(
 
     // Step 3: persist assistant message
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    persist_assistant_message(&conn, &input.conversation_id, "gemini", &input.model, &run, duration_ms)
+    persist_assistant_message(&conn, &input.conversation_id, "gemini", &input.model, &run, duration_ms, Some(&ctx_meta))
 }
 
 /// Send a streaming request to the local `gemini` CLI and persist the result.
@@ -415,12 +456,13 @@ pub fn stream_with_gemini(
     use super::agents_helpers::send_common::*;
 
     // Step 1: persist user message + build normalized context
-    let (enriched_prompt, project_path) = {
+    let id_frag = identity_fragment(&input, "gemini");
+    let (enriched_prompt, project_path, ctx_meta) = {
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
-        (prompt, pp)
+        let (prompt, meta) = build_normalized_prompt_with_budget(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, id_frag.as_deref(), input.context_mode_override.as_deref(), input.context_budget_cap);
+        (prompt, pp, meta)
     };
 
     // Step 2: create placeholder message ID
@@ -489,7 +531,7 @@ pub fn stream_with_gemini(
 
     // Step 4: persist assistant message
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    persist_assistant_message_with_id(&conn, &msg_id, &input.conversation_id, "gemini", &input.model, &run, duration_ms)
+    persist_assistant_message_with_id(&conn, &msg_id, &input.conversation_id, "gemini", &input.model, &run, duration_ms, Some(&ctx_meta))
 }
 
 /// Send a one-shot request to the local `opencode` CLI and persist the result.
@@ -502,12 +544,13 @@ pub fn send_with_opencode(
 ) -> Result<Message, AppError> {
     use super::agents_helpers::send_common::*;
 
-    let (enriched_prompt, project_path) = {
+    let id_frag = identity_fragment(&input, "opencode");
+    let (enriched_prompt, project_path, ctx_meta) = {
         let conn = state.write.lock().map_err(|_| AppError::Lock)?;
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let (prompt, _ctx_meta) = build_normalized_prompt(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, input.persona_fragment.as_deref());
-        (prompt, pp)
+        let (prompt, meta) = build_normalized_prompt_with_budget(&conn, &input.conversation_id, &input.prompt, pp.as_deref(), &input.active_skills, &input.cross_session_ids, id_frag.as_deref(), input.context_mode_override.as_deref(), input.context_budget_cap);
+        (prompt, pp, meta)
     };
 
     let t0 = std::time::Instant::now();
@@ -540,7 +583,7 @@ pub fn send_with_opencode(
     };
 
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    persist_assistant_message(&conn, &input.conversation_id, "opencode", &input.model, &run, duration_ms)
+    persist_assistant_message(&conn, &input.conversation_id, "opencode", &input.model, &run, duration_ms, Some(&ctx_meta))
 }
 
 /// Streaming version of send_with_claude.
@@ -671,9 +714,10 @@ pub fn stream_with_claude(
         project_path.as_deref(),
         input.system_prompt.as_deref(),
     );
-    let context_summary = maybe_compress_section(
+    let context_summary = maybe_compress_section_typed(
         build_context_summary(&current_context, &parent_context, is_branch),
         guardrail::MAX_CONTEXT_SECTION,
+        Some("context"),
     );
 
     let (plan_s, findings_s, artifacts_s) = if ctx_mode >= ContextMode::Standard {
@@ -686,19 +730,42 @@ pub fn stream_with_claude(
         (
             guardrail::truncate_section(build_skills_section(&input.active_skills), guardrail::MAX_SKILLS_SECTION),
             guardrail::truncate_section(build_rawq_section(project_path.as_deref(), &input.prompt), guardrail::MAX_RAWQ_SECTION),
-            maybe_compress_section(build_cross_session_section(&cross_session_data), guardrail::MAX_CROSS_SESSION_SECTION),
+            maybe_compress_section_typed(build_cross_session_section(&cross_session_data), guardrail::MAX_CROSS_SESSION_SECTION, Some("cross-session")),
         )
     } else {
         (None, None, None)
     };
 
+    // Identity section
+    let identity_s = identity_fragment(&input, "claude-code");
+
+    // Track included sections for trace metadata
+    let mut ctx_sections: Vec<String> = Vec::new();
+    if identity_s.is_some() { ctx_sections.push("identity".into()); }
+    if project_context.is_some() { ctx_sections.push("project".into()); }
+    if context_summary.is_some() { ctx_sections.push("context".into()); }
+    if plan_s.is_some() { ctx_sections.push("plan".into()); }
+    if findings_s.is_some() { ctx_sections.push("findings".into()); }
+    if artifacts_s.is_some() { ctx_sections.push("artifacts".into()); }
+    if skills_s.is_some() { ctx_sections.push("skills".into()); }
+    if rawq_s.is_some() { ctx_sections.push("rawq".into()); }
+    if cross_s.is_some() { ctx_sections.push("cross-session".into()); }
+    if thread_inheritance.is_some() { ctx_sections.push("thread-inheritance".into()); }
+
     let system_prompt = guardrail::enforce_total_limit(
-        combine_prompt_parts([project_context, base_system_prompt, plan_s, findings_s, artifacts_s, skills_s, rawq_s, cross_s, thread_inheritance.clone(), context_summary]),
+        combine_prompt_parts([identity_s, project_context, base_system_prompt, plan_s, findings_s, artifacts_s, skills_s, rawq_s, cross_s, thread_inheritance.clone(), context_summary]),
         guardrail::MAX_TOTAL_PROMPT,
     );
 
     // Step 3: run streaming subprocess — DB lock must NOT be held
     let prompt_len = input.prompt.len() + system_prompt.as_ref().map_or(0, |s| s.len());
+    let ctx_meta = ContextPackMeta {
+        mode: format!("{:?}", ctx_mode),
+        sections: ctx_sections,
+        length: prompt_len,
+        hash: String::new(),
+        truncated: prompt_len >= guardrail::MAX_TOTAL_PROMPT,
+    };
     let t0 = std::time::Instant::now();
     let chunk_msg_id = msg_id.clone();
     let progress_msg_id = msg_id.clone();
@@ -785,7 +852,7 @@ pub fn stream_with_claude(
         ],
     )?;
 
-    insert_trace_log(&conn, &input.conversation_id, in_tokens, out_tokens, cost_usd, now, &SpanInfo {
+    insert_trace_log_with_context(&conn, &input.conversation_id, in_tokens, out_tokens, cost_usd, now, &SpanInfo {
         trace_id: &new_trace_id(),
         span_id: new_span_id(),
         parent_span_id: None,
@@ -793,7 +860,7 @@ pub fn stream_with_claude(
         engine: "claude-code",
         duration_ms: duration_ms as i64,
         status: if status == "done" { "ok" } else { "error" },
-    });
+    }, &ctx_meta);
 
     Ok(Message {
         id: msg_id,
@@ -860,17 +927,18 @@ pub fn start_claude_stream(
         let cm = if is_branch||input.agent_name.is_some()||input.system_prompt.is_some(){ContextMode::Standard}else{ContextMode::Lite};
         let pc = pp.as_deref().map(|p|format!("## Project\n\nYou are working on a project located at: `{}`\nAll file paths and code references are relative to this directory.",p));
         let bp = assemble_system_prompt(input.agent_name.as_deref(),pp.as_deref(),input.system_prompt.as_deref());
-        let cs = maybe_compress_section(build_context_summary(&cur,&par,is_branch),guardrail::MAX_CONTEXT_SECTION);
+        let cs = maybe_compress_section_typed(build_context_summary(&cur,&par,is_branch),guardrail::MAX_CONTEXT_SECTION,Some("context"));
         let(ps,fs,a2)=if cm>=ContextMode::Standard{(pl,fi,ar)}else{(None,None,None)};
         let(sk,rq,cr)=if cm>=ContextMode::Full{
             (guardrail::truncate_section(build_skills_section(&input.active_skills),guardrail::MAX_SKILLS_SECTION),
              guardrail::truncate_section(build_rawq_section(pp.as_deref(),&input.prompt),guardrail::MAX_RAWQ_SECTION),
-             maybe_compress_section(build_cross_session_section(&csd),guardrail::MAX_CROSS_SESSION_SECTION))
+             maybe_compress_section_typed(build_cross_session_section(&csd),guardrail::MAX_CROSS_SESSION_SECTION,Some("cross-session")))
         }else{(None,None,None)};
-        let sf = [("project",pc.is_some()),("system_prompt",bp.is_some()),("plan",ps.is_some()),("findings",fs.is_some()),
+        let id_sec = identity_fragment(&input, "claude-code");
+        let sf = [("identity",id_sec.is_some()),("project",pc.is_some()),("system_prompt",bp.is_some()),("plan",ps.is_some()),("findings",fs.is_some()),
               ("artifacts",a2.is_some()),("skills",sk.is_some()),("rawq",rq.is_some()),("cross_session",cr.is_some()),
               ("thread_inheritance",th.is_some()),("context_summary",cs.is_some())];
-        let pre_limit = combine_prompt_parts([pc,bp,ps,fs,a2,sk,rq,cr,th,cs]);
+        let pre_limit = combine_prompt_parts([id_sec,pc,bp,ps,fs,a2,sk,rq,cr,th,cs]);
         let pre_len = pre_limit.as_ref().map_or(0,|s|s.len());
         let sp = guardrail::enforce_total_limit(pre_limit, guardrail::MAX_TOTAL_PROMPT);
         let ctx_meta = ContextPackMeta::from_parts(&format!("{:?}",cm), &sf, &sp, pre_len > sp.as_ref().map_or(0,|s|s.len()));
@@ -921,12 +989,13 @@ pub fn start_claude_stream(
 #[tauri::command]
 pub fn start_gemini_stream(input:SendWithClaudeInput,app:AppHandle,state:State<DbState>,cancel:State<crate::CancelRegistry>)->Result<StartRunResult,AppError>{
     use super::agents_helpers::send_common::*;
-    let(ep,pp,mid)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
+    let id_frag=identity_fragment(&input,"gemini");
+    let(ep,pp,mid,ep_meta)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
         persist_user_message(&conn,&input.conversation_id,&input.prompt,&input.user_message_id)?;
-        let pp=load_project_path(&conn,&input.project_key);let (ep,_ep_meta)=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
+        let pp=load_project_path(&conn,&input.project_key);let (ep,ep_meta)=build_normalized_prompt_with_budget(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,id_frag.as_deref(),input.context_mode_override.as_deref(),input.context_budget_cap);
         let mid=format!("msg-{}",Uuid::new_v4());let now=now_epoch_ms();
         conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,model,persona)VALUES(?1,?2,'assistant','',?3,'streaming','gemini',?4,?5)",params![mid,input.conversation_id,now,input.model,input.persona_label])?;
-        (ep,pp,mid)};
+        (ep,pp,mid,ep_meta)};
     let jid=format!("job-{}",Uuid::new_v4());
     {let conn=state.write.lock().map_err(|_|AppError::Lock)?;let _=jobs::create_job(&conn,&jid,&input.conversation_id,Some(&mid),"gemini","agent");}
     let ca=std::sync::Arc::clone(&cancel.0);let write_arc=std::sync::Arc::clone(&state.write);
@@ -943,6 +1012,7 @@ pub fn start_gemini_stream(input:SendWithClaudeInput,app:AppHandle,state:State<D
             Ok(out)=>{let c=if out.content.is_empty(){"(gemini returned no output)".into()}else{out.content};
                 let _=conn.execute("UPDATE messages SET content=?1,status='done',timestamp=?2 WHERE id=?3",params![c,now,mid]);
                 let _=conn.execute("UPDATE conversations SET total_input_tokens=total_input_tokens+?1,total_output_tokens=total_output_tokens+?2,updated_at=?3 WHERE id=?4",params![out.input_tokens,out.output_tokens,now/1000,cid]);
+                insert_trace_log_with_context(&conn,&cid,out.input_tokens,out.output_tokens,out.cost_usd,now,&SpanInfo{trace_id:&new_trace_id(),span_id:new_span_id(),parent_span_id:None,operation:"agent.stream",engine:"gemini",duration_ms:_dur as i64,status:"ok"},&ep_meta);
                 let _=jobs::complete_job(&conn,&jid,"done",None);
                 let _=ab.emit("agent:completed",AgentDonePayload{message_id:mid,conversation_id:cid,engine:"gemini".into()});}
             Err(ref e)=>{let em=guardrail::fallback_error("gemini",e);
@@ -958,12 +1028,13 @@ pub fn start_gemini_stream(input:SendWithClaudeInput,app:AppHandle,state:State<D
 #[tauri::command]
 pub fn start_codex_run(input:SendWithClaudeInput,app:AppHandle,state:State<DbState>)->Result<StartRunResult,AppError>{
     use super::agents_helpers::send_common::*;
-    let(ep,pp,mid)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
+    let id_frag=identity_fragment(&input,"codex");
+    let(ep,pp,mid,ep_meta)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
         persist_user_message(&conn,&input.conversation_id,&input.prompt,&input.user_message_id)?;
-        let pp=load_project_path(&conn,&input.project_key);let (ep,_ep_meta)=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
+        let pp=load_project_path(&conn,&input.project_key);let (ep,ep_meta)=build_normalized_prompt_with_budget(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,id_frag.as_deref(),input.context_mode_override.as_deref(),input.context_budget_cap);
         let mid=format!("msg-{}",Uuid::new_v4());let now=now_epoch_ms();
         conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,model,persona)VALUES(?1,?2,'assistant','',?3,'streaming','codex',?4,?5)",params![mid,input.conversation_id,now,input.model,input.persona_label])?;
-        (ep,pp,mid)};
+        (ep,pp,mid,ep_meta)};
     let jid=format!("job-{}",Uuid::new_v4());
     {let conn=state.write.lock().map_err(|_|AppError::Lock)?;let _=jobs::create_job(&conn,&jid,&input.conversation_id,Some(&mid),"codex","agent");}
     let write_arc=std::sync::Arc::clone(&state.write);
@@ -971,15 +1042,18 @@ pub fn start_codex_run(input:SendWithClaudeInput,app:AppHandle,state:State<DbSta
     std::thread::spawn(move||{
         let chunk_mid=mid.clone();let chunk_app=ab.clone();
         let progress_mid=mid.clone();let progress_app=ab.clone();
+        let t0=std::time::Instant::now();
         let rr=codex::stream_run(
             claude::RunInput{prompt:ep,model:input.model.clone(),system_prompt:None,resume_token:None,project_path:pp},
             |event_type|{let _=progress_app.emit("codex:progress",ChunkPayload{message_id:progress_mid.clone(),text:format!("codex: {}",event_type)});},
             |accumulated|{let _=chunk_app.emit("codex:chunk",ChunkPayload{message_id:chunk_mid.clone(),text:accumulated.to_string()});},
         );
+        let dur=t0.elapsed().as_millis();
         if let Ok(conn)=write_arc.lock(){let now=now_epoch_ms();match rr{
             Ok(out)=>{let c=if out.content.is_empty(){"(codex returned no output)".into()}else{out.content};
                 let _=conn.execute("UPDATE messages SET content=?1,status='done',timestamp=?2 WHERE id=?3",params![c,now,mid]);
                 let _=conn.execute("UPDATE conversations SET total_input_tokens=total_input_tokens+?1,total_output_tokens=total_output_tokens+?2,total_cost_usd=total_cost_usd+?3,updated_at=?4 WHERE id=?5",params![out.input_tokens,out.output_tokens,out.cost_usd,now/1000,cid]);
+                insert_trace_log_with_context(&conn,&cid,out.input_tokens,out.output_tokens,out.cost_usd,now,&SpanInfo{trace_id:&new_trace_id(),span_id:new_span_id(),parent_span_id:None,operation:"agent.stream",engine:"codex",duration_ms:dur as i64,status:"ok"},&ep_meta);
                 let _=jobs::complete_job(&conn,&jid,"done",None);
                 let _=ab.emit("agent:completed",AgentDonePayload{message_id:mid,conversation_id:cid,engine:"codex".into()});}
             Err(ref e)=>{let em=guardrail::fallback_error("codex",e);
@@ -1010,7 +1084,6 @@ pub fn run_eval_agent(
     model: Option<String>,
     project_path: Option<String>,
 ) -> Result<EvalAgentResult, AppError> {
-    use super::agents_helpers::send_common::*;
     let t0 = std::time::Instant::now();
 
     let run_input = claude::RunInput {
@@ -1046,23 +1119,27 @@ pub fn run_eval_agent(
 #[tauri::command]
 pub fn start_opencode_run(input:SendWithClaudeInput,app:AppHandle,state:State<DbState>)->Result<StartRunResult,AppError>{
     use super::agents_helpers::send_common::*;
-    let(ep,pp,mid)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
+    let id_frag=identity_fragment(&input,"opencode");
+    let(ep,pp,mid,ep_meta)={let conn=state.write.lock().map_err(|_|AppError::Lock)?;
         persist_user_message(&conn,&input.conversation_id,&input.prompt,&input.user_message_id)?;
-        let pp=load_project_path(&conn,&input.project_key);let (ep,_ep_meta)=build_normalized_prompt(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,input.persona_fragment.as_deref());
+        let pp=load_project_path(&conn,&input.project_key);let (ep,ep_meta)=build_normalized_prompt_with_budget(&conn,&input.conversation_id,&input.prompt,pp.as_deref(),&input.active_skills,&input.cross_session_ids,id_frag.as_deref(),input.context_mode_override.as_deref(),input.context_budget_cap);
         let mid=format!("msg-{}",Uuid::new_v4());let now=now_epoch_ms();
         conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,model,persona)VALUES(?1,?2,'assistant','',?3,'streaming','opencode',?4,?5)",params![mid,input.conversation_id,now,input.model,input.persona_label])?;
-        (ep,pp,mid)};
+        (ep,pp,mid,ep_meta)};
     let jid=format!("job-{}",Uuid::new_v4());
     {let conn=state.write.lock().map_err(|_|AppError::Lock)?;let _=jobs::create_job(&conn,&jid,&input.conversation_id,Some(&mid),"opencode","agent");}
     let write_arc=std::sync::Arc::clone(&state.write);
     let ab=app;let r=mid.clone();let cid=input.conversation_id;
     std::thread::spawn(move||{
         let _=ab.emit("opencode:progress",ChunkPayload{message_id:mid.clone(),text:"OpenCode starting...".into()});
+        let t0=std::time::Instant::now();
         let rr=opencode::run(claude::RunInput{prompt:ep,model:input.model.clone(),system_prompt:None,resume_token:None,project_path:pp});
+        let dur=t0.elapsed().as_millis();
         if let Ok(conn)=write_arc.lock(){let now=now_epoch_ms();match rr{
             Ok(out)=>{let c=if out.content.is_empty(){"(opencode returned no output)".into()}else{out.content};
                 let _=conn.execute("UPDATE messages SET content=?1,status='done',timestamp=?2 WHERE id=?3",params![c,now,mid]);
                 let _=conn.execute("UPDATE conversations SET total_input_tokens=total_input_tokens+?1,total_output_tokens=total_output_tokens+?2,updated_at=?3 WHERE id=?4",params![out.input_tokens,out.output_tokens,now/1000,cid]);
+                insert_trace_log_with_context(&conn,&cid,out.input_tokens,out.output_tokens,out.cost_usd,now,&SpanInfo{trace_id:&new_trace_id(),span_id:new_span_id(),parent_span_id:None,operation:"agent.run",engine:"opencode",duration_ms:dur as i64,status:"ok"},&ep_meta);
                 let _=jobs::complete_job(&conn,&jid,"done",None);
                 let _=ab.emit("agent:completed",AgentDonePayload{message_id:mid,conversation_id:cid,engine:"opencode".into()});}
             Err(ref e)=>{let em=guardrail::fallback_error("opencode",e);

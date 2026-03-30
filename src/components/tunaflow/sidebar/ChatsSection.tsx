@@ -90,14 +90,16 @@ export function ChatsSection({
             </span>
           }
           suffix={
-            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0 mr-1", STATUS_DOT[b.status] ?? STATUS_DOT.active)} />
+            <span className="flex items-center gap-1 shrink-0">
+              {b.status === "active" && (
+                <button onClick={(e) => { e.stopPropagation(); onDeleteBranch(b.id, b.customLabel ?? b.label); }}
+                  className="p-0.5 rounded text-sidebar-foreground/20 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100" title="Delete">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
+              <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", STATUS_DOT[b.status] ?? STATUS_DOT.active)} />
+            </span>
           }
-          actions={b.status === "active" ? (
-            <button onClick={(e) => { e.stopPropagation(); onDeleteBranch(b.id, b.customLabel ?? b.label); }}
-              className="p-0.5 rounded text-sidebar-foreground/20 hover:text-destructive transition-colors" title="Delete">
-              <Trash2 className="w-3 h-3" />
-            </button>
-          ) : undefined}
           onClick={() => openThread(b.id)} />
         {isExpanded && activeChildren.map((child) => renderBranch(child, depth + 1))}
       </div>

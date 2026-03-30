@@ -46,6 +46,24 @@ fn format_section(header: &str, rows: &[(String, String)], max_chars: usize) -> 
     out
 }
 
+fn format_section_with_authors(
+    header: &str,
+    rows: &[(String, String, Option<String>, Option<String>)],
+    max_chars: usize,
+) -> String {
+    let mut out = format!("## {}\n", header);
+    for (role, content, engine, persona) in rows {
+        let author_tag = match (role.as_str(), persona, engine) {
+            ("assistant", Some(p), Some(e)) if !p.is_empty() => format!("assistant:{} ({})", p, e),
+            ("assistant", None, Some(e)) if !e.is_empty() => format!("assistant ({})", e),
+            ("assistant", Some(p), _) if !p.is_empty() => format!("assistant:{}", p),
+            _ => role.clone(),
+        };
+        out.push_str(&format!("\n[{}] {}\n", author_tag, truncate_str(content, max_chars)));
+    }
+    out
+}
+
 /// Combine multiple optional system-prompt sections, joining with double newline.
 pub fn combine_prompt_parts(parts: impl IntoIterator<Item = Option<String>>) -> Option<String> {
     let joined: String = parts
@@ -114,6 +132,13 @@ fn prompt_needs_rawq(prompt: &str) -> bool {
     CODE_SIGNAL_KEYWORDS.iter().any(|kw| lower.contains(kw))
 }
 
+/// Maximum snippet length per rawq result (chars).
+const RAWQ_SNIPPET_MAX_CHARS: usize = 300;
+/// Minimum confidence threshold for rawq results (post-filter).
+const RAWQ_MIN_CONFIDENCE: f64 = 0.4;
+/// Lines within this range are considered overlapping and merged.
+const RAWQ_DEDUP_LINE_RANGE: usize = 5;
+
 pub fn build_rawq_section(project_path: Option<&str>, prompt: &str) -> Option<String> {
     let path = project_path?;
 
@@ -122,17 +147,45 @@ pub fn build_rawq_section(project_path: Option<&str>, prompt: &str) -> Option<St
         return None;
     }
 
-    match rawq::search(path, prompt, RAWQ_MAX_RESULTS) {
-        Ok(results) => {
+    // Fetch more than needed to allow post-processing headroom
+    match rawq::search(path, prompt, RAWQ_MAX_RESULTS + 3) {
+        Ok(mut results) => {
+            // Post-processing: filter low confidence
+            results.retain(|r| r.confidence >= RAWQ_MIN_CONFIDENCE);
+
+            // Dedup: merge results from same file within ±DEDUP_LINE_RANGE
+            results = dedup_rawq_results(results);
+
+            // Sort by confidence descending
+            results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+
+            // Take top-K after post-processing
+            results.truncate(RAWQ_MAX_RESULTS);
+
+            if results.is_empty() {
+                eprintln!("[context_pack] rawq: all results filtered out (low confidence)");
+                return None;
+            }
+
             let mut out = String::from("## Code context (rawq)\n");
             for r in &results {
-                let snippet = if r.snippet.len() > 120 {
-                    let end = r.snippet.char_indices().map(|(i, _)| i).take_while(|&i| i <= 120).last().unwrap_or(0);
+                // Header: file, line, scope, confidence
+                let meta = match &r.scope {
+                    Some(s) => format!(" ({}, {:.0}%)", s, r.confidence * 100.0),
+                    None => format!(" ({:.0}%)", r.confidence * 100.0),
+                };
+                // Snippet: truncate to RAWQ_SNIPPET_MAX_CHARS
+                let snippet = if r.snippet.len() > RAWQ_SNIPPET_MAX_CHARS {
+                    let end = r.snippet.char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i <= RAWQ_SNIPPET_MAX_CHARS)
+                        .last()
+                        .unwrap_or(0);
                     format!("{}…", &r.snippet[..end])
                 } else {
                     r.snippet.clone()
                 };
-                out.push_str(&format!("\n`{}` L{}: {}\n", r.file, r.line, snippet));
+                out.push_str(&format!("\n`{}` L{}{}:\n{}\n", r.file, r.line, meta, snippet));
             }
             Some(out)
         }
@@ -141,6 +194,32 @@ pub fn build_rawq_section(project_path: Option<&str>, prompt: &str) -> Option<St
             None
         }
     }
+}
+
+/// Merge rawq results from the same file within ±N lines.
+/// Keeps the entry with higher confidence and merges snippets.
+fn dedup_rawq_results(results: Vec<rawq::SearchResult>) -> Vec<rawq::SearchResult> {
+    let mut deduped: Vec<rawq::SearchResult> = Vec::new();
+    for r in results {
+        let merged = deduped.iter_mut().find(|existing| {
+            existing.file == r.file
+                && (existing.line as isize - r.line as isize).unsigned_abs() <= RAWQ_DEDUP_LINE_RANGE
+        });
+        if let Some(existing) = merged {
+            // Keep higher confidence, merge snippets if distinct
+            if r.confidence > existing.confidence {
+                existing.confidence = r.confidence;
+                existing.scope = r.scope.or(existing.scope.take());
+            }
+            // Extend snippet if the new one adds info
+            if !existing.snippet.contains(&r.snippet) && !r.snippet.contains(&existing.snippet) {
+                existing.snippet = format!("{}\n{}", existing.snippet, r.snippet);
+            }
+        } else {
+            deduped.push(r);
+        }
+    }
+    deduped
 }
 
 pub fn build_context_summary(
@@ -163,11 +242,45 @@ pub fn build_context_summary(
 
     if has_current {
         let header = if is_branch {
-            "Branch conversation context"
+            "Branch conversation history (you are continuing this conversation)"
         } else {
-            "Recent conversation context"
+            "Conversation history (you are continuing this conversation — refer to these messages as your own prior responses)"
         };
         parts.push(format_section(header, current_rows, 400));
+    }
+
+    Some(parts.join("\n"))
+}
+
+/// Build context summary with per-message author attribution.
+///
+/// Each assistant message shows `[assistant:ProfileName (engine)]` so the model
+/// can distinguish which agent authored each past message.
+pub fn build_context_summary_with_authors(
+    current_rows: &[(String, String, Option<String>, Option<String>)],
+    parent_rows: &[(String, String, Option<String>, Option<String>)],
+    is_branch: bool,
+) -> Option<String> {
+    let has_current = !current_rows.is_empty();
+    let has_parent = !parent_rows.is_empty();
+
+    if !has_current && !has_parent {
+        return None;
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+
+    if has_parent {
+        parts.push(format_section_with_authors("Parent conversation context", parent_rows, 300));
+    }
+
+    if has_current {
+        let header = if is_branch {
+            "Branch conversation history (each assistant message shows its author — do not claim other agents' messages as your own)"
+        } else {
+            "Conversation history (each assistant message shows its author — you are continuing this conversation, but do not claim messages authored by other agents as your own)"
+        };
+        parts.push(format_section_with_authors(header, current_rows, 400));
     }
 
     Some(parts.join("\n"))
@@ -575,7 +688,7 @@ mod tests {
     fn context_summary_current_only() {
         let current = vec![("user".into(), "hello".into())];
         let result = build_context_summary(&current, &[], false).unwrap();
-        assert!(result.contains("Recent conversation context"));
+        assert!(result.contains("Conversation history"));
         assert!(result.contains("hello"));
     }
 
@@ -590,7 +703,7 @@ mod tests {
     fn context_summary_branch_mode() {
         let current = vec![("user".into(), "msg".into())];
         let result = build_context_summary(&current, &[], true).unwrap();
-        assert!(result.contains("Branch conversation context"));
+        assert!(result.contains("Branch conversation history"));
     }
 
     #[test]
@@ -599,7 +712,7 @@ mod tests {
         let parent = vec![("user".into(), "par".into())];
         let result = build_context_summary(&current, &parent, true).unwrap();
         assert!(result.contains("Parent conversation context"));
-        assert!(result.contains("Branch conversation context"));
+        assert!(result.contains("Branch conversation history"));
     }
 
     // ─── build_cross_session_section ─────────────────────────────────────
@@ -637,5 +750,79 @@ mod tests {
         let result = format_section("Test", &rows, 100);
         assert!(result.starts_with("## Test\n"));
         assert!(result.contains("[user] hello"));
+    }
+
+    // ─── format_section_with_authors ────────────────────────────────────
+    #[test]
+    fn author_tag_with_persona_and_engine() {
+        let rows = vec![
+            ("assistant".into(), "response".into(), Some("claude-code".into()), Some("Architect Claude".into())),
+        ];
+        let result = format_section_with_authors("Test", &rows, 400);
+        assert!(result.contains("[assistant:Architect Claude (claude-code)]"));
+    }
+
+    #[test]
+    fn author_tag_engine_only() {
+        let rows = vec![
+            ("assistant".into(), "response".into(), Some("gemini".into()), None),
+        ];
+        let result = format_section_with_authors("Test", &rows, 400);
+        assert!(result.contains("[assistant (gemini)]"));
+    }
+
+    #[test]
+    fn author_tag_user_unchanged() {
+        let rows = vec![
+            ("user".into(), "question".into(), None, None),
+        ];
+        let result = format_section_with_authors("Test", &rows, 400);
+        assert!(result.contains("[user]"));
+        assert!(!result.contains("assistant"));
+    }
+
+    // ─── build_context_summary_with_authors ─────────────────────────────
+    #[test]
+    fn context_summary_authors_attribution_header() {
+        let current = vec![
+            ("user".into(), "hi".into(), None, None),
+            ("assistant".into(), "hello".into(), Some("claude-code".into()), Some("Arch".into())),
+        ];
+        let result = build_context_summary_with_authors(&current, &[], false).unwrap();
+        assert!(result.contains("do not claim messages authored by other agents"));
+        assert!(result.contains("[assistant:Arch (claude-code)]"));
+    }
+
+    // ─── rawq dedup ────────────────────────────────────────────────────
+    #[test]
+    fn dedup_merges_same_file_nearby_lines() {
+        let results = vec![
+            rawq::SearchResult { file: "src/main.rs".into(), line: 10, snippet: "fn main()".into(), scope: None, confidence: 0.9 },
+            rawq::SearchResult { file: "src/main.rs".into(), line: 12, snippet: "let x = 1;".into(), scope: None, confidence: 0.8 },
+        ];
+        let deduped = dedup_rawq_results(results);
+        assert_eq!(deduped.len(), 1);
+        assert!(deduped[0].confidence >= 0.9); // keeps higher
+        assert!(deduped[0].snippet.contains("fn main()"));
+    }
+
+    #[test]
+    fn dedup_keeps_distant_lines() {
+        let results = vec![
+            rawq::SearchResult { file: "src/main.rs".into(), line: 10, snippet: "a".into(), scope: None, confidence: 0.9 },
+            rawq::SearchResult { file: "src/main.rs".into(), line: 100, snippet: "b".into(), scope: None, confidence: 0.8 },
+        ];
+        let deduped = dedup_rawq_results(results);
+        assert_eq!(deduped.len(), 2);
+    }
+
+    #[test]
+    fn dedup_keeps_different_files() {
+        let results = vec![
+            rawq::SearchResult { file: "a.rs".into(), line: 10, snippet: "a".into(), scope: None, confidence: 0.9 },
+            rawq::SearchResult { file: "b.rs".into(), line: 10, snippet: "b".into(), scope: None, confidence: 0.8 },
+        ];
+        let deduped = dedup_rawq_results(results);
+        assert_eq!(deduped.len(), 2);
     }
 }

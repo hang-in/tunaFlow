@@ -72,6 +72,10 @@
 | [documentationIaGovernancePlan_2026-03-30](./documentationIaGovernancePlan_2026-03-30.md) | 문서 탐색성과 신뢰성을 높이기 위한 IA/거버넌스 계획 | index 개선, 상태 라벨, reading pack 정리 필요 |
 | [documentMetadataAdoptionPlan_2026-03-30](./documentMetadataAdoptionPlan_2026-03-30.md) | 문서 메타를 핵심 문서군부터 단계적으로 도입하는 계획 | 최소 메타 적용 순서와 대상 정리 필요 |
 | [runtimeSettingsImplementationPlan_2026-03-30](./runtimeSettingsImplementationPlan_2026-03-30.md) | Settings > Runtime을 placeholder에서 실제 진단/설정 화면으로 바꾸는 계획 | rawq/model catalog/context budget/daemon 구체화 필요 |
+| [contextPackVisibilityUiPolishPlan_2026-03-30](./contextPackVisibilityUiPolishPlan_2026-03-30.md) | trace_log의 context metadata를 TracePanel/StatusBar에서 읽기 쉽게 보여주는 UI polish | 구현 완료 |
+| [contextPackCompressionAndRawqPostprocessPlan_2026-03-30](./contextPackCompressionAndRawqPostprocessPlan_2026-03-30.md) | compression 품질 개선 + rawq 결과 후처리 (dedup, confidence, snippet 확장) | Phase 1+2 완료 |
+| [contextHubMinimalIntegrationPlan_2026-03-30](./contextHubMinimalIntegrationPlan_2026-03-30.md) | context-hub CLI 최소 연동 (health/search/get + source policy) | 구현 완료 |
+| [contextHubSearchGetUiPlan_2026-03-30](./contextHubSearchGetUiPlan_2026-03-30.md) | context-hub search/get 사용자 UI | 구현 진행 중 |
 
 ### 보류
 
@@ -92,6 +96,10 @@
 
 | 문서 | 우선순위 |
 |------|---------|
+| [longTermMemoryRoadmapPlan_2026-03-30](./longTermMemoryRoadmapPlan_2026-03-30.md) | 중요 / P0 — tunaFlow 장기기억 구조(working/compressed/structured/retrieval) 로드맵 |
+| [longTermMemoryPhase1CompressionPlan_2026-03-30](./longTermMemoryPhase1CompressionPlan_2026-03-30.md) | 중요 / P0 — recent window를 넘는 대화를 compressed memory로 유지하는 1차 구현 |
+| [compressedMemoryOperationalPolishPlan_2026-03-30](./compressedMemoryOperationalPolishPlan_2026-03-30.md) | 중요 / P0 — compressed memory의 상태/실패/provenance/재압축 정책 운영 보강 |
+| [structuredMemorySourceStrengtheningPlan_2026-03-30](./structuredMemorySourceStrengtheningPlan_2026-03-30.md) | 중요 / P0 — plan/findings/artifacts/memo/cross-session를 장기기억용 structured memory source로 강화 |
 | [agentDaemonRoadmapPlan](./agentDaemonRoadmapPlan.md) | Phase 1-2 완료 (background worker + job registry). Phase 3 daemon extraction 진행 예정 |
 | [contextBudgetScalingPlan](./contextBudgetScalingPlan.md) | background execution 안정화 후 베타에서 단계적 context budget 상향 실험 |
 | [planBasedFollowupPlan](./planBasedFollowupPlan.md) | PlansPanel Forward 버튼은 구현됨. subtask 단위 자동 dispatch는 미구현 |
@@ -180,6 +188,17 @@
 - [deferredTechReevaluationPlan_2026-03-30](./deferredTechReevaluationPlan_2026-03-30.md)
 - [contextStackReevaluationPlan_2026-03-30](./contextStackReevaluationPlan_2026-03-30.md)
 - [contextPackP0Phase1Plan_2026-03-30](./contextPackP0Phase1Plan_2026-03-30.md)
+- [contextBudgetControlUiPlan_2026-03-30](./contextBudgetControlUiPlan_2026-03-30.md)
+- [contextHubMinimalIntegrationPlan_2026-03-30](./contextHubMinimalIntegrationPlan_2026-03-30.md)
+- [contextHubExplicitHandoffPlan_2026-03-30](./contextHubExplicitHandoffPlan_2026-03-30.md)
+- [agentIdentityFramingPlan_2026-03-30](./agentIdentityFramingPlan_2026-03-30.md)
+- [agentIdentityValidationPlan_2026-03-30](./agentIdentityValidationPlan_2026-03-30.md)
+- [messageAuthorAttributionPlan_2026-03-30](./messageAuthorAttributionPlan_2026-03-30.md)
+- [longTermMemoryRoadmapPlan_2026-03-30](./longTermMemoryRoadmapPlan_2026-03-30.md)
+- [longTermMemoryPhase1CompressionPlan_2026-03-30](./longTermMemoryPhase1CompressionPlan_2026-03-30.md)
+- [compressedMemoryOperationalPolishPlan_2026-03-30](./compressedMemoryOperationalPolishPlan_2026-03-30.md)
+- [structuredMemorySourceStrengtheningPlan_2026-03-30](./structuredMemorySourceStrengtheningPlan_2026-03-30.md)
+- [promptQualityAdoptionPlan_2026-03-30](./promptQualityAdoptionPlan_2026-03-30.md)
 - [backgroundAgentExecutionPlan](./backgroundAgentExecutionPlan.md)
 - [sidebarThreeSectionPlan](./sidebarThreeSectionPlan.md)
 - [sidecarMigrationPlan](./sidecarMigrationPlan.md)

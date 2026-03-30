@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { Activity, Clock, Cpu, DollarSign, RefreshCw, Briefcase, ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { Activity, Clock, Cpu, DollarSign, RefreshCw, Briefcase, ChevronDown, ChevronRight, Zap, Package, AlertTriangle, Brain } from "lucide-react";
 
 interface AgentJob {
   id: string;
@@ -62,6 +62,19 @@ function formatTime(epoch: number): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+function contextModeColor(mode: string): string {
+  const m = mode.toLowerCase();
+  if (m === "full") return "bg-purple-500/15 text-purple-400/80";
+  if (m === "standard") return "bg-blue-500/15 text-blue-400/80";
+  return "bg-muted-foreground/10 text-muted-foreground/60"; // Lite
+}
+
+function contextModeAbbrev(mode: string): string {
+  const m = mode.toLowerCase();
+  if (m === "standard") return "Std";
+  return mode.charAt(0).toUpperCase() + mode.slice(1).toLowerCase();
+}
+
 function formatElapsed(startedAt: number): string {
   const elapsed = Math.floor(Date.now() / 1000) - startedAt;
   if (elapsed < 60) return `${elapsed}s`;
@@ -81,6 +94,11 @@ export function TracePanel() {
   const [loading, setLoading] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [tick, setTick] = useState(0);
+  const [memoryStatus, setMemoryStatus] = useState<{
+    state: string; sourceCount: number | null; messageCount: number;
+    createdAt: number | null; updatedAt: number | null;
+    newMessagesSince: number; summaryLength: number | null;
+  } | null>(null);
 
   const convId = activeBranchId
     ? `branch:${activeBranchId}`
@@ -103,9 +121,18 @@ export function TracePanel() {
     } catch { setJobs([]); }
   };
 
+  const loadMemoryStatus = async () => {
+    if (!convId) return;
+    try {
+      const s = await invoke<typeof memoryStatus>("get_conversation_memory_status", { conversationId: convId });
+      setMemoryStatus(s);
+    } catch { setMemoryStatus(null); }
+  };
+
   useEffect(() => {
     loadTraces();
     loadJobs();
+    loadMemoryStatus();
   }, [convId]);
 
   // Auto-refresh jobs while running + tick for elapsed counter
@@ -206,6 +233,26 @@ export function TracePanel() {
             <span>{activeSkills.length} skill{activeSkills.length > 1 ? "s" : ""} active</span>
           </div>
         )}
+        {memoryStatus && (
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+            <Brain className="w-3 h-3 shrink-0" />
+            <span>memory</span>
+            <span className={cn(
+              "px-1 py-px rounded text-[8px] font-medium",
+              memoryStatus.state === "fresh" ? "bg-status-approved/10 text-status-approved/70" :
+              memoryStatus.state === "stale" ? "bg-amber-500/10 text-amber-500/70" :
+              "bg-accent text-muted-foreground/60"
+            )}>
+              {memoryStatus.state}
+            </span>
+            {memoryStatus.sourceCount != null && (
+              <span className="text-muted-foreground/40">{memoryStatus.sourceCount}/{memoryStatus.messageCount} msgs</span>
+            )}
+            {memoryStatus.state === "stale" && memoryStatus.newMessagesSince > 0 && (
+              <span className="text-amber-500/40">+{memoryStatus.newMessagesSince} new</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Aggregate stats — total */}
@@ -241,6 +288,33 @@ export function TracePanel() {
           )}
         </div>
       )}
+
+      {/* Last context summary */}
+      {(() => {
+        const latest = spans.find((sp) => sp.contextMode);
+        if (!latest) return null;
+        const sectionCount = (() => {
+          try { return (JSON.parse(latest.contextSections || "[]") as string[]).length; } catch { return 0; }
+        })();
+        return (
+          <button
+            onClick={() => { if (!historyOpen) setHistoryOpen(true); }}
+            className="flex items-center gap-1.5 w-full text-[9px] text-muted-foreground/50 hover:text-muted-foreground/70 transition-colors px-0.5"
+          >
+            <Package className="w-3 h-3 shrink-0" />
+            <span className={cn("px-1 py-px rounded text-[8px] font-semibold", contextModeColor(latest.contextMode!))}>
+              {contextModeAbbrev(latest.contextMode!)}
+            </span>
+            <span>· {sectionCount} section{sectionCount !== 1 ? "s" : ""}</span>
+            {latest.contextLength != null && (
+              <span className="font-mono">· {(latest.contextLength / 1000).toFixed(1)}k</span>
+            )}
+            {latest.contextTruncated === 1 && (
+              <span className="text-amber-500/60">· truncated</span>
+            )}
+          </button>
+        );
+      })()}
 
       {/* ═══ TRACE HISTORY (collapsible) ═══ */}
       <div className="border-t border-border/20 pt-2">
@@ -310,15 +384,32 @@ export function TracePanel() {
                   <span className="ml-auto">{formatTime(sp.recordedAt)}</span>
                 </div>
                 {sp.contextMode && (
-                  <div className="mt-1 pt-1 border-t border-border/15 flex items-center gap-1 flex-wrap text-[8px] text-muted-foreground/40">
-                    <span className="font-medium text-primary/40">{sp.contextMode}</span>
-                    {sp.contextSections && (() => {
-                      try { const s = JSON.parse(sp.contextSections) as string[]; return s.map((sec) => (
-                        <span key={sec} className="bg-accent/50 px-0.5 rounded">{sec}</span>
-                      )); } catch { return null; }
-                    })()}
-                    {sp.contextLength != null && <span className="font-mono">{(sp.contextLength / 1000).toFixed(1)}k</span>}
-                    {sp.contextTruncated === 1 && <span className="text-amber-500/50">truncated</span>}
+                  <div className="mt-1.5 pt-1.5 border-t border-border/25 space-y-1">
+                    <div className="flex items-center gap-1.5 flex-wrap text-[9px]">
+                      <Package className="w-3 h-3 text-muted-foreground/40 shrink-0" />
+                      <span className={cn("px-1.5 py-px rounded text-[8px] font-semibold", contextModeColor(sp.contextMode))}>
+                        {sp.contextMode}
+                      </span>
+                      {sp.contextSections && (() => {
+                        try {
+                          const s = JSON.parse(sp.contextSections) as string[];
+                          return s.map((sec) => (
+                            <span key={sec} className="bg-accent/60 text-muted-foreground/60 px-1 py-px rounded text-[8px]">{sec}</span>
+                          ));
+                        } catch { return null; }
+                      })()}
+                    </div>
+                    <div className="flex items-center gap-2 text-[8px] text-muted-foreground/40 pl-[18px]">
+                      {sp.contextLength != null && (
+                        <span className="font-mono">{(sp.contextLength / 1000).toFixed(1)}k chars</span>
+                      )}
+                      {sp.contextTruncated === 1 && (
+                        <span className="flex items-center gap-0.5 text-amber-500/70 font-medium">
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                          truncated
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

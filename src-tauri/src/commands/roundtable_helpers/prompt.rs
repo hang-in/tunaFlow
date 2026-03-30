@@ -101,8 +101,8 @@ mod tests {
     fn prompt_with_transcript() {
         let transcript = vec![("Agent1".into(), "Answer 1".into())];
         let result = build_round_prompt("topic", &transcript, &[]);
-        assert!(result.contains("이전 라운드 응답"));
-        assert!(result.contains("**[Agent1]**"));
+        assert!(result.contains("Prior round responses"));
+        assert!(result.contains("[Agent1]"));
         assert!(result.contains("topic"));
     }
 
@@ -110,8 +110,8 @@ mod tests {
     fn prompt_with_current_round() {
         let current = vec![("Agent2".into(), "Reply".into())];
         let result = build_round_prompt("topic", &[], &current);
-        assert!(result.contains("이번 라운드 다른 에이전트 답변"));
-        assert!(result.contains("**[Agent2]**"));
+        assert!(result.contains("This round (other agents)"));
+        assert!(result.contains("[Agent2]"));
     }
 
     #[test]
@@ -119,9 +119,8 @@ mod tests {
         let transcript = vec![("A".into(), "prev".into())];
         let current = vec![("B".into(), "cur".into())];
         let result = build_round_prompt("topic", &transcript, &current);
-        assert!(result.contains("이전 라운드"));
-        assert!(result.contains("이번 라운드"));
-        assert!(result.contains("위 의견들을 참고하여"));
+        assert!(result.contains("Prior round"));
+        assert!(result.contains("This round"));
     }
 
     // ─── PromptSources serialization ─────────────────────────────────────

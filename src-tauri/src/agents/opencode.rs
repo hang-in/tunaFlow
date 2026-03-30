@@ -38,6 +38,13 @@ fn resolve_opencode_path() -> PathBuf {
 
     #[cfg(not(target_os = "windows"))]
     {
+        // Check ~/.opencode/bin first (official installer default)
+        if let Ok(home) = std::env::var("HOME") {
+            let candidate = PathBuf::from(&home).join(".opencode").join("bin").join("opencode");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
         for prefix in &["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"] {
             let candidate = PathBuf::from(prefix).join("opencode");
             if candidate.exists() {

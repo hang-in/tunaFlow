@@ -305,6 +305,8 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       ],
     }));
 
+    const { getSetting } = await import("@/lib/appStore");
+    const budgetCfg = await getSetting<{ mode: string; totalCap: number }>("contextBudgetConfig", { mode: "auto", totalCap: 60000 });
     const input: SendWithClaudeInput = {
       projectKey: selectedProjectKey,
       conversationId: threadBranchConvId,
@@ -314,6 +316,8 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       crossSessionIds,
       personaFragment: get().personaFragment ?? undefined,
       personaLabel: get().personaLabel ?? undefined,
+      contextModeOverride: budgetCfg.mode === "auto" ? undefined : budgetCfg.mode,
+      contextBudgetCap: budgetCfg.totalCap === 60000 ? undefined : budgetCfg.totalCap,
     };
 
     // Event listeners for streaming updates
@@ -351,11 +355,11 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
     });
 
     try {
-      const cmd = engineKey === "codex" ? "start_codex_run"
-        : engineKey === "gemini" ? "start_gemini_stream"
-        : engineKey === "opencode" ? "start_opencode_run"
-        : "start_claude_stream";
-      await invoke<{ messageId: string }>(cmd, { input });
+      const ENGINE_COMMANDS: Record<string, string> = {
+        claude: "start_claude_stream", codex: "start_codex_run",
+        gemini: "start_gemini_stream", opencode: "start_opencode_run",
+      };
+      await invoke<{ messageId: string }>(ENGINE_COMMANDS[engineKey] ?? "start_claude_stream", { input });
     } catch (e) {
       cleanup();
       set((state) => ({ error: String(e), threadMessages: state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")) }));

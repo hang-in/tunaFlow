@@ -73,6 +73,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 16 {
         apply_v16(conn)?;
     }
+    if current < 17 {
+        apply_v17(conn)?;
+    }
     Ok(())
 }
 
@@ -328,6 +331,25 @@ fn apply_v15(conn: &Connection) -> Result<(), AppError> {
     conn.execute_batch("INSERT INTO messages_fts(rowid, content) SELECT rowid, content FROM messages;")?;
 
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (15, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+fn apply_v17(conn: &Connection) -> Result<(), AppError> {
+    // Compressed conversation memory — structured summaries of older messages.
+    // Stored per conversation/branch, regenerated as conversations grow.
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS conversation_memory (
+            id            TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            summary       TEXT NOT NULL,
+            source_count  INTEGER NOT NULL DEFAULT 0,
+            created_at    INTEGER NOT NULL,
+            updated_at    INTEGER NOT NULL,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_conv_memory_conv ON conversation_memory(conversation_id);
+    ")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (17, ?1)", [now_epoch()])?;
     Ok(())
 }
 

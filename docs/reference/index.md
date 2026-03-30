@@ -15,4 +15,6 @@
 - [documentVersioningPolicy_2026-03-30](./documentVersioningPolicy_2026-03-30.md)
 - [documentNamingRule_2026-03-30](./documentNamingRule_2026-03-30.md)
 - [contextHubSourcePolicy_2026-03-30](./contextHubSourcePolicy_2026-03-30.md)
+- [a2aPositioning_2026-03-30](./a2aPositioning_2026-03-30.md)
+- [promptAuthoringPolicy_2026-03-30](./promptAuthoringPolicy_2026-03-30.md)
 - [workingRulesForAgents](./workingRulesForAgents.md)

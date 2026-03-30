@@ -174,6 +174,10 @@ export interface SendWithClaudeInput {
   personaFragment?: string;
   /** Profile/persona label — stored in message.persona for visibility */
   personaLabel?: string;
+  /** Context mode override: "lite" | "standard" | "full" | undefined (auto) */
+  contextModeOverride?: string;
+  /** Total context budget cap override (chars). undefined = default (60000) */
+  contextBudgetCap?: number;
 }
 
 export interface RoundtableParticipant {

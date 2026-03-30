@@ -177,6 +177,60 @@ fn discover_claude() -> Option<Vec<String>> {
     None
 }
 
+/// OpenCode: run `opencode models` and parse provider/model lines.
+fn discover_opencode() -> Option<Vec<String>> {
+    // Find opencode binary — same search order as agents/opencode.rs
+    let bin = {
+        let mut found: Option<std::path::PathBuf> = None;
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Check ~/.opencode/bin first (official installer default)
+            if let Ok(home) = std::env::var("HOME") {
+                let c = std::path::PathBuf::from(&home).join(".opencode").join("bin").join("opencode");
+                if c.exists() { found = Some(c); }
+            }
+            if found.is_none() {
+                for prefix in &["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"] {
+                    let c = std::path::PathBuf::from(prefix).join("opencode");
+                    if c.exists() { found = Some(c); break; }
+                }
+            }
+            if found.is_none() {
+                if let Ok(home) = std::env::var("HOME") {
+                    let c = std::path::PathBuf::from(&home).join(".npm-global").join("bin").join("opencode");
+                    if c.exists() { found = Some(c); }
+                }
+            }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                let c = std::path::PathBuf::from(&appdata).join("npm").join("opencode.cmd");
+                if c.exists() { found = Some(c); }
+            }
+        }
+        found.unwrap_or_else(|| std::path::PathBuf::from("opencode"))
+    };
+
+    let output = std::process::Command::new(&bin)
+        .arg("models")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+
+    if !output.status.success() { return None; }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let models: Vec<String> = stdout
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && l.contains('/'))
+        .collect();
+
+    if models.is_empty() { None } else { Some(models) }
+}
+
 // ─── Core API ───────────────────────────────────────────────────────────────
 
 const ENGINES: &[&str] = &["claude", "codex", "gemini", "opencode"];
@@ -198,6 +252,7 @@ fn get_models_for_engine(engine: &str, force: bool) -> (Vec<String>, String) {
         "codex" => discover_codex(),
         "gemini" => discover_gemini(),
         "claude" => discover_claude(),
+        "opencode" => discover_opencode(),
         _ => None,
     };
 
@@ -228,7 +283,24 @@ fn model_label(engine: &str, id: &str) -> String {
     for (fid, label, _) in fallback_models(engine) {
         if fid == id { return label.to_string(); }
     }
-    // Auto-generate from id
+    // For opencode discovered models: "anthropic/claude-sonnet-4-6" → "Claude Sonnet 4.6 (anthropic)"
+    if engine == "opencode" && id.contains('/') {
+        let parts: Vec<&str> = id.splitn(2, '/').collect();
+        let provider = parts[0];
+        let model = parts[1];
+        // Title-case the model name: replace hyphens with spaces, capitalize words
+        let pretty: String = model.split('-')
+            .map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("{} ({})", pretty, provider);
+    }
     id.to_string()
 }
 

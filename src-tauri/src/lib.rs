@@ -59,6 +59,33 @@ pub fn run() {
             app.manage(CancelRegistry(std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()))));
             app.manage(commands::projects::RawqIndexing(std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()))));
 
+            // Center window on primary monitor if no saved window state
+            {
+                let window = app.get_webview_window("main").expect("main window");
+                // window-state plugin restores position before setup runs.
+                // If position is (0,0) or negative, assume no saved state → center on primary monitor.
+                let needs_center = match window.outer_position() {
+                    Ok(pos) => pos.x == 0 && pos.y == 0,
+                    Err(_) => true,
+                };
+                if needs_center {
+                    if let Some(monitor) = window.primary_monitor().ok().flatten() {
+                        let screen = monitor.size();
+                        let scale = monitor.scale_factor();
+                        let mon_pos = monitor.position();
+                        let win_w = 1200.0;
+                        let win_h = 800.0;
+                        let x = mon_pos.x as f64 + (screen.width as f64 / scale - win_w) / 2.0;
+                        let y = mon_pos.y as f64 + (screen.height as f64 / scale - win_h) / 2.0;
+                        let _ = window.set_position(tauri::PhysicalPosition::new(
+                            (x * scale) as i32,
+                            (y * scale) as i32,
+                        ));
+                    }
+                }
+                let _ = window.show();
+            }
+
             // Start rawq daemon in background — pre-loads embedding model for fast indexing/search
             std::thread::spawn(|| {
                 crate::agents::rawq::ensure_daemon();
@@ -152,6 +179,13 @@ pub fn run() {
             commands::evaluation::list_eval_results,
             commands::evaluation::update_eval_run_status,
             commands::evaluation::delete_eval_run,
+            // Conversation Memory
+            commands::conversation_memory::get_conversation_memory_status,
+            commands::conversation_memory::compress_conversation_memory,
+            // Context Hub
+            commands::context_hub::context_hub_health,
+            commands::context_hub::context_hub_search,
+            commands::context_hub::context_hub_get,
             // Files
             commands::files::list_directory,
             commands::files::read_text_file,

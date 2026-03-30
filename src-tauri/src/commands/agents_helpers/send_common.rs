@@ -4,7 +4,75 @@ use uuid::Uuid;
 use crate::db::{migrations::now_epoch_ms, models::Message};
 use crate::errors::AppError;
 
-use super::trace_log::{insert_trace_log, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
+use super::trace_log::{insert_trace_log, insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
+
+/// Build a combined identity + persona fragment for prompt assembly.
+///
+/// The identity framing block ensures agents consistently identify themselves
+/// using the profile/engine/persona hierarchy (profile first, engine second).
+pub fn build_identity_persona_fragment(
+    profile_label: Option<&str>,
+    engine: &str,
+    persona_fragment: Option<&str>,
+) -> Option<String> {
+    let identity = build_identity_block(profile_label, engine);
+    match persona_fragment {
+        Some(pf) if !pf.trim().is_empty() => {
+            Some(format!("{}\n\n{}", identity, pf.trim()))
+        }
+        _ => Some(identity),
+    }
+}
+
+fn build_identity_block(profile_label: Option<&str>, engine: &str) -> String {
+    let profile_line = match profile_label {
+        Some(label) if !label.is_empty() => format!("당신의 프로필 이름은 \"{}\"입니다.", label),
+        _ => "프로필이 지정되지 않았습니다.".to_string(),
+    };
+    format!(
+        "## Identity\n\n\
+        {}\n\
+        실행 엔진은 {}입니다.\n\n\
+        자기소개 규칙:\n\
+        - 사용자에게 보이는 1급 이름은 프로필 이름입니다. 자기소개는 프로필 기준으로 시작하세요.\n\
+        - 엔진은 필요할 때만 2순위 정보로 설명하세요.\n\
+        - persona는 역할/정책 정보이며, 자기 이름처럼 답하지 마세요.\n\
+        - 사용자가 다른 이름으로 부르면 짧게 정정하세요.\n\
+        - 혼합 표현(예: \"Claude Code(opencode)\")을 사용하지 마세요.\n\
+        - 사용자의 언어에 맞춰 응답하세요.\n\n\
+        메시지 작성자 규칙:\n\
+        - 대화 기록에서 각 assistant 메시지는 작성자가 표시되어 있습니다(예: [assistant:ProfileName (engine)]).\n\
+        - 당신이 작성하지 않은 메시지의 소유권을 주장하지 마세요.\n\
+        - 사용자가 과거 답변의 작성자를 물으면, 표시된 작성자 정보를 기준으로 답하세요.\n\
+        - 작성자가 불분명한 메시지는 추측하지 말고 \"작성자 정보가 없습니다\"라고 답하세요.",
+        profile_line, engine
+    )
+}
+
+/// Parse identity metadata from the combined persona_fragment.
+/// Returns (identity_section, persona_section).
+fn parse_identity_and_persona(fragment: Option<&str>) -> (Option<String>, Option<String>) {
+    match fragment {
+        Some(f) if !f.trim().is_empty() => {
+            // Check if fragment starts with "## Identity" (injected by build_identity_persona_fragment)
+            if f.contains("## Identity") {
+                // Split at the persona boundary if exists
+                if let Some(pos) = f.find("\n\n## Persona") {
+                    let identity = f[..pos].trim().to_string();
+                    let persona = f[pos..].trim().to_string();
+                    (Some(identity), if persona.is_empty() { None } else { Some(persona) })
+                } else {
+                    // Identity block only, no persona
+                    (Some(f.trim().to_string()), None)
+                }
+            } else {
+                // Legacy: plain persona fragment without identity
+                (None, Some(format!("## Persona\n\n{}", f.trim())))
+            }
+        }
+        _ => (None, None),
+    }
+}
 
 /// Persist a user message if no pre-existing user_message_id was provided.
 pub fn persist_user_message(
@@ -68,6 +136,7 @@ pub fn build_lite_enriched_prompt(
 /// - Plan / Findings / Artifacts (Standard+)
 /// - Skills / rawq / cross-session (Full)
 /// - Thread inheritance (branch)
+#[allow(dead_code)]
 pub fn build_normalized_prompt(
     conn: &Connection,
     conversation_id: &str,
@@ -77,22 +146,46 @@ pub fn build_normalized_prompt(
     cross_session_ids: &[String],
     persona_fragment: Option<&str>,
 ) -> (String, ContextPackMeta) {
+    build_normalized_prompt_with_budget(conn, conversation_id, prompt, project_path, active_skills, cross_session_ids, persona_fragment, None, None)
+}
+
+pub fn build_normalized_prompt_with_budget(
+    conn: &Connection,
+    conversation_id: &str,
+    prompt: &str,
+    project_path: Option<&str>,
+    active_skills: &[String],
+    cross_session_ids: &[String],
+    persona_fragment: Option<&str>,
+    context_mode_override: Option<&str>,
+    context_budget_cap: Option<usize>,
+) -> (String, ContextPackMeta) {
     use super::context_pack::*;
     use crate::guardrail;
-    use super::compression::maybe_compress_section;
+    use super::compression::maybe_compress_section_typed;
 
     let is_branch = conversation_id.starts_with("branch:");
     let mut included_sections: Vec<String> = Vec::new();
 
-    // Determine context mode — same logic as Claude path
-    let ctx_mode = if is_branch {
-        ContextMode::Standard
-    } else if !active_skills.is_empty() {
-        ContextMode::Full
-    } else {
-        ContextMode::Lite
+    let total_budget = context_budget_cap.unwrap_or(guardrail::MAX_TOTAL_PROMPT);
+
+    // Determine context mode — user override takes priority, then auto logic
+    let ctx_mode = match context_mode_override {
+        Some("full") => ContextMode::Full,
+        Some("standard") => ContextMode::Standard,
+        Some("lite") => ContextMode::Lite,
+        _ => {
+            // Auto: determine from conversation state
+            if is_branch {
+                ContextMode::Standard
+            } else if !active_skills.is_empty() {
+                ContextMode::Full
+            } else {
+                ContextMode::Lite
+            }
+        }
     };
-    eprintln!("[context_pack] mode={:?} for normalized_prompt", ctx_mode);
+    eprintln!("[context_pack] mode={:?} budget={} for normalized_prompt", ctx_mode, total_budget);
 
     let mut sections: Vec<String> = Vec::new();
 
@@ -102,19 +195,27 @@ pub fn build_normalized_prompt(
         included_sections.push("project".into());
     }
 
-    // Persona section (role contract)
-    if let Some(fragment) = persona_fragment {
-        if !fragment.trim().is_empty() {
-            sections.push(format!("## Persona\n\n{}", fragment.trim()));
+    // Identity + Persona section
+    // Identity framing is always injected regardless of persona selection.
+    // It uses persona_fragment format: first line = "profile:{label}|engine:{name}" metadata
+    // (injected by callers via build_identity_persona_fragment)
+    {
+        let (identity_block, persona_block) = parse_identity_and_persona(persona_fragment);
+        if let Some(id) = &identity_block {
+            sections.push(id.clone());
+            included_sections.push("identity".into());
+        }
+        if let Some(p) = &persona_block {
+            sections.push(p.clone());
             included_sections.push("persona".into());
         }
     }
 
-    // Recent conversation context
+    // Recent conversation context (with author attribution)
     {
-        use crate::commands::context_queries::load_recent_messages;
-        let current = load_recent_messages(conn, conversation_id, 6);
-        let parent: Vec<(String, String)> = if is_branch {
+        use crate::commands::context_queries::load_recent_messages_with_author;
+        let current = load_recent_messages_with_author(conn, conversation_id, 6);
+        let parent: Vec<(String, String, Option<String>, Option<String>)> = if is_branch {
             let parent_id: Option<String> = conn
                 .query_row(
                     "SELECT parent_id FROM conversations WHERE id = ?1",
@@ -124,17 +225,29 @@ pub fn build_normalized_prompt(
                 .ok()
                 .flatten();
             parent_id
-                .map(|pid| load_recent_messages(conn, &pid, 4))
+                .map(|pid| load_recent_messages_with_author(conn, &pid, 4))
                 .unwrap_or_default()
         } else {
             Vec::new()
         };
-        if let Some(ctx) = maybe_compress_section(
-            build_context_summary(&current, &parent, is_branch),
+        if let Some(ctx) = maybe_compress_section_typed(
+            build_context_summary_with_authors(&current, &parent, is_branch),
             guardrail::MAX_CONTEXT_SECTION,
+            Some("context"),
         ) {
             sections.push(ctx);
             included_sections.push("context".into());
+        }
+    }
+
+    // Compressed conversation memory (long-term continuity)
+    {
+        use crate::commands::conversation_memory::load_compressed_memory;
+        if let Some(memory) = load_compressed_memory(conn, conversation_id) {
+            if let Some(s) = guardrail::truncate_section(Some(format!("## Compressed conversation memory\n\nThis is a structured summary of older messages in this conversation that are no longer in the recent window.\n\n{}", memory)), guardrail::MAX_CONTEXT_SECTION) {
+                sections.push(s);
+                included_sections.push("compressed-memory".into());
+            }
         }
     }
 
@@ -193,9 +306,10 @@ pub fn build_normalized_prompt(
                 if rows.is_empty() { None } else { Some((label, rows)) }
             })
             .collect();
-        if let Some(s) = maybe_compress_section(
+        if let Some(s) = maybe_compress_section_typed(
             build_cross_session_section(&cross_data),
             guardrail::MAX_CROSS_SESSION_SECTION,
+            Some("cross-session"),
         ) {
             sections.push(s);
             included_sections.push("cross-session".into());
@@ -215,14 +329,14 @@ pub fn build_normalized_prompt(
         prompt.to_string()
     } else {
         let context = sections.join("\n\n");
-        let limited = guardrail::enforce_total_limit(Some(context), guardrail::MAX_TOTAL_PROMPT)
+        let limited = guardrail::enforce_total_limit(Some(context), total_budget)
             .unwrap_or_default();
         format!("{}\n\n---\n\n{}", limited, prompt)
     };
 
     let ctx_mode_str = format!("{:?}", ctx_mode);
     let total_len = assembled.len();
-    let truncated = total_len >= guardrail::MAX_TOTAL_PROMPT;
+    let truncated = total_len >= total_budget;
 
     let meta = ContextPackMeta {
         mode: ctx_mode_str,
@@ -246,6 +360,7 @@ pub struct AgentRunResult {
 
 /// Persist assistant message and update conversation usage.
 /// Returns the constructed Message for the Tauri response.
+/// If `ctx_meta` is provided, records context metadata in trace_log.
 pub fn persist_assistant_message(
     conn: &Connection,
     conversation_id: &str,
@@ -253,6 +368,7 @@ pub fn persist_assistant_message(
     model: &Option<String>,
     run: &AgentRunResult,
     duration_ms: u128,
+    ctx_meta: Option<&ContextPackMeta>,
 ) -> Result<Message, AppError> {
     let msg_id = Uuid::new_v4().to_string();
     let now = now_epoch_ms();
@@ -297,23 +413,20 @@ pub fn persist_assistant_message(
         )?;
     }
 
-    insert_trace_log(
-        conn,
-        conversation_id,
-        run.in_tokens,
-        run.out_tokens,
-        run.cost_usd,
-        now,
-        &SpanInfo {
-            trace_id: &new_trace_id(),
-            span_id: new_span_id(),
-            parent_span_id: None,
-            operation: "agent.send",
-            engine,
-            duration_ms: duration_ms as i64,
-            status: if run.status == "done" { "ok" } else { "error" },
-        },
-    );
+    let span = SpanInfo {
+        trace_id: &new_trace_id(),
+        span_id: new_span_id(),
+        parent_span_id: None,
+        operation: "agent.send",
+        engine,
+        duration_ms: duration_ms as i64,
+        status: if run.status == "done" { "ok" } else { "error" },
+    };
+    if let Some(meta) = ctx_meta {
+        insert_trace_log_with_context(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span, meta);
+    } else {
+        insert_trace_log(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span);
+    }
 
     Ok(Message {
         id: msg_id,
@@ -339,6 +452,7 @@ pub fn persist_assistant_message_with_id(
     model: &Option<String>,
     run: &AgentRunResult,
     duration_ms: u128,
+    ctx_meta: Option<&ContextPackMeta>,
 ) -> Result<Message, AppError> {
     let now = now_epoch_ms();
 
@@ -366,23 +480,20 @@ pub fn persist_assistant_message_with_id(
         )?;
     }
 
-    insert_trace_log(
-        conn,
-        conversation_id,
-        run.in_tokens,
-        run.out_tokens,
-        run.cost_usd,
-        now,
-        &SpanInfo {
-            trace_id: &new_trace_id(),
-            span_id: new_span_id(),
-            parent_span_id: None,
-            operation: "agent.send",
-            engine,
-            duration_ms: duration_ms as i64,
-            status: if run.status == "done" { "ok" } else { "error" },
-        },
-    );
+    let span = SpanInfo {
+        trace_id: &new_trace_id(),
+        span_id: new_span_id(),
+        parent_span_id: None,
+        operation: "agent.send",
+        engine,
+        duration_ms: duration_ms as i64,
+        status: if run.status == "done" { "ok" } else { "error" },
+    };
+    if let Some(meta) = ctx_meta {
+        insert_trace_log_with_context(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span, meta);
+    } else {
+        insert_trace_log(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span);
+    }
 
     Ok(Message {
         id: msg_id.to_string(),
@@ -396,4 +507,82 @@ pub fn persist_assistant_message_with_id(
         model: model.clone(),
         persona: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_with_profile_and_persona() {
+        let result = build_identity_persona_fragment(
+            Some("Architect Claude"), "claude-code", Some("You are a reviewer"),
+        ).unwrap();
+        assert!(result.contains("## Identity"));
+        assert!(result.contains("Architect Claude"));
+        assert!(result.contains("claude-code"));
+        assert!(result.contains("You are a reviewer"));
+    }
+
+    #[test]
+    fn identity_without_persona() {
+        let result = build_identity_persona_fragment(
+            Some("General"), "opencode", None,
+        ).unwrap();
+        assert!(result.contains("## Identity"));
+        assert!(result.contains("General"));
+    }
+
+    #[test]
+    fn identity_without_profile() {
+        let result = build_identity_persona_fragment(
+            None, "gemini", None,
+        ).unwrap();
+        assert!(result.contains("프로필이 지정되지 않았습니다"));
+        assert!(result.contains("gemini"));
+    }
+
+    #[test]
+    fn parse_identity_only() {
+        let fragment = "## Identity\n\nYour profile is Test.\nEngine: claude.";
+        let (id, persona) = parse_identity_and_persona(Some(fragment));
+        assert!(id.is_some());
+        assert!(persona.is_none());
+    }
+
+    #[test]
+    fn parse_identity_and_persona_split() {
+        let fragment = "## Identity\n\nProfile: Test\n\n## Persona\n\nYou are a reviewer.";
+        let (id, persona) = parse_identity_and_persona(Some(fragment));
+        assert!(id.unwrap().contains("Identity"));
+        assert!(persona.unwrap().contains("reviewer"));
+    }
+
+    #[test]
+    fn parse_legacy_persona_only() {
+        let fragment = "You are a code reviewer.";
+        let (id, persona) = parse_identity_and_persona(Some(fragment));
+        assert!(id.is_none());
+        assert!(persona.unwrap().contains("## Persona"));
+    }
+
+    #[test]
+    fn parse_none_fragment() {
+        let (id, persona) = parse_identity_and_persona(None);
+        assert!(id.is_none());
+        assert!(persona.is_none());
+    }
+
+    #[test]
+    fn identity_block_has_attribution_rules() {
+        let block = build_identity_block(Some("Test"), "claude");
+        assert!(block.contains("메시지 작성자 규칙"));
+        assert!(block.contains("소유권을 주장하지 마세요"));
+    }
+
+    #[test]
+    fn identity_block_user_language() {
+        let block = build_identity_block(Some("Test"), "claude");
+        assert!(block.contains("사용자의 언어에 맞춰"));
+    }
 }

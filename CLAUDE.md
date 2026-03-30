@@ -1,6 +1,6 @@
 # tunaFlow — Claude Code Handoff Document
 
-> 최종 갱신: 2026-03-30
+> 최종 갱신: 2026-03-30 (세션 2 반영)
 > SSOT: `docs/reference/dataModelRevised.md` (도메인 모델), `docs/reference/implementationStatus.md` (구현 현황)
 
 ---
@@ -42,9 +42,9 @@ tunaFlow/
 ├── src-tauri/              # Rust backend
 │   ├── src/
 │   │   ├── lib.rs          # Tauri app builder + command registration + rawq daemon startup
-│   │   ├── agents/         # CLI agent adapters (claude, codex, gemini, opencode, rawq, loader)
+│   │   ├── agents/         # CLI agent adapters (claude, codex, gemini, opencode, rawq, context_hub, loader)
 │   │   ├── commands/       # Tauri commands
-│   │   ├── db/             # SQLite schema, migrations(v1-v12), models
+│   │   ├── db/             # SQLite schema, migrations(v1-v17), models
 │   │   ├── errors.rs       # AppError enum
 │   │   └── guardrail.rs    # Context budget limits + truncation
 │   ├── binaries/           # rawq sidecar binary (gitignored)
@@ -52,7 +52,8 @@ tunaFlow/
 ├── src/                    # React frontend
 │   ├── components/tunaflow/  # UI 컴포넌트
 │   │   ├── chat/           # MarkdownComponents, FileViewer, fileViewerContext
-│   │   ├── context-panel/  # PlansPanel, ReviewPanel, TestPanel, TracePanel, SkillsPanel, ArtifactsPanel
+│   │   ├── context-panel/  # PlansPanel, ReviewPanel, TestPanel, TracePanel, SkillsPanel, ArtifactsPanel, EvaluationPanel
+│   │   ├── settings/       # AgentsSection, PersonasSection, RuntimeSection (SettingsPanel에서 분리)
 │   │   ├── input/          # EngineSelector, ModelSelector, RoundtableControls, useSendActions
 │   │   ├── message/        # MessageMeta, MessageActions, ProgressSurface
 │   │   ├── sidebar/        # ChatsSection, TreeRow, ArtifactsSidebarPanel, FilesSection
@@ -111,10 +112,16 @@ tunaFlow/
 - DB = SSOT: event를 놓쳐도 `list_messages()`로 복구
 
 ### 4.3 Normalized ContextPack (4-engine parity)
-- **모든 엔진이 동일한 context를 받음** — `build_normalized_prompt()` 공용 함수
+- **모든 엔진이 동일한 context를 받음** — `build_normalized_prompt_with_budget()` 공용 함수
 - Claude: system prompt 분리 방식, non-Claude: inline prompt에 합침
-- 포함 섹션: project, recent context, plan, findings, artifacts, skills, rawq, cross-session, thread inheritance
+- 포함 섹션: identity, project, persona, recent context (with author attribution), compressed memory, plan, findings, artifacts, skills, rawq, cross-session, thread inheritance
 - rawq는 mode 독립 — `prompt_needs_rawq()` 기준으로 코드 신호가 있으면 항상 포함
+- rawq 후처리: confidence 필터(0.4+), dedup(±5줄), confidence 정렬, 300자 snippet
+- Compression: section 유형별 압축 목표 (context=800자, cross-session=600자, findings=400자)
+- Context mode override + total budget cap: Settings에서 조정 → appStore 영속 → 매 전송 시 전달
+- Identity framing: `## Identity` 블록으로 profile/engine/persona 3층 분리 + 한국어 응답 규칙
+- Message author attribution: 과거 메시지에 `[assistant:ProfileName (engine)]` 태그 → 작성자 혼동 방지
+- Compressed conversation memory: 12+ 메시지 시 오래된 메시지를 구조화 요약 → `conversation_memory` 테이블 → ContextPack `compressed-memory` 섹션
 
 ### 4.4 Branch = 대화 분기 공간
 - Branch는 git branch와 유사한 역할 — 독립 실험, RT 토론, 지식 정리 공간
@@ -139,55 +146,39 @@ tunaFlow/
 
 ---
 
-## 5. 현재 상태와 알려진 이슈 (2026-03-29)
+## 5. 현재 상태와 알려진 이슈 (2026-03-30 세션 2)
 
-### ✅ 해결됨: 드로어 RT 기능 구현 완료
+### ✅ 해결됨 (이전 세션)
+- 드로어 RT 기능, 사이드바 계층 구조, Linear UI 리팩토링, rawq 안정화, 프로젝트 soft-delete, Agent Profile/Persona, Branch/RT 고도화, Artifacts 워크플로, Settings, 문서 IA 거버넌스
 
-- `BranchThreadPanel`: RT 모드 감지 → `RoundtableView` 렌더링
-- `openThread`: shadow conversation을 `conversations` 배열에 추가 (RT 감지 전제 조건)
-- `sendThreadRoundtable` / `sendThreadRoundtableFollowup`: thread context RT 전용 함수
-- `useSendActions`: threadMode + isRoundtable → thread RT 함수로 라우팅
-- `NewMessageInput`: thread mode에서 shadow conv 기준 RT config 로딩
-- `RoundtableView`: `conversationId` prop으로 thread conv 기반 running/telemetry 감지
-
-### ✅ 해결됨: 사이드바 RT/Branch 계층 구조
-
-- RT/Branch를 Chats 하위 트리로 표시 (기존 3-section → 1-section)
-- 사이드바 [+] RT 생성 시 기존 채팅의 branch로 생성 (독립 conversation 폐기)
-- 채팅 1개 → 자동 선택, 여러 개 → 드롭다운 선택
-- checkpointId 없는 RT branch에서 Adopt 숨김
-- `openThread`: 부모 conversation이 미선택 상태면 자동 로딩
-
-### ✅ 해결됨: UI/UX 대규모 리팩토링 (Linear-inspired)
-
-- ContextPanel(우측 패널) 제거 → Plan/Review/Test를 중앙 4-tab으로 승격
-- CenterPanel: toolbar zone(투명, 탭 pills) + content zone(rounded border)
-- 사이드바: 프로젝트 드롭다운 선택기 + Artifacts/Memos/Skills 섹션 추가
-- RuntimeStatusBar: 하단 전체 폭, trace(클릭→모달) + rawq 상태
-- Linear 스펙 색상/간격 적용 (lch 색상, h-7, rounded-lg, 13px, gap-1.5)
-- 검색창: 중앙 toolbar 우측 (placeholder, 기능 미구현)
-
-### ✅ 해결됨: rawq 인덱싱 안정화
-
-- ensure_index timeout 제거 (daemon이 실제 작업, CLI kill 무의미)
-- RawqIndexing guard: 동일 경로 중복 인덱싱 방지
-- Frontend: 프로젝트 전환 시 이전 rawq listener cleanup
-
-### ✅ 해결됨: 프로젝트 soft-delete
-
-- DB v13: projects.hidden 컬럼
-- hide_project: hidden=1, 리스트에서 제외
-- create_project: 같은 경로 재추가 시 hidden 프로젝트 복원
-- 메인 채팅 삭제 방지 (마지막 1개 보호)
+### ✅ 해결됨 (이번 세션)
+- **4-engine context metadata parity**: 모든 엔진이 trace_log에 context_mode/sections/length/truncated 기록
+- **ContextPack visibility**: TracePanel에 context mode badge + section pills + truncated 경고, RuntimeStatusBar에 context mode 약어
+- **rawq 후처리**: confidence 필터/dedup/재정렬/snippet 300자 확장/scope 표시
+- **Compression 개선**: section 유형별 압축 목표/보존 우선순위 (context=800, cross-session=600, findings=400)
+- **Context budget control UI**: Settings > Runtime에서 mode(Auto/Lite/Standard/Full) + total cap(20k-120k) 조정
+- **context-hub 최소 연동**: health/search/get CLI 호출 + source policy(bundled/local/private only) + Settings UI
+- **context-hub explicit handoff**: Copy / Send to Context / Save as Artifact
+- **Agent identity framing**: `## Identity` 블록으로 profile/engine/persona 3층 분리, 혼합 표현 금지
+- **Message author attribution**: 과거 메시지에 author 태그, 소유권 혼동 방지 규칙
+- **Compressed conversation memory**: 12+ 메시지 시 구조화 요약 → DB 저장 → ContextPack 주입 (v17 migration)
+- **Memory operational polish**: not_generated/fresh/stale 상태 모델, provenance, TracePanel 표시
+- **runtimeSlice 팩토리 추출**: 4개 중복 send 함수 → 1개 `sendWithEngine` (509줄 → 311줄)
+- **SettingsPanel 분할**: 904줄 → 74줄 shell + 3개 분리 파일
+- **deprecated isRunning 제거**: `runningThreadIds`로 완전 전환
+- **OpenCode model discovery**: `opencode models` CLI 호출 → 동적 모델 목록
+- **OpenCode 바이너리 경로**: `~/.opencode/bin/` 최우선 탐색 추가
+- **Engine 선택 버그 수정**: Settings stale closure → 한 번의 save로 동시 업데이트
+- **대화 컨텍스트 framing 개선**: "Conversation history (you are continuing this conversation)" 헤더
+- **창 위치**: 주 모니터 중앙 배치 (멀티모니터 대응)
+- **사이드바 인디케이터**: 삭제 버튼과 status dot 위치 교체
+- **RuntimeStatusBar 버그**: `list_trace_spans` → `list_traces` 명령 이름 수정
 
 ### 기타 알려진 이슈
-
 - 기존 smoke-sidebar/smoke-workspace 테스트 실패 (store mock 불일치)
-- trace_log context metadata는 `start_claude_stream`만 적용. 다른 엔진은 NULL
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- `ContextPanel.tsx`, `RoundtablesSection.tsx`, `BranchesSection.tsx`, `StatusBar.tsx`, `ChatObjectTabs.tsx` dead code
-- 드로어에서 하위 branch 생성 시 부모가 메인 패널로 올라가는 문제 (depth 탐색 UX 미구현)
-- Adopt 시 하위 branch 자동 archive 미구현
+- branchSlice sendThreadMessage는 아직 엔진별 분기 남아있음 (runtimeSlice만 팩토리 전환됨)
+- 실질적 테스트 부재 (Rust 29개 unit test + Frontend 8개 smoke test뿐)
 
 ---
 
@@ -227,33 +218,35 @@ tunaFlow/
 | `projectSlice` | `projects`, `selectedProjectKey`, `projectLoading`, `selectProject()` |
 | `conversationSlice` | `conversations`, `selectedConversationId`, `messages`, `selectConversation()` |
 | `branchSlice` | `branches`, `activeBranchId`, `threadBranchId`, `threadBranchConvId`, `threadMessages`, `openThread()`, `sendThreadMessage()`, `sendThreadRoundtable()`, `sendThreadRoundtableFollowup()` |
-| `runtimeSlice` | `runningThreadIds`, `messageQueue`, `sendMessage()`, `sendWithGemini()`, `sendRoundtable()` 등 |
+| `runtimeSlice` | `runningThreadIds`, `messageQueue`, `sendMessage()`, `sendWithEngine()`, `sendRoundtable()` |
 | `assetSlice` | `memos`, `artifacts`, `skills`, `activeSkills` (persist), `crossSessionIds` |
 | `engineModelSlice` | `engineModels`, `loadEngineModels()` |
 
 ### 주요 실행 패턴
-- **메인 패널 전송**: `runtimeSlice.sendMessage()` → `start_claude_stream` + event listener
+- **메인 패널 전송**: `runtimeSlice.sendWithEngine(engine, prompt)` → `ENGINE_CONFIGS[engine].command` + event listener
 - **드로어 전송**: `branchSlice.sendThreadMessage()` → `start_*` + event listener (background)
 - **드로어 RT 전송**: `branchSlice.sendThreadRoundtable()` → `start_roundtable_run` + event listener (threadMessages)
 - **메인 RT 전송**: `runtimeSlice.sendRoundtable()` → `start_roundtable_run` + event listener (messages)
-- **입력 라우팅**: `useSendActions({ threadMode })` — RT + threadMode → `sendThreadRoundtable`, RT → `sendRoundtable`, threadMode → `sendThreadMessage`
+- **입력 라우팅**: `useSendActions({ threadMode })` — RT + threadMode → `sendThreadRoundtable`, RT → `sendRoundtable`, threadMode → `sendThreadMessage`, 일반 → `sendWithEngine(engine)`
 
 ---
 
-## 8. DB 스키마 (v12)
+## 8. DB 스키마 (v17)
 
 | 테이블 | 핵심 필드 |
 |---|---|
-| `projects` | key(PK), name, path, type, source |
-| `conversations` | id, project_key(FK), label, mode(chat/roundtable), rt_config(JSON) |
+| `projects` | key(PK), name, path, type, source, hidden |
+| `conversations` | id, project_key(FK), label, mode(chat/roundtable), rt_config(JSON), usage_status |
 | `messages` | id, conversation_id(FK), role, content, status, engine, model, persona |
-| `branches` | id, conversation_id(FK), label, status, checkpoint_id, mode(chat/roundtable) |
+| `messages_fts` | FTS5 가상 테이블 (v15, 트리거 기반 동기화) |
+| `branches` | id, conversation_id(FK), label, status, checkpoint_id, mode(chat/roundtable), parent_branch_id, git_branch |
 | `memos` | id, message_id, content, type, tags |
 | `artifacts` | id, conversation_id, type, title, status, subtask_id |
 | `plans` | id, conversation_id, title, status |
 | `plan_subtasks` | id, plan_id(FK), title, status, owner_agent |
-| `trace_log` | id, conversation_id, trace_id, span_id, engine, context_mode, context_sections |
+| `trace_log` | id, conversation_id, trace_id, span_id, engine, context_mode, context_sections, context_length, context_truncated, usage_status |
 | `agent_jobs` | id, conversation_id, message_id, engine, kind, status, error |
+| `conversation_memory` | id, conversation_id(FK), summary, source_count, created_at, updated_at (v17) |
 
 ---
 
@@ -357,25 +350,53 @@ tunaFlow/
 - documentNamingRule: 짧은 파일명 + title/metas/index 보완
 - CLAUDE.md §17에 규칙 요약
 
+### 2026-03-30 세션 2 주요 변경사항
+
+### ContextPack 고도화
+- 4-engine context metadata parity: 모든 엔진이 trace_log에 context_mode/sections/length/truncated 기록
+- TracePanel/RuntimeStatusBar에서 context 가시화 (mode badge, section pills, truncated 경고)
+- rawq 후처리: SearchResult에 scope/confidence 추가, dedup/재정렬/300자 snippet
+- Compression: section 유형별 압축 목표 (`maybe_compress_section_typed`)
+- Context budget control: Settings UI + appStore 영속 + backend override 전달
+- Conversation context framing: author attribution (per-message author 태그)
+- Compressed conversation memory: v17 migration, 12+ 메시지 시 구조화 요약 + ContextPack 주입
+
+### Agent Identity
+- `## Identity` 블록: profile/engine/persona 3층 분리, 혼합 표현 금지
+- Message author attribution: 과거 메시지 작성자 구분 규칙
+- 사용자 언어 자동 감지 응답
+
+### context-hub 연동
+- `agents/context_hub.rs`: health/search/get CLI 호출 + source policy(bundled/local/private only)
+- `commands/context_hub.rs`: 3개 Tauri commands
+- Settings > Runtime: 검색/조회/문서 미리보기 + Copy/Send to Context/Save as Artifact handoff
+
+### 코드 품질 개선
+- runtimeSlice 팩토리 추출: 4개 중복 send → `sendWithEngine` (509줄 → 311줄)
+- SettingsPanel 분할: 904줄 → 74줄 shell + settings/ 폴더
+- deprecated `isRunning` 필드 제거
+- OpenCode model discovery (`opencode models` CLI) + 바이너리 경로 추가
+- Engine 선택 stale closure 버그 수정
+- 사이드바 인디케이터/삭제 위치 교체
+- 주 모니터 중앙 창 배치 (멀티모니터 대응)
+
 ---
 
 ## 11. 다음 우선순위
 
 ### P0: 제품 완성도
-- 채팅 검색 구현 (FTS5 트리거 + 검색 커맨드 + UI) — 검색 placeholder 자리 확보됨
-- Persona runtime prompt 실제 동작 검증 (General → Reviewer → Tester 순)
-- Knowledge Sources 설정 셸 (context-hub 연동 준비) — 계획 문서 작성됨
+- branchSlice sendThreadMessage 팩토리 전환 (runtimeSlice만 완료)
+- 실질적 테스트 추가: store 상태 전이, ContextPack 조립 경로, 메시지 큐잉
 
 ### P1: 코드 정합성
-- dead code 삭제: ContextPanel, RoundtablesSection, BranchesSection, StatusBar, ChatObjectTabs, ProjectsSection
-- smoke test 복구 (store mock 업데이트)
-- token/cost: DB 레벨 `usage_status` 컬럼 추가
+- smoke test 복구 (store mock 업데이트 — isRunning 제거 반영)
+- RoundtableView 453줄 분할
+- Compressed memory 품질 검증 (긴 대화 시나리오)
 
 ### P2: 후순위
-- Evaluation UI 연결 (backend 완료, frontend 미연결)
 - Chat virtualization (200+ 메시지 성능 이슈 시)
-- Context budget 조정 UI (현재 읽기 전용)
-- Git sync Phase 1: branches.git_branch 필드 활용
+- Long-term memory Phase 2: structured memory 강화, conversation retrieval
+- context-hub auto ContextPack injection (현재는 explicit handoff만)
 
 ---
 
@@ -464,8 +485,10 @@ cd src-tauri && cargo test --lib  # Rust unit tests
 - **Tauri command**: 인자는 `camelCase` (serde rename), 긴 실행은 `start_*` background 패턴
 - **DB migration**: `add_column_if_missing`으로 idempotent, 버전 번호 순차 증가
 - **에러 처리**: dev 단계에서 silent fallback 최소화, 명시적 경고/에러 표시
-- **테스트**: vitest + jsdom (frontend), cargo test --lib (Rust unit)
+- **테스트**: vitest + jsdom (frontend), cargo test --lib (Rust unit, 29개)
 - **4-engine parity**: 새 기능 추가 시 4개 엔진 모두에서 동작하는지 확인
+- **send 함수 패턴**: `runtimeSlice.sendWithEngine(engine)` → `ENGINE_CONFIGS[engine]`로 command/event 매핑. 엔진별 함수 복사 금지
+- **Settings 구조**: `settings/` 폴더에 섹션별 분리 파일. SettingsPanel은 thin shell
 
 ---
 

@@ -47,6 +47,8 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-29/applied_agent_config_visibility_prompt](./2026-03-29/applied_agent_config_visibility_prompt.md): assistant message에서 applied profile/persona/skills를 다시 보여주는 프롬프트
 - [2026-03-29/chops_context_hub_integration_review_prompt](./2026-03-29/chops_context_hub_integration_review_prompt.md): chops/context-hub/tunaFlow 역할 분리와 flow agent 선행 조건을 검토하는 프롬프트
 - [2026-03-30/knowledge_sources_settings_shell_prompt](./2026-03-30/knowledge_sources_settings_shell_prompt.md): Settings에 Knowledge Sources 섹션을 product shell로 먼저 추가하는 프롬프트
+- [2026-03-30/contextpack_visibility_ui_polish_prompt](./2026-03-30/contextpack_visibility_ui_polish_prompt.md): trace_log context metadata를 TracePanel/StatusBar에서 가독성 좋게 보여주는 UI polish 프롬프트
+- [2026-03-30/contextpack_compression_rawq_postprocess_prompt](./2026-03-30/contextpack_compression_rawq_postprocess_prompt.md): compression 품질 개선 + rawq 결과 후처리 실행 프롬프트
 - [2026-03-30/documentation_ia_governance_prompt](./2026-03-30/documentation_ia_governance_prompt.md): docs 탐색 규칙과 index 구조를 먼저 정리하는 프롬프트
 - [2026-03-30/document_versioning_policy_prompt](./2026-03-30/document_versioning_policy_prompt.md): reference/plan/prompt/brainstorm 문서의 버전관리 규칙을 정리하는 프롬프트
 - [2026-03-30/document_naming_rule_prompt](./2026-03-30/document_naming_rule_prompt.md): 파일명은 짧게, title/metas/index는 설명적으로 가는 규칙을 정리하는 프롬프트
@@ -77,5 +79,15 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/context_stack_reevaluation_prompt](./2026-03-30/context_stack_reevaluation_prompt.md): ContextPack/context-hub/flow agent의 다음 구현 순서를 다시 좁히는 프롬프트
 - [2026-03-30/contextpack_p0_phase1_prompt](./2026-03-30/contextpack_p0_phase1_prompt.md): ContextPack P0의 1차로 section visibility와 compression 가시화를 먼저 진행하는 프롬프트
 - [2026-03-30/context_hub_source_policy_prompt](./2026-03-30/context_hub_source_policy_prompt.md): context-hub를 bundled/local/private source 중심으로 제한하는 정책 프롬프트
+- [2026-03-30/context_budget_control_ui_prompt](./2026-03-30/context_budget_control_ui_prompt.md): Runtime에서 Lite/Standard/Full과 total cap을 안전하게 조정하는 프롬프트
+- [2026-03-30/context_hub_minimal_integration_prompt](./2026-03-30/context_hub_minimal_integration_prompt.md): context-hub를 health/search/get 최소 경로로 실제 연결하는 프롬프트
+- [2026-03-30/context_hub_search_get_ui_prompt](./2026-03-30/context_hub_search_get_ui_prompt.md): context-hub search/get을 Settings에서 사용 가능하게 하는 UI 프롬프트
+- [2026-03-30/context_hub_explicit_handoff_prompt](./2026-03-30/context_hub_explicit_handoff_prompt.md): context-hub 문서를 현재 대화/아티팩트 흐름으로 명시적으로 넘기는 프롬프트
+- [2026-03-30/agent_identity_framing_prompt](./2026-03-30/agent_identity_framing_prompt.md): profile/engine/persona를 구분하는 자기 정체성 응답 규칙 프롬프트
+- [2026-03-30/agent_identity_validation_prompt](./2026-03-30/agent_identity_validation_prompt.md): identity framing이 실제 응답에서 일관되게 동작하는지 검증하는 프롬프트
+- [2026-03-30/message_author_attribution_prompt](./2026-03-30/message_author_attribution_prompt.md): 현재 speaker와 과거 message author를 분리해 설명하게 하는 프롬프트
+- [2026-03-30/long_term_memory_phase1_compression_prompt](./2026-03-30/long_term_memory_phase1_compression_prompt.md): recent window 밖의 대화를 compressed memory source로 유지하는 long-term memory 1차 프롬프트
+- [2026-03-30/compressed_memory_operational_polish_prompt](./2026-03-30/compressed_memory_operational_polish_prompt.md): compressed memory의 상태/실패/provenance/재압축 정책을 운영 가능한 수준으로 보강하는 프롬프트
+- [2026-03-30/structured_memory_source_strengthening_prompt](./2026-03-30/structured_memory_source_strengthening_prompt.md): plan/findings/artifacts/memo/cross-session를 장기기억용 structured memory source로 강화하는 프롬프트
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

@@ -128,11 +128,9 @@ export function useSendActions({
     conversations,
     messages,
     threadMessages,
-    isRunning,
+    runningThreadIds,
     sendMessage,
-    sendWithCodex,
-    sendWithGemini,
-    sendWithOpencode,
+    sendWithEngine,
     sendRoundtable,
     sendRoundtableFollowup,
     sendThreadRoundtable,
@@ -282,14 +280,8 @@ export function useSendActions({
     } else if (threadMode) {
       // Thread mode: route through sendThreadMessage
       await sendThreadMessage(prompt, engine, selectedModel || undefined);
-    } else if (engine === "codex") {
-      await sendWithCodex(prompt, selectedModel || undefined);
-    } else if (engine === "gemini") {
-      await sendWithGemini(prompt, selectedModel || undefined);
-    } else if (engine === "opencode") {
-      await sendWithOpencode(prompt, selectedModel || undefined);
     } else {
-      await sendMessage(prompt, selectedModel || undefined);
+      await sendWithEngine(engine ?? "claude", prompt, selectedModel || undefined);
     }
   };
 

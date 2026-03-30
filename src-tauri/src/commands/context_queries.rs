@@ -10,16 +10,34 @@ pub fn load_recent_messages(
     conversation_id: &str,
     limit: i64,
 ) -> Vec<(String, String)> {
+    load_recent_messages_with_author(conn, conversation_id, limit)
+        .into_iter()
+        .map(|(role, content, _, _)| (role, content))
+        .collect()
+}
+
+/// Load recent messages with author metadata.
+/// Returns `(role, content, engine, persona)` tuples.
+pub fn load_recent_messages_with_author(
+    conn: &Connection,
+    conversation_id: &str,
+    limit: i64,
+) -> Vec<(String, String, Option<String>, Option<String>)> {
     let Ok(mut stmt) = conn.prepare(
-        "SELECT role, content FROM messages
+        "SELECT role, content, engine, persona FROM messages
          WHERE conversation_id = ?1
          ORDER BY timestamp DESC LIMIT ?2",
     ) else {
         return Vec::new();
     };
-    let mut rows: Vec<(String, String)> = stmt
+    let mut rows: Vec<(String, String, Option<String>, Option<String>)> = stmt
         .query_map(params![conversation_id, limit], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
         })
         .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();
