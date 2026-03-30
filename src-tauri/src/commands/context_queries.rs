@@ -187,24 +187,25 @@ pub fn retrieve_relevant_chunks_with_overlap(
             // Scoring: combine FTS rank + recency + kind bonus
             let fts_score = (-fts_rank).max(0.0).min(10.0) / 10.0; // normalize 0-1
             let age_hours = ((now_ts - hit_ts) as f64 / 3_600_000.0).max(0.0);
-            let recency_score = 1.0 / (1.0 + age_hours / 24.0); // decay over days
+            let recency_score = 1.0 / (1.0 + age_hours / 168.0); // decay over weeks (not days)
             let kind_bonus = match c.kind {
-                "pair" => 0.3,   // full Q&A is most useful
+                "pair" => 0.25,  // full Q&A is most useful
                 "brief" => 0.2,  // RT briefs are curated
-                "anchor" => 0.1, // anchors provide context
+                "anchor" => 0.15, // anchors provide context
                 _ => 0.0,
             };
 
             // Overlap penalty: if chunk content strongly overlaps existing context
+            // Uses stopword-filtered Jaccard to reduce false positives from common vocabulary
             let overlap_penalty = if let Some(existing) = existing_context {
                 let chunk_text: String = c.messages.iter().map(|(_, content, _, _)| content.as_str()).collect::<Vec<_>>().join(" ");
-                let sim = jaccard_word_similarity(&chunk_text, existing);
-                if sim > 0.6 { 0.5 } else if sim > 0.4 { 0.2 } else { 0.0 }
+                let sim = jaccard_word_similarity_filtered(&chunk_text, existing);
+                if sim > 0.75 { 0.4 } else if sim > 0.5 { 0.15 } else { 0.0 }
             } else {
                 0.0
             };
 
-            c.score = fts_score * 0.4 + recency_score * 0.3 + kind_bonus - overlap_penalty;
+            c.score = fts_score * 0.5 + recency_score * 0.2 + kind_bonus - overlap_penalty;
 
             seen_chunks.insert(chunk_key);
             chunks.push(c);
@@ -231,11 +232,28 @@ pub fn retrieve_relevant_chunks_with_overlap(
     deduped
 }
 
-/// Word-level Jaccard similarity (shared with context_pack but duplicated here to avoid circular deps).
+/// Word-level Jaccard similarity (raw, for dedup).
 fn jaccard_word_similarity(a: &str, b: &str) -> f64 {
     let words_a: std::collections::HashSet<&str> = a.split_whitespace().collect();
     let words_b: std::collections::HashSet<&str> = b.split_whitespace().collect();
     if words_a.is_empty() && words_b.is_empty() { return 1.0; }
+    let intersection = words_a.intersection(&words_b).count();
+    let union = words_a.union(&words_b).count();
+    if union == 0 { return 0.0; }
+    intersection as f64 / union as f64
+}
+
+/// Stopword-filtered Jaccard — reduces false positives from common vocabulary.
+fn jaccard_word_similarity_filtered(a: &str, b: &str) -> f64 {
+    let words_a: std::collections::HashSet<String> = a.split_whitespace()
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() >= 3 && !STOPWORDS.contains(&w.as_str()))
+        .collect();
+    let words_b: std::collections::HashSet<String> = b.split_whitespace()
+        .map(|w| w.to_lowercase())
+        .filter(|w| w.len() >= 3 && !STOPWORDS.contains(&w.as_str()))
+        .collect();
+    if words_a.is_empty() && words_b.is_empty() { return 0.0; }
     let intersection = words_a.intersection(&words_b).count();
     let union = words_a.union(&words_b).count();
     if union == 0 { return 0.0; }
@@ -313,14 +331,39 @@ fn load_message_by_id(conn: &Connection, id: &str) -> Option<(String, String, St
     ).ok()
 }
 
+/// Common stopwords that inflate FTS5 results without adding relevance.
+const STOPWORDS: &[&str] = &[
+    // English
+    "the", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could", "should",
+    "can", "may", "might", "shall", "must",
+    "it", "its", "he", "she", "we", "they", "you", "me", "him", "her", "us", "them",
+    "this", "that", "these", "those", "what", "which", "who", "whom", "how", "when", "where", "why",
+    "if", "or", "and", "but", "not", "no", "so", "as", "at", "by", "for", "in", "of", "on", "to", "up",
+    "an", "my", "our", "your", "all", "any", "each", "some", "such",
+    "than", "too", "very", "just", "also", "more", "most", "only", "even",
+    "with", "from", "into", "about", "after", "before", "between", "through",
+    // Korean particles/endings (common short words that match everything)
+    "이", "그", "저", "것", "수", "등", "및", "또", "더",
+];
+
 /// Build FTS5 query from natural language.
-/// Extracts words ≥2 chars, joins with OR for broad matching.
+/// Filters stopwords, extracts meaningful words, joins with OR.
 fn build_fts_query(query: &str) -> String {
     let words: Vec<&str> = query.split_whitespace()
         .filter(|w| w.len() >= 2)
+        .filter(|w| !STOPWORDS.contains(&w.to_lowercase().as_str()))
         .take(8)
         .collect();
-    if words.is_empty() { return String::new(); }
+    if words.is_empty() {
+        // Fallback: if all words were stopwords, use original words ≥3 chars
+        let fallback: Vec<&str> = query.split_whitespace()
+            .filter(|w| w.len() >= 3)
+            .take(4)
+            .collect();
+        if fallback.is_empty() { return String::new(); }
+        return fallback.join(" OR ");
+    }
     words.join(" OR ")
 }
 

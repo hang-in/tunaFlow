@@ -181,7 +181,8 @@ pub fn build_normalized_prompt_with_budget(
             let mut score: i32 = 0; // 0 = Standard baseline
 
             // Signals pushing toward Full (+)
-            if !active_skills.is_empty() { score += 2; }          // skills active → needs skill context
+            if active_skills.len() >= 3 { score += 2; }           // many skills → Full territory
+            else if !active_skills.is_empty() { score += 1; }     // 1-2 skills → moderate push
             if !cross_session_ids.is_empty() { score += 1; }       // cross-session → multi-conv work
             // Only count explicit persona (not the always-present identity block)
             let has_explicit_persona = persona_fragment
@@ -248,7 +249,7 @@ pub fn build_normalized_prompt_with_budget(
             cross_session_cap: guardrail::MAX_CROSS_SESSION_SECTION,
             retrieval_min_remaining: if total_budget >= 80_000 { 3_000 } else { 4_000 },
             compressed_min_remaining: 2_000,
-            retrieval_content_max: 200,
+            retrieval_content_max: 250,
             context_message_max: 400,
         },
         ContextMode::Full => ModeProfile {
@@ -258,7 +259,7 @@ pub fn build_normalized_prompt_with_budget(
             cross_session_cap: 6_000,
             retrieval_min_remaining: 2_000,
             compressed_min_remaining: 1_500,
-            retrieval_content_max: 300,
+            retrieval_content_max: 400,
             context_message_max: 500,
         },
     };
@@ -373,7 +374,12 @@ pub fn build_normalized_prompt_with_budget(
                         .unwrap_or_default()
                 }).unwrap_or_default();
 
-                let chunks = retrieve_relevant_chunks_with_overlap(conn, pk, conversation_id, prompt, &recent_ids, 5, Some(&existing_snapshot));
+                let retrieval_limit = match ctx_mode {
+                    ContextMode::Lite => 3,
+                    ContextMode::Standard => 6,
+                    ContextMode::Full => 10,
+                };
+                let chunks = retrieve_relevant_chunks_with_overlap(conn, pk, conversation_id, prompt, &recent_ids, retrieval_limit, Some(&existing_snapshot));
                 if !chunks.is_empty() {
                     let mut section = String::from("## Relevant prior conversation\n\nPast conversation chunks relevant to the current question.\n");
                     for chunk in &chunks {

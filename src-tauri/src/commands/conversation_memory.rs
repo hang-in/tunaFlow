@@ -239,8 +239,8 @@ pub fn compress_conversation_memory(
                 ("assistant", None, Some(e)) if !e.is_empty() => format!("{} ({})", role, e),
                 _ => role.clone(),
             };
-            let content_preview = if content.len() > 500 {
-                format!("{}…", &content[..content.char_indices().take_while(|&(i, _)| i <= 500).last().map_or(0, |(i, _)| i)])
+            let content_preview = if content.len() > 1500 {
+                format!("{}…", &content[..content.char_indices().take_while(|&(i, _)| i <= 1500).last().map_or(0, |(i, _)| i)])
             } else {
                 content.clone()
             };
