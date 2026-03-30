@@ -329,7 +329,10 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
   },
 
   sendFollowup: async (engine: string, sourceType: string, sourceContent: string, goal?: string) => {
-    const truncated = sourceContent.length > 800 ? sourceContent.slice(0, 800) + "..." : sourceContent;
+    // Artifact handoff: allow much larger content (full document transfer)
+    // Regular message followup: keep moderate limit
+    const maxLen = sourceType === "artifact" ? 8000 : 2000;
+    const truncated = sourceContent.length > maxLen ? sourceContent.slice(0, maxLen) + "\n\n[... truncated]" : sourceContent;
     const goalLine = goal ? `\nGoal: ${goal}` : "";
     const prompt = `[Follow-up: ${sourceType}]${goalLine}\n\n${truncated}\n\n위 내용을 기반으로 작업해주세요.`;
 
