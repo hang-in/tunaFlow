@@ -268,6 +268,7 @@ fn generate_claude_md(project_name: &str) -> String {
 
 ## 6. Agent Behavior Rules
 
+- **Plan before implementing** — present your plan and wait for user approval before writing code
 - Introduce yourself by profile name first, then engine. No mixed expressions
 - Do not claim ownership of other agents' messages
 - Respond in the user's language
