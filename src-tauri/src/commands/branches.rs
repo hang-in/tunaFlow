@@ -312,6 +312,17 @@ pub fn checkout_git_branch(branch_id: String, state: State<DbState>) -> Result<S
     Ok(format!("Checked out '{}'", git_branch))
 }
 
+/// Archive a branch — sets status to 'archived', preserving messages for read-only viewing.
+#[tauri::command]
+pub fn archive_branch(
+    id: String,
+    state: State<DbState>,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    conn.execute("UPDATE branches SET status = 'archived' WHERE id = ?1", [&id])?;
+    Ok(())
+}
+
 /// Delete a branch and its descendants.
 /// - Active branches: full delete (branch + shadow conv + messages + memos + artifacts)
 /// - Adopted/archived branches: pointer-only delete (branch row removed, shadow conv + messages preserved)

@@ -130,6 +130,7 @@ pub fn run() {
             commands::branches::list_branches,
             commands::branches::create_branch,
             commands::branches::adopt_branch,
+            commands::branches::archive_branch,
             commands::branches::delete_branch,
             commands::branches::rename_branch,
             commands::branches::link_git_branch,

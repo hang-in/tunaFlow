@@ -592,7 +592,7 @@ function MergeBranchButton({
           await planApi.createPlanEvent(plan.id, "review_merged", "user", `Merged from branch ${branchId} (rev.${plan.revision + 1})`);
 
           // Archive the merged branch — it served its purpose
-          await invoke("delete_branch", { id: branchId }).catch(() => {});
+          await invoke("archive_branch", { id: branchId }).catch(() => {});
           // Clear the branch link on the plan
           await planApi.linkPlanBranch(plan.id, branchType, null);
           // Return to approval phase for re-review
