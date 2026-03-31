@@ -18,4 +18,5 @@ pub mod projects;
 pub mod roundtable;
 pub mod roundtable_helpers;
 pub mod skills;
+pub mod test_runner;
 pub mod tracing;
