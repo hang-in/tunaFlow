@@ -38,7 +38,11 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
       // Find a plan that has a pending revision_requested event (= this is a revision response)
       for (const plan of activePlans) {
         const events = await planApi.listPlanEvents(plan.id);
-        const hasRevisionRequest = events.some((e: PlanEvent) => e.eventType === "revision_requested");
+        const hasRevisionRequest = events.some((e: PlanEvent) =>
+          e.eventType === "revision_requested" ||
+          e.eventType === "subtask_revision_requested" ||
+          e.eventType === "detail_design_requested"
+        );
         // Check the last event isn't already a merge (avoid double-merge on re-render)
         const lastEvent = events[events.length - 1];
         const alreadyMerged = lastEvent?.eventType === "review_merged";
