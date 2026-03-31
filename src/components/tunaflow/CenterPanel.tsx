@@ -51,6 +51,10 @@ export function CenterPanel() {
 
   const currentConv = conversations.find((c) => c.id === selectedConversationId);
   const isRoundtable = currentConv?.mode === "roundtable";
+  const isScratchpad = currentConv?.type === "scratchpad";
+
+  // Scratchpad: force Chat tab, no other tabs needed
+  const effectiveTab = isScratchpad ? "chat" : activeTab;
 
   const memos = useChatStore((s) => s.memos);
   const deleteMemo = useChatStore((s) => s.deleteMemo);
@@ -75,8 +79,8 @@ export function CenterPanel() {
     <div className="flex flex-col flex-1 min-w-0 h-full">
       {/* ── Toolbar: tabs | path (center) | search ── */}
       <div className="flex items-center px-3 pt-2 pb-1 shrink-0">
-        {/* Left: tab pills */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* Left: tab pills — hidden for scratchpad */}
+        {!isScratchpad && <div className="flex items-center gap-1 shrink-0">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -107,11 +111,11 @@ export function CenterPanel() {
               )}
             </button>
           ))}
-        </div>
+        </div>}
 
         {/* Center: path (centered between tabs and search) */}
         <div className="flex-1 flex items-center justify-center gap-1.5 min-w-0 px-3">
-          {activeTab === "chat" && selectedConversationId && (
+          {effectiveTab === "chat" && selectedConversationId && (
             <>
               <span className={cn(
                 "text-[8px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0",
@@ -238,9 +242,9 @@ export function CenterPanel() {
 
       {/* ── Content zone — bordered, elevated ── */}
       <div className="flex-1 min-h-0 rounded-xl border-[0.5px] border-border bg-background overflow-hidden flex flex-col mx-2 mb-2">
-        {activeTab === "chat" && <ChatPanel />}
+        {effectiveTab === "chat" && <ChatPanel />}
 
-        {activeTab === "artifacts" && (
+        {effectiveTab === "artifacts" && (
           <div className="flex-1 overflow-y-auto p-5">
             <div className="max-w-4xl mx-auto">
               <ArtifactsPanel />
@@ -248,7 +252,7 @@ export function CenterPanel() {
           </div>
         )}
 
-        {activeTab === "plan" && (
+        {effectiveTab === "plan" && (
           <div className="flex-1 overflow-y-auto p-5">
             <div className="max-w-4xl mx-auto">
               {canonicalConvId && (
@@ -269,7 +273,7 @@ export function CenterPanel() {
           </div>
         )}
 
-        {activeTab === "review" && (
+        {effectiveTab === "review" && (
           <div className="flex-1 overflow-y-auto p-5">
             <div className="max-w-4xl mx-auto">
               <h3 className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-3">Review</h3>
@@ -278,7 +282,7 @@ export function CenterPanel() {
           </div>
         )}
 
-        {activeTab === "test" && (
+        {effectiveTab === "test" && (
           <div className="flex-1 overflow-y-auto p-5">
             <div className="max-w-4xl mx-auto">
               <h3 className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-3">Test</h3>
