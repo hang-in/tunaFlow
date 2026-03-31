@@ -476,13 +476,16 @@ pub fn generate_plan_document(
 }
 
 fn slugify(title: &str) -> String {
-    title.chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
-        .collect::<String>()
-        .split('-')
+    let slug: String = title.chars()
+        .map(|c| if c.is_alphanumeric() || ('\u{AC00}'..='\u{D7AF}').contains(&c) {
+            c.to_lowercase().next().unwrap_or(c)
+        } else { '-' })
+        .collect();
+    let result: String = slug.split('-')
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
-        .join("-")
+        .join("-");
+    if result.len() > 80 { result[..80].to_string() } else { result }
 }
 
 fn build_plan_markdown(plan: &Plan, subtasks: &[PlanSubtask], events: &[PlanEvent]) -> String {
