@@ -76,22 +76,24 @@ export function HarnessSummary({ conversationId, activeStage, onStageClick }: Ha
     return () => { cancelled = true; };
   }, [conversationId]);
 
-  if (loading || !activePlan) return null;
+  if (loading) return null;
 
-  // Derived counts
-  const counts = {
+  // Stage chips always show (even without active plan — user can navigate)
+  // Summary card only shows when there's an active plan
+
+  const stages = deriveStages(activePlan, subtasks, branches, artifacts);
+  const currentIdx = stages.reduce((last, s, i) => (s.active ? i : last), -1);
+
+  // Derived counts (only if plan exists)
+  const counts = activePlan ? {
     approved: subtasks.filter((s) => s.status === "approved").length,
     inProgress: subtasks.filter((s) => s.status === "in_progress").length,
     done: subtasks.filter((s) => s.status === "done").length,
     todo: subtasks.filter((s) => s.status === "todo").length,
-  };
+  } : null;
   const linkedBranches = branches.filter((b) => b.subtaskId);
   const reviewCount = artifacts.filter((a) => a.type === "review-findings").length;
   const decisionCount = artifacts.filter((a) => a.type === "architect-decision").length;
-
-  const stages = deriveStages(activePlan, subtasks, branches, artifacts);
-  // Current stage = last active stage
-  const currentIdx = stages.reduce((last, s, i) => (s.active ? i : last), -1);
 
   return (
     <div className="mb-3 space-y-2">
@@ -127,7 +129,8 @@ export function HarnessSummary({ conversationId, activeStage, onStageClick }: Ha
         })}
       </div>
 
-      {/* Compact summary card */}
+      {/* Compact summary card — only when plan exists */}
+      {activePlan && counts && (
       <div className="rounded-md bg-card/50 border border-border/30 px-2.5 py-2 space-y-1.5">
         {/* Plan title */}
         <div className="flex items-center gap-1.5">
@@ -182,6 +185,7 @@ export function HarnessSummary({ conversationId, activeStage, onStageClick }: Ha
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
