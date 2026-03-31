@@ -105,6 +105,7 @@ pub fn run() {
             commands::projects::hide_project,
             commands::projects::validate_project_path,
             commands::projects::ensure_rawq_index,
+            commands::projects::ensure_project_workflow_templates,
             commands::projects::start_rawq_index,
             commands::projects::get_rawq_status,
             commands::projects::get_git_status,
@@ -207,6 +208,7 @@ pub fn run() {
             commands::plans::list_plan_events,
             commands::plans::assign_plan_engines,
             commands::plans::link_plan_branch,
+            commands::plans::find_plan_by_branch,
             // Test Runner
             commands::test_runner::run_project_tests,
         ])

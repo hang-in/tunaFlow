@@ -81,3 +81,7 @@ export async function replacePlanSubtasks(
 export async function getPlan(id: string): Promise<Plan> {
   return invoke<Plan>("get_plan", { id });
 }
+
+export async function findPlanByBranch(branchId: string): Promise<Plan | null> {
+  return invoke<Plan | null>("find_plan_by_branch", { branchId });
+}

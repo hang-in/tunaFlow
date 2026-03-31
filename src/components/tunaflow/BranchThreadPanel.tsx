@@ -1,8 +1,8 @@
 import { useRef, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Check, GitBranch, Users, Trash2, ChevronsLeft, ChevronsRight, ChevronRight } from "lucide-react";
+import { X, Check, GitBranch, Users, Trash2, ChevronsLeft, ChevronsRight, ChevronRight, AlertTriangle } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
-import type { Message } from "@/types";
+import type { Message, Plan } from "@/types";
 import { AgentAvatar } from "./AgentAvatar";
 import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -11,6 +11,8 @@ import { NewMessageInput } from "./NewMessageInput";
 import { InlineRename } from "./InlineRename";
 import { RoundtableView } from "./RoundtableView";
 import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
+import { requestPlanRevision } from "@/lib/workflowOrchestration";
+import * as planApi from "@/lib/api/plans";
 
 export function BranchThreadPanel() {
   const {
@@ -35,6 +37,17 @@ export function BranchThreadPanel() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const [rtDialogCheckpoint, setRtDialogCheckpoint] = useState<string | null>(null);
+  const [linkedPlan, setLinkedPlan] = useState<Plan | null>(null);
+  const [revisionMode, setRevisionMode] = useState<"idle" | "select" | "busy">("idle");
+  const [revisionEngine, setRevisionEngine] = useState("claude");
+
+  // Detect if this branch is linked to a plan (implementation branch)
+  useEffect(() => {
+    if (!threadBranchId) { setLinkedPlan(null); return; }
+    planApi.findPlanByBranch(threadBranchId).then(setLinkedPlan).catch(() => setLinkedPlan(null));
+  }, [threadBranchId]);
+
+  const isImplBranch = linkedPlan?.implementationBranchId === threadBranchId;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -202,6 +215,38 @@ export function BranchThreadPanel() {
 
         {/* Actions */}
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Plan revision request — shown only for implementation branches */}
+          {isImplBranch && !isReadOnly && linkedPlan && revisionMode === "idle" && (
+            <button
+              onClick={() => setRevisionMode("select")}
+              title="계획 수정 요청 — Architect에게 전달"
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-amber-600/60 hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
+            >
+              <AlertTriangle className="w-2.5 h-2.5" />계획 수정
+            </button>
+          )}
+          {isImplBranch && revisionMode === "select" && linkedPlan && (
+            <div className="flex items-center gap-1">
+              <select value={revisionEngine} onChange={(e) => setRevisionEngine(e.target.value)} className="text-[9px] bg-input border border-border rounded px-1 py-0.5 outline-none">
+                {["claude", "codex", "gemini", "opencode"].map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+              <button
+                onClick={async () => {
+                  setRevisionMode("busy");
+                  try {
+                    const msgs = threadMessages.length > 0 ? threadMessages : await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId! });
+                    await requestPlanRevision(linkedPlan!, msgs, revisionEngine);
+                  } catch (e) { console.error("[revision]", e); }
+                  setRevisionMode("idle");
+                }}
+                className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
+              >전송</button>
+              <button onClick={() => setRevisionMode("idle")} className="text-[9px] text-muted-foreground hover:text-foreground">취소</button>
+            </div>
+          )}
+          {isImplBranch && revisionMode === "busy" && (
+            <span className="text-[9px] text-amber-600/50">전송 중...</span>
+          )}
           {!isReadOnly && threadBranch?.checkpointId && (
             <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
               <Check className="w-2.5 h-2.5" /> Adopt

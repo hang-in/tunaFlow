@@ -731,6 +731,11 @@ function PlanCard({
                 {phaseCfg.label}
               </span>
             )}
+            {plan.revision > 0 && (
+              <span className="text-[8px] font-mono text-muted-foreground/50 px-1 py-0 rounded bg-accent/50" title={`Revision ${plan.revision}`}>
+                rev.{plan.revision}
+              </span>
+            )}
             {plan.branchId && (
               <span className="inline-flex items-center gap-0.5 text-[8px] font-medium text-primary bg-primary/10 border border-primary/20 px-1 py-0 rounded-full">
                 <GitBranch className="w-2 h-2" />

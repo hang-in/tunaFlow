@@ -115,6 +115,8 @@ pub struct Plan {
     pub reviewer_engines: Option<String>,
     pub implementation_branch_id: Option<String>,
     pub review_branch_id: Option<String>,
+    /// Revision counter — incremented on each subtask merge/replacement
+    pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }

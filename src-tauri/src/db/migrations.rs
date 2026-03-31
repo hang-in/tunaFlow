@@ -79,6 +79,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 18 {
         apply_v18(conn)?;
     }
+    if current < 19 {
+        apply_v19(conn)?;
+    }
     Ok(())
 }
 
@@ -380,6 +383,13 @@ fn apply_v18(conn: &Connection) -> Result<(), AppError> {
     ")?;
 
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (18, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// Plan revision counter — tracks how many times subtasks have been replaced/merged
+fn apply_v19(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "plans", "revision", "INTEGER NOT NULL DEFAULT 0")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (19, ?1)", [now_epoch()])?;
     Ok(())
 }
 

@@ -64,8 +64,9 @@ fn map_plan(row: &rusqlite::Row) -> rusqlite::Result<Plan> {
         reviewer_engines: row.get(10)?,
         implementation_branch_id: row.get(11)?,
         review_branch_id: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        revision: row.get(13)?,
+        created_at: row.get(14)?,
+        updated_at: row.get(15)?,
     })
 }
 
@@ -86,7 +87,7 @@ fn map_subtask(row: &rusqlite::Row) -> rusqlite::Result<PlanSubtask> {
 }
 
 const PLAN_COLS: &str =
-    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, created_at, updated_at";
+    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, revision, created_at, updated_at";
 
 const SUBTASK_COLS: &str =
     "id, plan_id, idx, title, details, status, outcome, owner_agent, last_updated_by, created_at, updated_at";
@@ -144,6 +145,7 @@ pub fn create_plan(
         reviewer_engines: None,
         implementation_branch_id: None,
         review_branch_id: None,
+        revision: 0,
         created_at: now,
         updated_at: now,
     })
@@ -251,7 +253,7 @@ pub fn replace_plan_subtasks(
 
     conn.execute("DELETE FROM plan_subtasks WHERE plan_id = ?1", [&plan_id])?;
     conn.execute(
-        "UPDATE plans SET updated_at = ?1 WHERE id = ?2",
+        "UPDATE plans SET revision = revision + 1, updated_at = ?1 WHERE id = ?2",
         params![now, plan_id],
     )?;
 
@@ -288,6 +290,24 @@ pub fn delete_plan(id: String, state: State<DbState>) -> Result<(), AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     conn.execute("DELETE FROM plans WHERE id = ?1", [&id])?;
     Ok(())
+}
+
+/// Find a plan linked to a branch (as implementation or review branch).
+#[tauri::command]
+pub fn find_plan_by_branch(
+    branch_id: String,
+    state: State<DbState>,
+) -> Result<Option<Plan>, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let sql = format!(
+        "SELECT {} FROM plans WHERE implementation_branch_id = ?1 OR review_branch_id = ?1 LIMIT 1",
+        PLAN_COLS
+    );
+    match conn.query_row(&sql, [&branch_id], map_plan) {
+        Ok(plan) => Ok(Some(plan)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }
 
 // ─── Orchestration Commands (Phase A) ────────────────────────────────────────

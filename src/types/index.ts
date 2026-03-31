@@ -291,6 +291,7 @@ export interface Plan {
   reviewerEngines?: string;
   implementationBranchId?: string;
   reviewBranchId?: string;
+  revision: number;
   createdAt: number;
   updatedAt: number;
 }
