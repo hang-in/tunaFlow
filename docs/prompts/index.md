@@ -112,5 +112,6 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [2026-03-30/real_workflow_memory_quality_validation_prompt](./2026-03-30/real_workflow_memory_quality_validation_prompt.md): 실제 프로젝트 흐름에서 memory/retrieval/auto/budget이 응답 품질에 주는 효과를 검증하는 프롬프트
 - [2026-03-30/contextpack_db_separation_prompt](./2026-03-30/contextpack_db_separation_prompt.md): ContextPack DB 읽기/프롬프트 조립 분리 — load_context_data() + assemble_prompt() 리팩토링 프롬프트
 - [2026-03-31/dependency_migration_phase4_remaining_prompt](./2026-03-31/dependency_migration_phase4_remaining_prompt.md): react-virtuoso 가상 스크롤 + cmdk 커맨드 팔레트 마이그레이션 프롬프트
+- [2026-03-31/orchestrated_workflow_phase_a_prompt](./2026-03-31/orchestrated_workflow_phase_a_prompt.md): 워크플로우 파이프라인 Phase A — plan phases, events, engine assignment DB/API 구현
 - [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
 - [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트

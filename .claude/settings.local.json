@@ -16,7 +16,15 @@
       "Bash(/tmp/tunaflow_docs_summary.txt:*)",
       "Read(//tmp/**)",
       "Read(//private/tmp/**)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(cargo test:*)",
+      "Bash(npx vitest:*)",
+      "Bash(grep -r \"chat.*plan\\\\|flow.*agent\\\\|workflow.*first\\\\|plan.*first\" /Users/d9ng/privateProject/tunaFlow/docs --include=*.md)",
+      "Bash(grep -l \"workflow\\\\|plan.*creation\\\\|chat.*plan\\\\|agent.*plan\" /Users/d9ng/privateProject/tunaFlow/docs/prompts/2026-03-30/*.md)",
+      "Bash(grep -r \"chat.*to.*plan\\\\|transition.*plan\\\\|follow.*up.*plan\" /Users/d9ng/privateProject/tunaFlow/docs --include=*.md)",
+      "WebFetch(domain:www.stavros.io)",
+      "Bash(grep -l \"test execution\\\\|cargo test\\\\|vitest\\\\|skill.*test\" /Users/d9ng/privateProject/tunaFlow/docs/plans/*.md)",
+      "Bash(find /Users/d9ng/privateProject/tunaFlow -path src-tauri -prune -o -type f -name \"*.ts\" -exec grep -l \"interface Branch\\\\|type Branch\\\\|interface Message\\\\|type RoundtableParticipant\" {})"
     ]
   }
 }

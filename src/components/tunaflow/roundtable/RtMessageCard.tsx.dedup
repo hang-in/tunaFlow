@@ -1,0 +1,110 @@
+import { useState } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
+import { cn, AGENT_DOT_COLORS, formatTimestamp, normalizeEngine } from "@/lib/utils";
+import { AgentAvatar } from "../AgentAvatar";
+import { markdownComponents } from "../chat/MarkdownComponents";
+import { RtReferenceBadge } from "./RtReferenceBadge";
+import { parsePromptSources } from "./rtUtils";
+import type { Message, RoundtableParticipant } from "@/types";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Copy, Users, GitBranch, StickyNote, Forward, FileText, ShieldCheck, Trash2 } from "lucide-react";
+
+export interface RtMessageCardProps {
+  message: Message;
+  isLast: boolean;
+  onBranch?: (messageId: string) => void;
+  onBranchRT?: (messageId: string) => void;
+  onMemo?: (messageId: string) => void;
+  onFollowup?: (engine: string, content: string) => void;
+  onSaveArtifact?: (content: string) => void;
+  onDelete?: (messageId: string) => void;
+  participantMeta?: RoundtableParticipant;
+}
+export function RtMessageCard({ message, isLast, onBranch, onBranchRT, onMemo, onFollowup, onSaveArtifact, onDelete, participantMeta }: RtMessageCardProps) {
+  const [hovered, setHovered] = useState(false);
+  const name = message.persona ?? message.engine ?? "Agent";
+  const engine = message.engine ?? "";
+  const knownEngine = normalizeEngine(engine);
+  const dotColor = knownEngine ? AGENT_DOT_COLORS[knownEngine] : "bg-muted-foreground/40";
+  const content = message.content;
+  const sources = parsePromptSources(message);
+  return (
+    <div className="relative flex gap-3">
+      {/* Timeline line */}
+      {!isLast && (
+        <div className="absolute left-[11px] top-7 bottom-0 w-px bg-border/30" />
+      )}
+      {/* Avatar */}
+      <div className="relative z-10 shrink-0">
+        <AgentAvatar engine={engine} size="md" />
+      </div>
+      {/* Card */}
+      <div
+        className={cn(
+          "flex-1 min-w-0 mb-3 rounded-md bg-card/60 border border-border/30 p-3 transition-colors relative overflow-hidden",
+          hovered && "border-border/50"
+        )}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {/* Header: engine · model · role */}
+        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1">
+            <span className={cn("w-1.5 h-1.5 rounded-full", dotColor)} />
+            <span className="text-[10px] font-medium text-foreground/80">{engine || name}</span>
+          </span>
+          {message.model && (
+            <span className="text-[8px] text-foreground/40 font-mono bg-accent/40 px-1 py-0.5 rounded">
+              {message.model}
+            </span>
+          )}
+          {participantMeta?.role && (
+            <span className="text-[8px] text-primary/50 bg-primary/8 px-1 py-px rounded font-medium">
+              {participantMeta.role}
+          {participantMeta?.blind && (
+            <span className="text-[8px] text-amber-500/60 bg-amber-500/8 px-1 py-px rounded font-medium inline-flex items-center gap-0.5">
+              <ShieldCheck className="w-2.5 h-2.5" />blind
+          <span className="text-[9px] text-muted-foreground/40 font-mono">
+            {formatTimestamp(message.timestamp)}
+          {sources && <RtReferenceBadge sources={sources} />}
+        </div>
+        {/* Body — same react-markdown pipeline as main chat */}
+        <div className="prose prose-sm prose-invert max-w-none text-[13px] text-foreground/90 leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+          <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+            {content}
+          </ReactMarkdown>
+        {/* Actions */}
+        <div className={cn(
+          "absolute right-2 top-2 flex items-center gap-0.5 transition-opacity",
+          hovered ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}>
+          {onBranch && (
+            <button onClick={() => onBranch(message.id)} title="Branch"
+              className="p-1 rounded text-muted-foreground/40 hover:text-foreground hover:bg-accent transition-colors">
+              <GitBranch className="w-3 h-3" />
+            </button>
+          {onBranchRT && (
+            <button onClick={() => onBranchRT(message.id)} title="Roundtable"
+              className="p-1 rounded text-muted-foreground/40 hover:text-agent-gemini hover:bg-agent-gemini/10 transition-colors">
+              <Users className="w-3 h-3" />
+          {onMemo && (
+            <button onClick={() => onMemo(message.id)} title="Memo"
+              <StickyNote className="w-3 h-3" />
+          {onSaveArtifact && (
+            <button onClick={() => onSaveArtifact(message.content)} title="Save as Artifact"
+              className="p-1 rounded text-muted-foreground/40 hover:text-primary hover:bg-primary/10 transition-colors">
+              <FileText className="w-3 h-3" />
+          {onFollowup && (
+            <button onClick={() => onFollowup(message.engine ?? "claude", message.content)} title="Forward"
+              <Forward className="w-3 h-3" />
+          <button onClick={() => copyToClipboard(message.content)} title="Copy"
+            className="p-1 rounded text-muted-foreground/40 hover:text-foreground hover:bg-accent transition-colors">
+            <Copy className="w-3 h-3" />
+          </button>
+          {onDelete && (
+            <button onClick={() => onDelete(message.id)} title="Delete"
+              className="p-1 rounded text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors">
+              <Trash2 className="w-3 h-3" />
+    </div>
+  );

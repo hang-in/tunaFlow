@@ -405,18 +405,24 @@ tunaFlow/
 - Compressed memory 참여자 보존 — 긴 대화 후 에이전트 인식 검증
 - Cross-conversation retrieval — 다중 대화 프로젝트에서 chunk 회수 확인
 
+### P0: 오케스트레이션 워크플로우 파이프라인
+- **Phase A: DB + 타입 + API** — plan phases, events, engine assignment. 프롬프트: `docs/prompts/2026-03-31/orchestrated_workflow_phase_a_prompt.md`
+- **Phase B: Chat → Plan 승격** — 마커 파서 + PlanProposalCard
+- **Phase C: Plan 승인 게이트** — 3-way + 검토 Branch
+- **Phase D: Developer 실행계획 + 구현**
+- **Phase E: 테스트 러너 + RT 리뷰**
+- 전체 설계: `docs/plans/orchestratedWorkflowPipelinePlan.md`
+
 ### P1: 의존성 마이그레이션 (Phase 4 잔여)
-- **Phase 4-3: react-virtuoso** — ChatPanel 가상 스크롤 (200+ 메시지 성능). 설치됨, 마이그레이션 대기
-- **Phase 4-4: cmdk** — 커맨드 팔레트 (Cmd+K 에이전트/대화 전환). 설치됨, 구현 대기
-- 계획 문서: `docs/plans/dependencyAdoptionPlan.md`
+- **Phase 4-3: react-virtuoso** — ChatPanel 가상 스크롤. 프롬프트: `docs/prompts/2026-03-31/dependency_migration_phase4_remaining_prompt.md`
+- **Phase 4-4: cmdk** — 커맨드 팔레트
 
 ### P1: 구조 개선
-- **ContextPack DB/assembly 완전 분리**: `assemble_prompt()` 순수 함수화. 프롬프트: `docs/prompts/2026-03-30/contextpack_db_separation_prompt.md`
-- **Phase 5: tokio async** — 에이전트 실행 경로 전체 async 전환. dual-path 전략. 별도 세션 규모
+- **ContextPack DB/assembly 완전 분리**: 프롬프트: `docs/prompts/2026-03-30/contextpack_db_separation_prompt.md`
+- **Phase 5: tokio async** — `docs/plans/dependencyAdoptionPlan.md`
 
 ### P2: 후순위
-- Vector DB Phase 1 (rawq embedding → 메시지 의미 검색). 로드맵: `docs/reference/multiAgentContextStrategy.md`
-- RT stream_run 전환 (progress 가시성)
+- Vector DB Phase 1. 로드맵: `docs/reference/multiAgentContextStrategy.md`
 - 긴 multi-agent 대화 실사용 검증
 - smoke test 복구
 
