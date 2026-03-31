@@ -11,6 +11,20 @@ import * as planApi from "./api/plans";
 import { extractImplPlan, hasImplComplete, hasReviewVerdict, extractReviewVerdict } from "./planProposalParser";
 import type { ParsedImplPlan, ParsedReviewVerdict } from "./planProposalParser";
 
+// ─── Plan document helper ───────────────────────────────────────────────────
+
+/** Generate/update plan document in project directory. Fire-and-forget. */
+export async function syncPlanDocument(planId: string): Promise<void> {
+  try {
+    const { useChatStore } = await import("@/stores/chatStore");
+    const projectKey = useChatStore.getState().selectedProjectKey;
+    if (!projectKey) return;
+    const project = await invoke("get_project", { key: projectKey }) as { path?: string };
+    if (!project?.path) return;
+    await planApi.generatePlanDocument(planId, project.path);
+  } catch { /* fire-and-forget */ }
+}
+
 // ─── Branch helpers ─────────────────────────────────────────────────────────
 
 interface CreateBranchResult {

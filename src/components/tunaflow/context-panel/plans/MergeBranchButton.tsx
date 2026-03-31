@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
 import { Merge } from "lucide-react";
 import type { Plan, PlanPhase, Message } from "@/types";
+import { syncPlanDocument } from "@/lib/workflowOrchestration";
 import * as planApi from "@/lib/api/plans";
 import { splitPlanProposals, hasPlanProposal } from "@/lib/planProposalParser";
 
@@ -34,6 +35,7 @@ export function MergeBranchButton({
           const p = proposalSeg.proposal;
           await planApi.replacePlanSubtasks(plan.id, p.subtasks.map((s) => ({ title: s.title, details: s.details })));
           await planApi.createPlanEvent(plan.id, "review_merged", "user", `Merged from branch ${branchId} (rev.${plan.revision + 1})`);
+          syncPlanDocument(plan.id);
 
           // Archive the merged branch — it served its purpose
           await invoke("archive_branch", { id: branchId }).catch(() => {});

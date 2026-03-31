@@ -82,6 +82,11 @@ export async function getPlan(id: string): Promise<Plan> {
   return invoke<Plan>("get_plan", { id });
 }
 
+/** Generate/update plan document markdown in project directory. Returns file path. */
+export async function generatePlanDocument(planId: string, projectPath: string): Promise<string> {
+  return invoke<string>("generate_plan_document", { planId, projectPath });
+}
+
 export async function findPlanByBranch(branchId: string): Promise<Plan | null> {
   return invoke<Plan | null>("find_plan_by_branch", { branchId });
 }

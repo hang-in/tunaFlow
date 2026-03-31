@@ -210,6 +210,7 @@ pub fn run() {
             commands::plans::assign_plan_engines,
             commands::plans::link_plan_branch,
             commands::plans::find_plan_by_branch,
+            commands::plans::generate_plan_document,
             // Test Runner
             commands::test_runner::run_project_tests,
         ])

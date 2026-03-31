@@ -6,6 +6,7 @@ import { useChatStore } from "@/stores/chatStore";
 import type { ParsedPlanProposal } from "@/lib/planProposalParser";
 import type { Plan, PlanEvent } from "@/types";
 import * as planApi from "@/lib/api/plans";
+import { syncPlanDocument } from "@/lib/workflowOrchestration";
 
 interface PlanProposalCardProps {
   proposal: ParsedPlanProposal;
@@ -63,6 +64,7 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
         details: s.details,
       })));
       await planApi.createPlanEvent(targetPlan.id, "review_merged", "system", `Auto-merged revision (rev.${targetPlan.revision + 1})`);
+      syncPlanDocument(targetPlan.id);
 
       // Archive old implementation branch
       if (targetPlan.implementationBranchId) {
@@ -92,6 +94,7 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
       });
       await planApi.updatePlanPhase(plan.id, "approval");
       await planApi.createPlanEvent(plan.id, "promoted", "user", "Promoted from chat");
+      syncPlanDocument(plan.id);
       setStatus("promoted");
     } catch {
       setStatus("idle");

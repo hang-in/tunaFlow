@@ -78,6 +78,8 @@ pub struct ContextData {
 
     // Structured memory (pre-built section strings)
     pub plan_section: Option<String>,
+    /// Full plan document markdown (from docs/plans/{slug}.md)
+    pub plan_document: Option<String>,
     pub findings_section: Option<String>,
     pub artifacts_section: Option<String>,
 
@@ -205,6 +207,27 @@ pub fn load_context_data(
     } else { conversation_id };
     let plan_conv_id = resolve_plan_conversation_id(conn, effective_conv_id);
     let plan_section = build_plan_section(conn, &plan_conv_id);
+
+    // Load plan document file if active plan exists
+    let plan_document: Option<String> = if has_active_plan {
+        if let Some(pp) = project_path {
+            // Find active plan title to build slug
+            let title: Option<String> = conn.query_row(
+                "SELECT title FROM plans WHERE conversation_id = ?1 AND status = 'active' LIMIT 1",
+                [plan_lookup_conv.as_deref().unwrap_or(conversation_id)],
+                |row| row.get(0),
+            ).ok();
+            title.and_then(|t| {
+                let slug: String = t.chars()
+                    .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+                    .collect::<String>()
+                    .split('-').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+                let doc_path = std::path::Path::new(pp).join("docs").join("plans").join(format!("{}.md", slug));
+                std::fs::read_to_string(&doc_path).ok()
+            })
+        } else { None }
+    } else { None };
+
     let findings_section = build_findings_section(conn, &plan_conv_id);
     let artifacts_section = build_artifact_handoff_section(conn, &plan_conv_id);
 
@@ -264,6 +287,7 @@ pub fn load_context_data(
         current_messages,
         parent_messages,
         plan_section,
+        plan_document,
         findings_section,
         artifacts_section,
         retrieval_chunks,
@@ -492,6 +516,12 @@ pub fn assemble_prompt(
         ) {
             sections.push(s);
             included_sections.push("plan".into());
+        }
+        // Plan document (full markdown from project docs/plans/)
+        if let Some(doc) = &data.plan_document {
+            let truncated = if doc.len() > 4000 { format!("{}\n\n[... truncated]", &doc[..4000]) } else { doc.clone() };
+            sections.push(format!("## Plan Document\n\n{}", truncated));
+            included_sections.push("plan-document".into());
         }
         if let Some(s) = guardrail::truncate_section(
             data.findings_section.clone(),
@@ -1008,6 +1038,7 @@ mod tests {
             current_messages: vec![],
             parent_messages: vec![],
             plan_section: None,
+            plan_document: None,
             findings_section: None,
             artifacts_section: None,
             retrieval_chunks: vec![],
