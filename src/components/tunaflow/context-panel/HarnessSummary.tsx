@@ -26,8 +26,11 @@ function deriveStages(
   const hasReview = artifacts.some((a) => a.type === "review-findings");
   const hasDecision = artifacts.some((a) => a.type === "architect-decision");
 
+  const hasSubtaskReview = plan?.phase === "subtask_review";
+
   return [
     { id: "plan", label: "Plan", active: !!plan },
+    { id: "subtask", label: "Subtask", active: hasSubtaskReview || hasApproved || hasInProgress || hasDone },
     { id: "approved", label: "Approved", active: hasApproved || hasInProgress || hasDone },
     { id: "dev", label: "Dev", active: linkedBranches.length > 0 || hasInProgress },
     { id: "review", label: "Review", active: hasReview },
@@ -37,7 +40,7 @@ function deriveStages(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export type WorkflowStageId = "plan" | "approved" | "dev" | "review" | "decision";
+export type WorkflowStageId = "plan" | "subtask" | "approved" | "dev" | "review" | "decision";
 
 interface HarnessSummaryProps {
   conversationId: string;

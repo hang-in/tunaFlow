@@ -15,6 +15,7 @@ import {
 } from "@/lib/workflowOrchestration";
 import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 import { splitPlanProposals, hasPlanProposal } from "@/lib/planProposalParser";
+import { SubtaskReviewView } from "./SubtaskReviewView";
 
 // ─── Status configs ──────────────────────────────────────────────────────────
 
@@ -34,12 +35,13 @@ const SUBTASK_STATUS_CFG: Record<SubtaskStatus, { label: string; next: SubtaskSt
 };
 
 const PLAN_PHASE_CFG: Record<PlanPhase, { label: string; cls: string }> = {
-  drafting:       { label: "drafting",       cls: "text-muted-foreground bg-accent border-border" },
-  approval:       { label: "approval",       cls: "text-agent-gemini bg-agent-gemini/10 border-agent-gemini/20" },
-  implementation: { label: "implementation", cls: "text-primary bg-primary/10 border-primary/20" },
-  review:         { label: "review",         cls: "text-agent-codex bg-agent-codex/10 border-agent-codex/20" },
-  done:           { label: "done",           cls: "text-status-approved bg-status-approved/10 border-status-approved/20" },
-  rework:         { label: "rework",         cls: "text-status-rejected bg-status-rejected/10 border-status-rejected/20" },
+  drafting:        { label: "drafting",    cls: "text-muted-foreground bg-accent border-border" },
+  subtask_review:  { label: "subtask",    cls: "text-amber-600 bg-amber-500/10 border-amber-500/20" },
+  approval:        { label: "approved",   cls: "text-agent-gemini bg-agent-gemini/10 border-agent-gemini/20" },
+  implementation:  { label: "dev",        cls: "text-primary bg-primary/10 border-primary/20" },
+  review:          { label: "review",     cls: "text-agent-codex bg-agent-codex/10 border-agent-codex/20" },
+  done:            { label: "done",       cls: "text-status-approved bg-status-approved/10 border-status-approved/20" },
+  rework:          { label: "rework",     cls: "text-status-rejected bg-status-rejected/10 border-status-rejected/20" },
 };
 
 const INPUT_CLS =
@@ -353,66 +355,30 @@ function EventTimeline({ events }: { events: PlanEvent[] }) {
 
 // ─── ApprovalGate ───────────────────────────────────────────────────────────
 
-function ApprovalGate({
+// ─── DraftingActions ─────────────────────────────────────────────────────────
+
+function DraftingActions({
   plan,
   subtasks,
   onPlanUpdate,
 }: {
   plan: Plan;
-  subtasks: PlanSubtask[] | null;
+  subtasks: PlanSubtask[];
   onPlanUpdate: (update: Partial<Plan>) => void;
 }) {
-  const { openThread, loadBranches, sendThreadMessage, sendWithEngine, saveConversationEngine } = useChatStore();
-  const profiles = useChatStore((s) => s.agentProfiles);
-  const [mode, setMode] = useState<"idle" | "review-input" | "agent-select" | "detail-busy" | "busy">("idle");
-  const [feedback, setFeedback] = useState("");
-  const [selectedProfileId, setSelectedProfileId] = useState(profiles[0]?.id ?? "");
-  const hasEmptyDetails = subtasks ? subtasks.some((s) => !s.details?.trim()) : false;
-
-  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
-
-  const handleApprove = async () => {
-    setMode("busy");
-    try {
-      const engine = selectedProfile?.engine ?? "claude";
-      const { branch, prompt } = await approveAndStartImplementation(plan, engine);
-      onPlanUpdate({ phase: "implementation", status: "active" as PlanStatus, implementationBranchId: branch.id });
-      await loadBranches(plan.conversationId);
-
-      // Save agent profile for the branch thread
-      const shadowConvId = `branch:${branch.id}`;
-      saveConversationEngine(shadowConvId, { profileId: selectedProfileId, engine });
-
-      // Open thread + send message (triggers actual engine execution)
-      await openThread(branch.id);
-      await sendThreadMessage(prompt, engine);
-    } catch { setMode("idle"); }
-  };
-
-  const handleReviewRequest = async () => {
-    if (!feedback.trim()) return;
-    setMode("busy");
-    try {
-      const { branch } = await startReviewBranch(plan, feedback.trim());
-      onPlanUpdate({ reviewBranchId: branch.id });
-      await loadBranches(plan.conversationId);
-      await openThread(branch.id);
-      setFeedback("");
-    } catch { setMode("idle"); }
-  };
+  const { sendWithEngine } = useChatStore();
+  const [busy, setBusy] = useState(false);
+  const hasEmptyDetails = subtasks.some((s) => !s.details?.trim());
+  const hasSubtasks = subtasks.length > 0;
 
   const handleDetailDesign = async () => {
-    setMode("detail-busy");
+    setBusy(true);
     try {
-      const planContext = await (async () => {
-        const sts = subtasks ?? await planApi.listSubtasks(plan.id);
-        const list = sts.map((s, i) => {
-          const detail = s.details?.trim() ? ` — ${s.details}` : " — (상세 설계 없음)";
-          return `${i + 1}. ${s.title}${detail}`;
-        }).join("\n");
-        return `## Plan: ${plan.title}\n${plan.description ?? ""}\n\n### Subtasks\n${list}`;
-      })();
-
+      const list = subtasks.map((s, i) => {
+        const detail = s.details?.trim() ? ` — ${s.details}` : " — (상세 설계 없음)";
+        return `${i + 1}. ${s.title}${detail}`;
+      }).join("\n");
+      const planContext = `## Plan: ${plan.title}\n${plan.description ?? ""}\n\n### Subtasks\n${list}`;
       const prompt = [
         `[상세 설계 요청] "${plan.title}"`,
         "",
@@ -423,39 +389,88 @@ function ApprovalGate({
         "",
         `\`<!-- tunaflow:plan-proposal -->\` 형식으로 상세 설계가 포함된 수정 Plan을 제안하세요.`,
       ].join("\n");
-
       await sendWithEngine("claude", prompt);
       await planApi.createPlanEvent(plan.id, "detail_design_requested", "user");
-      setMode("idle");
-    } catch { setMode("idle"); }
+    } catch { /* silent */ }
+    setBusy(false);
   };
 
-  const handleHold = async () => {
+  const handleStartReview = async () => {
+    setBusy(true);
+    try {
+      await planApi.updatePlanPhase(plan.id, "subtask_review");
+      await planApi.createPlanEvent(plan.id, "subtask_review_started", "user");
+      onPlanUpdate({ phase: "subtask_review" as PlanPhase });
+    } catch { /* silent */ }
+    setBusy(false);
+  };
+
+  return (
+    <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
+      {hasEmptyDetails && hasSubtasks && (
+        <p className="text-[9px] text-amber-600/60">일부 subtask에 상세 설계가 없습니다.</p>
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        {hasEmptyDetails && hasSubtasks && (
+          <button onClick={handleDetailDesign} disabled={busy} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
+            <FileText className="w-3 h-3" />{busy ? "요청 중..." : "상세 설계 요청"}
+          </button>
+        )}
+        {!hasEmptyDetails && hasSubtasks && (
+          <button onClick={handleStartReview} disabled={busy} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
+            <Search className="w-3 h-3" />{busy ? "이동 중..." : "검토 시작"}
+          </button>
+        )}
+        {!hasSubtasks && (
+          <p className="text-[9px] text-muted-foreground/50">Subtask가 없습니다. Chat에서 Architect에게 Plan 수정을 요청하세요.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── ApprovalGate ───────────────────────────────────────────────────────────
+
+function ApprovalGate({
+  plan,
+  subtasks,
+  onPlanUpdate,
+}: {
+  plan: Plan;
+  subtasks: PlanSubtask[] | null;
+  onPlanUpdate: (update: Partial<Plan>) => void;
+}) {
+  const { openThread, loadBranches, sendThreadMessage, saveConversationEngine } = useChatStore();
+  const profiles = useChatStore((s) => s.agentProfiles);
+  const [mode, setMode] = useState<"idle" | "agent-select" | "busy">("idle");
+  const [selectedProfileId, setSelectedProfileId] = useState(profiles[0]?.id ?? "");
+
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
+
+  const handleDevStart = async () => {
     setMode("busy");
     try {
-      await planApi.createPlanEvent(plan.id, "held", "user");
-      setMode("idle");
+      const engine = selectedProfile?.engine ?? "claude";
+      const { branch, prompt } = await approveAndStartImplementation(plan, engine);
+      onPlanUpdate({ phase: "implementation", status: "active" as PlanStatus, implementationBranchId: branch.id });
+      await loadBranches(plan.conversationId);
+
+      const shadowConvId = `branch:${branch.id}`;
+      saveConversationEngine(shadowConvId, { profileId: selectedProfileId, engine });
+
+      await openThread(branch.id);
+      await sendThreadMessage(prompt, engine);
     } catch { setMode("idle"); }
   };
 
-  if (mode === "review-input") {
-    return (
-      <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
-        <textarea
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          placeholder="검토 의견을 입력하세요..."
-          rows={2}
-          className={`${INPUT_CLS} resize-none`}
-          autoFocus
-        />
-        <div className="flex gap-1.5">
-          <button onClick={handleReviewRequest} disabled={!feedback.trim()} className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors">검토 Branch 생성</button>
-          <button onClick={() => setMode("idle")} className="px-2.5 py-1 rounded-md text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
-        </div>
-      </div>
-    );
-  }
+  const handleRevert = async () => {
+    setMode("busy");
+    try {
+      await planApi.updatePlanPhase(plan.id, "subtask_review");
+      await planApi.createPlanEvent(plan.id, "reverted_to_subtask_review", "user");
+      onPlanUpdate({ phase: "subtask_review" as PlanPhase });
+    } catch { setMode("idle"); }
+  };
 
   if (mode === "agent-select") {
     return (
@@ -467,7 +482,7 @@ function ApprovalGate({
           </select>
         </div>
         <div className="flex gap-1.5">
-          <button onClick={handleApprove} className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors">승인 + 구현 시작</button>
+          <button onClick={handleDevStart} className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors">Dev 시작</button>
           <button onClick={() => setMode("idle")} className="px-2.5 py-1 rounded-md text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
         </div>
       </div>
@@ -475,26 +490,13 @@ function ApprovalGate({
   }
 
   return (
-    <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
-      {hasEmptyDetails && (
-        <p className="text-[9px] text-amber-600/60">일부 subtask에 상세 설계가 없습니다.</p>
-      )}
-      <div className="flex items-center gap-2 flex-wrap">
-        {hasEmptyDetails && (
-          <button onClick={handleDetailDesign} disabled={mode === "detail-busy" || mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
-            <FileText className="w-3 h-3" />{mode === "detail-busy" ? "요청 중..." : "상세 설계 요청"}
-          </button>
-        )}
-        <button onClick={() => setMode("agent-select")} disabled={mode === "busy" || mode === "detail-busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
-          <Check className="w-3 h-3" />승인
-        </button>
-        <button onClick={handleHold} disabled={mode === "busy" || mode === "detail-busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
-          <Pause className="w-3 h-3" />보류
-        </button>
-        <button onClick={() => setMode("review-input")} disabled={mode === "busy" || mode === "detail-busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
-          <Search className="w-3 h-3" />검토 요청
-        </button>
-      </div>
+    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
+      <button onClick={() => setMode("agent-select")} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
+        <Check className="w-3 h-3" />Dev 시작
+      </button>
+      <button onClick={handleRevert} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
+        <Pause className="w-3 h-3" />되돌리기
+      </button>
     </div>
   );
 }
@@ -806,7 +808,12 @@ function PlanCard({
           </div>
           {/* Phase-specific sections */}
           <div className="pl-5">
-            {/* Approval gate */}
+            {/* Drafting stage — detail design + start review */}
+            {plan.phase === "drafting" && subtasks && (
+              <DraftingActions plan={plan} subtasks={subtasks} onPlanUpdate={handlePlanUpdate} />
+            )}
+
+            {/* Approval gate (now simplified — Dev start only) */}
             {plan.phase === "approval" && (
               <ApprovalGate plan={plan} subtasks={subtasks} onPlanUpdate={handlePlanUpdate} />
             )}
@@ -919,7 +926,8 @@ function PlanCard({
 /** Phase filter mapping for stage IDs */
 const STAGE_PHASE_MAP: Record<string, { phases: PlanPhase[]; includeAbandoned?: boolean; empty: string }> = {
   plan:     { phases: ["drafting"],                 empty: "Chat 탭에서 Architect와 대화하여 Plan을 생성하세요." },
-  approved: { phases: ["approval"],                 empty: "승인 대기 중인 Plan이 없습니다." },
+  subtask:  { phases: ["subtask_review"],           empty: "Subtask 검토 중인 Plan이 없습니다." },
+  approved: { phases: ["approval"],                 empty: "Dev 대기 중인 Plan이 없습니다." },
   dev:      { phases: ["implementation", "rework"], empty: "구현 중인 Plan이 없습니다." },
   review:   { phases: ["review"],                   empty: "리뷰 중인 Plan이 없습니다." },
   decision: { phases: ["done"], includeAbandoned: true, empty: "완료된 Plan이 없습니다." },
@@ -994,14 +1002,20 @@ export function PlansPanel({ activeStage, onPhaseChanged }: PlansPanelProps) {
         </div>
       )}
 
-      {filteredPlans.map((plan) => (
-        <PlanCard
-          key={plan.id}
-          plan={plan}
-          onStatusChange={handlePlanStatus}
-          onPlanUpdated={handlePlanUpdated}
-        />
-      ))}
+      {activeStage === "subtask" ? (
+        filteredPlans.map((plan) => (
+          <SubtaskReviewView key={plan.id} plan={plan} onPlanUpdate={handlePlanUpdated} />
+        ))
+      ) : (
+        filteredPlans.map((plan) => (
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            onStatusChange={handlePlanStatus}
+            onPlanUpdated={handlePlanUpdated}
+          />
+        ))
+      )}
     </div>
   );
 }

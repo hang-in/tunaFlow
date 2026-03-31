@@ -274,7 +274,7 @@ export interface Persona {
 // ─── Plan types ────────────────────────────────────────────────────────────
 
 export type PlanStatus = "draft" | "active" | "done" | "abandoned";
-export type PlanPhase = "drafting" | "approval" | "implementation" | "review" | "done" | "rework";
+export type PlanPhase = "drafting" | "subtask_review" | "approval" | "implementation" | "review" | "done" | "rework";
 export type SubtaskStatus = "todo" | "approved" | "in_progress" | "done" | "abandoned";
 
 export interface Plan {

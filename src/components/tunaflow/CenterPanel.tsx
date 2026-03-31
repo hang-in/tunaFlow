@@ -24,7 +24,8 @@ const TABS: { id: CenterTab; label: string; icon: React.ReactNode }[] = [
 
 /** Map PlanPhase → WorkflowStageId for auto-switching */
 const PHASE_TO_STAGE: Record<string, WorkflowStageId> = {
-  drafting: "plan", approval: "approved",
+  drafting: "plan", subtask_review: "subtask",
+  approval: "approved",
   implementation: "dev", rework: "dev",
   review: "review", done: "decision",
 };
