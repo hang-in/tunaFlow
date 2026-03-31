@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { ChevronDown, ChevronRight, Plus, ClipboardList, X, GitBranch, Forward } from "lucide-react";
-import type { Plan, PlanSubtask, PlanStatus, SubtaskStatus, SubtaskInput } from "@/types";
+import { ChevronDown, ChevronRight, Plus, ClipboardList, X, GitBranch, Forward, Check, Pause, Search, Clock } from "lucide-react";
+import type { Plan, PlanEvent, PlanPhase, PlanSubtask, PlanStatus, SubtaskStatus, SubtaskInput } from "@/types";
 import { AgentAvatar } from "../AgentAvatar";
 import * as planApi from "@/lib/api/plans";
 
@@ -21,6 +21,15 @@ const SUBTASK_STATUS_CFG: Record<SubtaskStatus, { label: string; next: SubtaskSt
   in_progress: { label: "in progress", next: "done",         cls: "text-primary bg-primary/10 border-primary/20" },
   done:        { label: "done",        next: "todo",         cls: "text-status-approved bg-status-approved/10 border-status-approved/20" },
   abandoned:   { label: "abandoned",   next: "todo",         cls: "text-status-rejected bg-status-rejected/10 border-status-rejected/20" },
+};
+
+const PLAN_PHASE_CFG: Record<PlanPhase, { label: string; cls: string }> = {
+  drafting:       { label: "drafting",       cls: "text-muted-foreground bg-accent border-border" },
+  approval:       { label: "approval",       cls: "text-agent-gemini bg-agent-gemini/10 border-agent-gemini/20" },
+  implementation: { label: "implementation", cls: "text-primary bg-primary/10 border-primary/20" },
+  review:         { label: "review",         cls: "text-agent-codex bg-agent-codex/10 border-agent-codex/20" },
+  done:           { label: "done",           cls: "text-status-approved bg-status-approved/10 border-status-approved/20" },
+  rework:         { label: "rework",         cls: "text-status-rejected bg-status-rejected/10 border-status-rejected/20" },
 };
 
 const INPUT_CLS =
@@ -301,20 +310,91 @@ function SubtaskRow({
 
 // ─── PlanCard ────────────────────────────────────────────────────────────────
 
+// ─── EventTimeline ──────────────────────────────────────────────────────────
+
+function EventTimeline({ events }: { events: PlanEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="mt-2 pt-2 border-t border-border/20">
+      <div className="flex items-center gap-1 mb-1">
+        <Clock className="w-3 h-3 text-muted-foreground/40" />
+        <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wide">Timeline</span>
+      </div>
+      <div className="space-y-0.5">
+        {events.map((ev) => {
+          const d = new Date(ev.createdAt * 1000);
+          const ts = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+          return (
+            <div key={ev.id} className="flex items-start gap-1.5 text-[9px] text-muted-foreground/60">
+              <span className="shrink-0 text-muted-foreground/40">{ts}</span>
+              <span>
+                {ev.eventType.replace(/_/g, " ")}
+                {ev.actor && <span className="text-foreground/50"> ({ev.actor})</span>}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── ApprovalGate ───────────────────────────────────────────────────────────
+
+function ApprovalGate({
+  plan,
+  onPhaseChange,
+}: {
+  plan: Plan;
+  onPhaseChange: (id: string, phase: PlanPhase, eventType: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
+      <button
+        onClick={() => onPhaseChange(plan.id, "implementation", "approved")}
+        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors"
+      >
+        <Check className="w-3 h-3" />
+        승인
+      </button>
+      <button
+        onClick={() => onPhaseChange(plan.id, "approval", "held")}
+        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Pause className="w-3 h-3" />
+        보류
+      </button>
+      <button
+        onClick={() => onPhaseChange(plan.id, "approval", "review_requested")}
+        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+      >
+        <Search className="w-3 h-3" />
+        검토 요청
+      </button>
+    </div>
+  );
+}
+
+// ─── PlanCard ────────────────────────────────────────────────────────────────
+
 function PlanCard({
   plan,
   onStatusChange,
+  onPhaseChange,
   defaultExpanded = false,
 }: {
   plan: Plan;
   onStatusChange: (id: string, status: PlanStatus) => void;
+  onPhaseChange: (id: string, phase: PlanPhase, eventType: string) => void;
   defaultExpanded?: boolean;
 }) {
   const { sendFollowup, setHandoffSource, branches, openThread } = useChatStore();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [subtasks, setSubtasks] = useState<PlanSubtask[] | null>(null);
+  const [events, setEvents] = useState<PlanEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const statusCfg = PLAN_STATUS_CFG[plan.status];
+  const phaseCfg = PLAN_PHASE_CFG[plan.phase] ?? PLAN_PHASE_CFG.drafting;
 
   // Build plan content for handoff — reused by both forward buttons and handoffSource
   const buildPlanContent = (tasks: PlanSubtask[] | null) => {
@@ -329,8 +409,13 @@ function PlanCard({
     if (!expanded && tasks === null) {
       setLoading(true);
       try {
-        tasks = await planApi.listSubtasks(plan.id);
+        const [t, e] = await Promise.all([
+          planApi.listSubtasks(plan.id),
+          planApi.listPlanEvents(plan.id),
+        ]);
+        tasks = t;
         setSubtasks(tasks);
+        setEvents(e);
       } catch {
         tasks = [];
         setSubtasks([]);
@@ -387,6 +472,11 @@ function PlanCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-xs font-medium text-foreground leading-snug">{plan.title}</p>
+            {plan.phase !== "drafting" && (
+              <span className={cn("text-[8px] font-semibold px-1.5 py-0 rounded-full border whitespace-nowrap", phaseCfg.cls)}>
+                {phaseCfg.label}
+              </span>
+            )}
             {plan.branchId && (
               <span className="inline-flex items-center gap-0.5 text-[8px] font-medium text-primary bg-primary/10 border border-primary/20 px-1 py-0 rounded-full">
                 <GitBranch className="w-2 h-2" />
@@ -441,6 +531,13 @@ function PlanCard({
               );
             })}
           </div>
+          {/* Approval gate — shown for plans in approval phase */}
+          {plan.phase === "approval" && (
+            <div className="pl-5">
+              <ApprovalGate plan={plan} onPhaseChange={onPhaseChange} />
+            </div>
+          )}
+
           {/* Plan forward — send plan context to an agent */}
           <div className="flex items-center gap-1.5 pl-5 pt-1.5 mt-1 border-t border-border/20">
             <span className="text-[9px] text-muted-foreground/50">Forward plan:</span>
@@ -457,6 +554,13 @@ function PlanCard({
               </button>
             ))}
           </div>
+
+          {/* Event timeline */}
+          {events.length > 0 && (
+            <div className="pl-5">
+              <EventTimeline events={events} />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -493,6 +597,22 @@ export function PlansPanel() {
     }
   };
 
+  const handlePhaseChange = async (planId: string, phase: PlanPhase, eventType: string) => {
+    try {
+      await planApi.updatePlanPhase(planId, phase);
+      await planApi.createPlanEvent(planId, eventType, "user");
+      // If approved → also set status to active
+      if (eventType === "approved") {
+        await planApi.updatePlanStatus(planId, "active");
+        setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, phase, status: "active" as PlanStatus } : p)));
+      } else {
+        setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, phase } : p)));
+      }
+    } catch {
+      // silent
+    }
+  };
+
   const handleCreated = (newPlan: Plan) => {
     setPlans((prev) => [newPlan, ...prev]);
     setShowForm(false);
@@ -517,6 +637,7 @@ export function PlansPanel() {
           key={plan.id}
           plan={plan}
           onStatusChange={handlePlanStatus}
+          onPhaseChange={handlePhaseChange}
           defaultExpanded={plan.id === expandedNewId}
         />
       ))}
