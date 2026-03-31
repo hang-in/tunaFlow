@@ -6,6 +6,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import type { Branch } from "@/types";
 
 import { ChatsSection } from "./sidebar/ChatsSection";
+import { ScratchpadSection } from "./sidebar/ScratchpadSection";
 import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 import { FilesSection } from "./sidebar/FilesSection";
 import { AddProjectForm } from "./sidebar/AddProjectForm";
@@ -67,7 +68,8 @@ export function Sidebar() {
   }, [currentProject?.path]);
 
   // Current project data
-  const chatConvs = conversations.filter((c) => !c.id.startsWith("branch:") && c.mode !== "roundtable");
+  const chatConvs = conversations.filter((c) => !c.id.startsWith("branch:") && c.mode !== "roundtable" && c.type !== "scratchpad");
+  const scratchpads = conversations.filter((c) => c.type === "scratchpad");
 
   const allBranches = useProjectBranches(conversations, storeBranches, renameCounter);
   const childMap = new Map<string, Branch[]>();
@@ -232,6 +234,13 @@ export function Sidebar() {
               handleRenameBranch={handleRenameBranch}
               onDeleteBranch={handleDeleteBranch}
               onCreateRT={() => setShowCreateRT(true)}
+            />
+
+            <ScratchpadSection
+              scratchpads={scratchpads}
+              selectedConversationId={selectedConversationId}
+              selectConversation={selectConversation}
+              renameConversation={renameConversation}
             />
 
             <FilesSection
