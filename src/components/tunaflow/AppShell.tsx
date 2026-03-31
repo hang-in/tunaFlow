@@ -45,6 +45,7 @@ export function AppShell() {
 
       await loadProjects();
       loadEngineModels();
+      useChatStore.getState().loadProfiles();
       const { projects, selectProject } = useChatStore.getState();
 
       const lastKey = await getSetting<string>("lastProjectKey", "");

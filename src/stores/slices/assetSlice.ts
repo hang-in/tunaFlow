@@ -6,10 +6,18 @@ import type {
   Memo,
   Artifact,
   SkillDef,
+  AgentProfile,
   CreateMemoInput,
   CreateArtifactInput,
   UpdateArtifactStatusInput,
 } from "./types";
+
+const DEFAULT_PROFILES: AgentProfile[] = [
+  { id: "architect-claude", label: "Architect Claude", engine: "claude", defaultSkills: [] },
+  { id: "reviewer-codex", label: "Reviewer Codex", engine: "codex", defaultSkills: [] },
+  { id: "tester-gemini", label: "Tester Gemini", engine: "gemini", defaultSkills: [] },
+  { id: "general-opencode", label: "General OpenCode", engine: "opencode", defaultSkills: [] },
+];
 
 export interface AssetSlice {
   memos: Memo[];
@@ -21,6 +29,12 @@ export interface AssetSlice {
   scrollToMessageId: string | null;
   personaFragment: string | null;
   personaLabel: string | null;
+  // Agent profiles — shared between Settings and NewMessageInput
+  agentProfiles: AgentProfile[];
+  selectedProfileId: string | null;
+  loadProfiles: () => Promise<void>;
+  saveProfiles: (profiles: AgentProfile[]) => void;
+  selectProfile: (profileId: string | null) => void;
   setHandoffSource: (source: { type: string; content: string } | null) => void;
   loadMemos: () => Promise<void>;
   createMemo: (messageId: string, content: string) => Promise<void>;
@@ -44,6 +58,25 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
   scrollToMessageId: null,
   personaFragment: null,
   personaLabel: null,
+  agentProfiles: [],
+  selectedProfileId: null,
+
+  loadProfiles: async () => {
+    const profiles = await getSetting<AgentProfile[]>("agentProfiles", DEFAULT_PROFILES);
+    const lastId = await getSetting<string | null>("lastProfileId", null);
+    const selectedId = lastId && profiles.some((p) => p.id === lastId) ? lastId : profiles[0]?.id ?? null;
+    set({ agentProfiles: profiles, selectedProfileId: selectedId });
+  },
+
+  saveProfiles: (profiles: AgentProfile[]) => {
+    set({ agentProfiles: profiles });
+    setSetting("agentProfiles", profiles);
+  },
+
+  selectProfile: (profileId: string | null) => {
+    set({ selectedProfileId: profileId });
+    setSetting("lastProfileId", profileId);
+  },
 
   setHandoffSource: (source) => set({ handoffSource: source }),
 

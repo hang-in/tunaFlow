@@ -37,27 +37,19 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [rtMode, setRtMode] = useState<RtMode>("sequential");
 
-  // Agent Profile state
-  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+  // Agent Profile state — from Zustand store (shared with Settings)
+  const profiles = useChatStore((s) => s.agentProfiles);
+  const selectedProfileId = useChatStore((s) => s.selectedProfileId);
+  const selectProfile = useChatStore((s) => s.selectProfile);
   const toggleSkill = useChatStore((s) => s.toggleSkill);
 
-  // Load profiles from settings
+  // Apply profile on initial load or when selectedProfileId changes
   useEffect(() => {
-    getSetting<AgentProfile[]>("agentProfiles", []).then((p) => {
-      setProfiles(p);
-      // Load last selected profile
-      getSetting<string | null>("lastProfileId", null).then((lastId) => {
-        if (lastId && p.some((pr) => pr.id === lastId)) {
-          setSelectedProfileId(lastId);
-          applyProfile(p.find((pr) => pr.id === lastId)!);
-        } else if (p.length > 0) {
-          setSelectedProfileId(p[0].id);
-          applyProfile(p[0]);
-        }
-      });
-    });
-  }, []);
+    if (selectedProfileId && profiles.length > 0) {
+      const profile = profiles.find((p) => p.id === selectedProfileId);
+      if (profile) applyProfile(profile);
+    }
+  }, [selectedProfileId, profiles]);
 
   const applyProfile = (profile: AgentProfile) => {
     setEngine(profile.engine as Engine);
@@ -77,12 +69,8 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   };
 
   const handleProfileSelect = (profileId: string | null) => {
-    setSelectedProfileId(profileId);
-    setSetting("lastProfileId", profileId);
-    if (profileId) {
-      const profile = profiles.find((p) => p.id === profileId);
-      if (profile) applyProfile(profile);
-    } else {
+    selectProfile(profileId);
+    if (!profileId) {
       // Custom mode — clear persona
       useChatStore.setState({ personaFragment: null, personaLabel: null });
     }
@@ -235,8 +223,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                     // Reset persona if engine doesn't match current profile
                     const currentProfile = profiles.find((p) => p.id === selectedProfileId);
                     if (currentProfile && currentProfile.engine !== e) {
-                      setSelectedProfileId(null);
-                      setSetting("lastProfileId", null);
+                      selectProfile(null);
                       useChatStore.setState({ personaFragment: null, personaLabel: null });
                     }
                   }} />

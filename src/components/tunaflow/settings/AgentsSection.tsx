@@ -1,39 +1,22 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
-import { getSetting, setSetting } from "@/lib/appStore";
 import { DEFAULT_PERSONAS } from "@/lib/defaultPersonas";
 import { AgentAvatar } from "../AgentAvatar";
 import type { AgentProfile } from "@/types";
 
 const ENGINES = ["claude", "codex", "gemini", "opencode"] as const;
 
-const DEFAULT_PROFILES: AgentProfile[] = [
-  { id: "architect-claude", label: "Architect Claude", engine: "claude", defaultSkills: [] },
-  { id: "reviewer-codex", label: "Reviewer Codex", engine: "codex", defaultSkills: [] },
-  { id: "tester-gemini", label: "Tester Gemini", engine: "gemini", defaultSkills: [] },
-  { id: "general-opencode", label: "General OpenCode", engine: "opencode", defaultSkills: [] },
-];
-
 export function AgentsSection() {
-  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const profiles = useChatStore((s) => s.agentProfiles);
+  const saveProfiles = useChatStore((s) => s.saveProfiles);
+  const [selectedId, setSelectedId] = useState<string | null>(profiles[0]?.id ?? null);
   const engineModels = useChatStore((s) => s.engineModels);
   const skills = useChatStore((s) => s.skills);
 
-  useEffect(() => {
-    getSetting<AgentProfile[]>("agentProfiles", DEFAULT_PROFILES).then((p) => {
-      setProfiles(p);
-      if (p.length > 0) setSelectedId(p[0].id);
-      setLoaded(true);
-    });
-  }, []);
-
   const save = (next: AgentProfile[]) => {
-    setProfiles(next);
-    setSetting("agentProfiles", next);
+    saveProfiles(next);
   };
 
   const selected = profiles.find((p) => p.id === selectedId);
@@ -60,11 +43,11 @@ export function AgentsSection() {
     if (!selected) return;
     const has = selected.defaultSkills.includes(skillName);
     updateField("defaultSkills", has
-      ? selected.defaultSkills.filter((s) => s !== skillName)
+      ? selected.defaultSkills.filter((sk: string) => sk !== skillName)
       : [...selected.defaultSkills, skillName]);
   };
 
-  if (!loaded) return null;
+  if (profiles.length === 0) return null;
 
   const currentModels = engineModels.filter((m) => m.engine === selected?.engine);
 

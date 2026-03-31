@@ -24,6 +24,7 @@ import type {
   UpdateArtifactStatusInput,
   RawqStatus,
   EngineModel,
+  AgentProfile,
 } from "../../types";
 
 // Re-export for convenience
@@ -48,6 +49,7 @@ export type {
   UpdateArtifactStatusInput,
   RawqStatus,
   EngineModel,
+  AgentProfile,
 };
 
 /** Queued send action for same-thread serial execution */
@@ -95,6 +97,12 @@ export interface ChatState {
   personaFragment: string | null;
   /** Current profile/persona label for message meta visibility */
   personaLabel: string | null;
+  /** Agent profiles — shared between Settings and NewMessageInput */
+  agentProfiles: AgentProfile[];
+  selectedProfileId: string | null;
+  loadProfiles: () => Promise<void>;
+  saveProfiles: (profiles: AgentProfile[]) => void;
+  selectProfile: (profileId: string | null) => void;
 
   setHandoffSource: (source: { type: string; content: string } | null) => void;
   _startRun: (threadId: string) => void;
