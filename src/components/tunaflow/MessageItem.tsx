@@ -1,18 +1,45 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import type { Message, Branch } from "@/types";
 import { AgentAvatar } from "./AgentAvatar";
 import { markdownComponents } from "./chat/MarkdownComponents";
+import { PlanProposalCard } from "./chat/PlanProposalCard";
 import { MessageMeta } from "./message/MessageMeta";
 import { MessageActions } from "./message/MessageActions";
 import { TypingIndicator } from "./message/ProgressSurface";
+import { hasPlanProposal, splitPlanProposals } from "@/lib/planProposalParser";
 
-function MarkdownBody({ content, className }: { content: string; className?: string }) {
+const PROSE_CLS = "prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>hr:last-child]:hidden [&>hr]:border-sidebar-foreground/20 [&>hr]:my-3";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
+
+function MarkdownBody({ content, className, conversationId }: { content: string; className?: string; conversationId?: string }) {
+  const segments = useMemo(
+    () => (hasPlanProposal(content) ? splitPlanProposals(content) : null),
+    [content],
+  );
+
+  if (segments && conversationId) {
+    return (
+      <div className={cn(PROSE_CLS, className)}>
+        {segments.map((seg, i) =>
+          seg.type === "plan-proposal" ? (
+            <PlanProposalCard key={i} proposal={seg.proposal} conversationId={conversationId} />
+          ) : (
+            <ReactMarkdown key={i} remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
+              {seg.content}
+            </ReactMarkdown>
+          ),
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className={cn("prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>hr:last-child]:hidden [&>hr]:border-sidebar-foreground/20 [&>hr]:my-3", className)}>
-      <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+    <div className={cn(PROSE_CLS, className)}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
         {content}
       </ReactMarkdown>
     </div>
@@ -73,9 +100,9 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
           ) : isStreaming && !message.content ? (
             <TypingIndicator />
           ) : isStreaming ? (
-            <MarkdownBody content={message.content} />
+            <MarkdownBody content={message.content} conversationId={message.conversationId} />
           ) : (
-            <MarkdownBody content={message.content} className={cn(isCompact && "line-clamp-3")} />
+            <MarkdownBody content={message.content} conversationId={message.conversationId} className={cn(isCompact && "line-clamp-3")} />
           )}
         </div>
       </div>
