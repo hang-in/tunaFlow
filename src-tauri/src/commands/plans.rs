@@ -3,7 +3,7 @@ use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::db::{migrations::now_epoch_ms, models::{Plan, PlanSubtask}, DbState};
+use crate::db::{migrations::{now_epoch, now_epoch_ms}, models::{Plan, PlanEvent, PlanSubtask}, DbState};
 use crate::errors::AppError;
 
 // ─── Input types ─────────────────────────────────────────────────────────────
@@ -58,8 +58,14 @@ fn map_plan(row: &rusqlite::Row) -> rusqlite::Result<Plan> {
         description: row.get(4)?,
         expected_outcome: row.get(5)?,
         status: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        phase: row.get(7)?,
+        architect_engine: row.get(8)?,
+        developer_engine: row.get(9)?,
+        reviewer_engines: row.get(10)?,
+        implementation_branch_id: row.get(11)?,
+        review_branch_id: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -80,7 +86,7 @@ fn map_subtask(row: &rusqlite::Row) -> rusqlite::Result<PlanSubtask> {
 }
 
 const PLAN_COLS: &str =
-    "id, conversation_id, branch_id, title, description, expected_outcome, status, created_at, updated_at";
+    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, created_at, updated_at";
 
 const SUBTASK_COLS: &str =
     "id, plan_id, idx, title, details, status, outcome, owner_agent, last_updated_by, created_at, updated_at";
@@ -132,6 +138,12 @@ pub fn create_plan(
         description: input.description,
         expected_outcome: input.expected_outcome,
         status: "draft".into(),
+        phase: "drafting".into(),
+        architect_engine: None,
+        developer_engine: None,
+        reviewer_engines: None,
+        implementation_branch_id: None,
+        review_branch_id: None,
         created_at: now,
         updated_at: now,
     })
@@ -275,5 +287,94 @@ pub fn replace_plan_subtasks(
 pub fn delete_plan(id: String, state: State<DbState>) -> Result<(), AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     conn.execute("DELETE FROM plans WHERE id = ?1", [&id])?;
+    Ok(())
+}
+
+// ─── Orchestration Commands (Phase A) ────────────────────────────────────────
+
+/// Update the orchestration phase of a plan.
+#[tauri::command]
+pub fn update_plan_phase(
+    id: String,
+    phase: String,
+    state: State<DbState>,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let now = now_epoch_ms();
+    conn.execute(
+        "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
+        params![phase, now, id],
+    )?;
+    Ok(())
+}
+
+/// Create a plan event (history log entry).
+#[tauri::command]
+pub fn create_plan_event(
+    plan_id: String,
+    event_type: String,
+    actor: Option<String>,
+    detail: Option<String>,
+    state: State<DbState>,
+) -> Result<PlanEvent, AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let id = Uuid::new_v4().to_string();
+    let created_at = now_epoch();
+    conn.execute(
+        "INSERT INTO plan_events (id, plan_id, event_type, actor, detail, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, plan_id, event_type, actor, detail, created_at],
+    )?;
+    Ok(PlanEvent {
+        id,
+        plan_id,
+        event_type,
+        actor,
+        detail,
+        created_at,
+    })
+}
+
+/// List all events for a plan (oldest first).
+#[tauri::command]
+pub fn list_plan_events(
+    plan_id: String,
+    state: State<DbState>,
+) -> Result<Vec<PlanEvent>, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, plan_id, event_type, actor, detail, created_at
+         FROM plan_events WHERE plan_id = ?1 ORDER BY created_at ASC"
+    )?;
+    let rows = stmt
+        .query_map([&plan_id], |row| {
+            Ok(PlanEvent {
+                id: row.get(0)?,
+                plan_id: row.get(1)?,
+                event_type: row.get(2)?,
+                actor: row.get(3)?,
+                detail: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Assign engines to a plan (architect, developer, reviewers).
+#[tauri::command]
+pub fn assign_plan_engines(
+    id: String,
+    architect_engine: Option<String>,
+    developer_engine: Option<String>,
+    reviewer_engines: Option<String>,
+    state: State<DbState>,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let now = now_epoch_ms();
+    conn.execute(
+        "UPDATE plans SET architect_engine = ?1, developer_engine = ?2, reviewer_engines = ?3, updated_at = ?4 WHERE id = ?5",
+        params![architect_engine, developer_engine, reviewer_engines, now, id],
+    )?;
     Ok(())
 }

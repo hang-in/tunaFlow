@@ -274,6 +274,7 @@ export interface Persona {
 // ─── Plan types ────────────────────────────────────────────────────────────
 
 export type PlanStatus = "draft" | "active" | "done" | "abandoned";
+export type PlanPhase = "drafting" | "approval" | "implementation" | "review" | "done" | "rework";
 export type SubtaskStatus = "todo" | "approved" | "in_progress" | "done" | "abandoned";
 
 export interface Plan {
@@ -284,8 +285,23 @@ export interface Plan {
   description?: string;
   expectedOutcome?: string;
   status: PlanStatus;
+  phase: PlanPhase;
+  architectEngine?: string;
+  developerEngine?: string;
+  reviewerEngines?: string;
+  implementationBranchId?: string;
+  reviewBranchId?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface PlanEvent {
+  id: string;
+  planId: string;
+  eventType: string;
+  actor?: string;
+  detail?: string;
+  createdAt: number;
 }
 
 export interface PlanSubtask {

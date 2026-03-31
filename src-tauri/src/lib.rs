@@ -202,6 +202,10 @@ pub fn run() {
             commands::plans::update_subtask_status,
             commands::plans::replace_plan_subtasks,
             commands::plans::delete_plan,
+            commands::plans::update_plan_phase,
+            commands::plans::create_plan_event,
+            commands::plans::list_plan_events,
+            commands::plans::assign_plan_engines,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

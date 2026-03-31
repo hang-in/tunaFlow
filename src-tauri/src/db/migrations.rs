@@ -76,6 +76,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 17 {
         apply_v17(conn)?;
     }
+    if current < 18 {
+        apply_v18(conn)?;
+    }
     Ok(())
 }
 
@@ -350,6 +353,33 @@ fn apply_v17(conn: &Connection) -> Result<(), AppError> {
         CREATE INDEX IF NOT EXISTS idx_conv_memory_conv ON conversation_memory(conversation_id);
     ")?;
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (17, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// Workflow pipeline Phase A: plan phases, events, engine assignment
+fn apply_v18(conn: &Connection) -> Result<(), AppError> {
+    // Extend plans table with orchestration columns
+    add_column_if_missing(conn, "plans", "phase", "TEXT NOT NULL DEFAULT 'drafting'")?;
+    add_column_if_missing(conn, "plans", "architect_engine", "TEXT")?;
+    add_column_if_missing(conn, "plans", "developer_engine", "TEXT")?;
+    add_column_if_missing(conn, "plans", "reviewer_engines", "TEXT")?;
+    add_column_if_missing(conn, "plans", "implementation_branch_id", "TEXT REFERENCES branches(id)")?;
+    add_column_if_missing(conn, "plans", "review_branch_id", "TEXT REFERENCES branches(id)")?;
+
+    // Plan events — history log for phase transitions
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS plan_events (
+            id            TEXT PRIMARY KEY,
+            plan_id       TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+            event_type    TEXT NOT NULL,
+            actor         TEXT,
+            detail        TEXT,
+            created_at    INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_plan_events_plan_id ON plan_events(plan_id);
+    ")?;
+
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (18, ?1)", [now_epoch()])?;
     Ok(())
 }
 

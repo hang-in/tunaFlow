@@ -107,8 +107,28 @@ pub struct Plan {
     pub expected_outcome: Option<String>,
     /// "draft" | "active" | "done" | "abandoned"
     pub status: String,
+    /// Orchestration phase: "drafting" | "approval" | "implementation" | "review" | "done" | "rework"
+    pub phase: String,
+    pub architect_engine: Option<String>,
+    pub developer_engine: Option<String>,
+    /// JSON string: ["claude", "gemini"]
+    pub reviewer_engines: Option<String>,
+    pub implementation_branch_id: Option<String>,
+    pub review_branch_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// Plan event — history log for phase transitions
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanEvent {
+    pub id: String,
+    pub plan_id: String,
+    pub event_type: String,
+    pub actor: Option<String>,
+    pub detail: Option<String>,
+    pub created_at: i64,
 }
 
 /// Subtask belonging to a Plan (DATA_MODEL §plan)

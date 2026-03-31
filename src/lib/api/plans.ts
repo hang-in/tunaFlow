@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Plan, PlanSubtask, CreatePlanInput } from "@/types";
+import type { Plan, PlanEvent, PlanPhase, PlanSubtask, CreatePlanInput } from "@/types";
 
 export async function listPlansByConversation(conversationId: string): Promise<Plan[]> {
   return invoke<Plan[]>("list_plans_by_conversation", { conversationId });
@@ -30,4 +30,35 @@ export async function setSubtaskOwner(
   ownerAgent: string | null,
 ): Promise<void> {
   return invoke("set_subtask_owner", { id, ownerAgent });
+}
+
+// ─── Orchestration (Phase A) ────────────────────────────────────────────────
+
+export async function updatePlanPhase(id: string, phase: PlanPhase): Promise<void> {
+  return invoke("update_plan_phase", { id, phase });
+}
+
+export async function createPlanEvent(
+  planId: string,
+  eventType: string,
+  actor?: string,
+  detail?: string,
+): Promise<PlanEvent> {
+  return invoke<PlanEvent>("create_plan_event", { planId, eventType, actor, detail });
+}
+
+export async function listPlanEvents(planId: string): Promise<PlanEvent[]> {
+  return invoke<PlanEvent[]>("list_plan_events", { planId });
+}
+
+export async function assignPlanEngines(
+  id: string,
+  engines: { architect?: string; developer?: string; reviewers?: string[] },
+): Promise<void> {
+  return invoke("assign_plan_engines", {
+    id,
+    architectEngine: engines.architect ?? null,
+    developerEngine: engines.developer ?? null,
+    reviewerEngines: engines.reviewers ? JSON.stringify(engines.reviewers) : null,
+  });
 }
