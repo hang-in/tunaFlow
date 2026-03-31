@@ -106,7 +106,8 @@
 | [conversationRetrievalRankingPolishPlan_2026-03-30](./conversationRetrievalRankingPolishPlan_2026-03-30.md) | 중요 / P1 — retrieval chunk를 ranking/dedup/overlap suppression으로 더 적고 관련성 높게 다듬는 3차 개선 |
 | [unifiedMemoryPolicyPhase1Plan_2026-03-30](./unifiedMemoryPolicyPhase1Plan_2026-03-30.md) | 중요 / P1 — working/structured/compressed/retrieval memory를 하나의 selection policy로 통합 |
 | [unifiedMemoryPolicyThresholdTuningPlan_2026-03-30](./unifiedMemoryPolicyThresholdTuningPlan_2026-03-30.md) | 중요 / P1 — retrieval/compressed memory cutoff를 실제 사용 패턴에 맞게 조정하는 정책 튜닝 |
-| [orchestratedWorkflowPipelinePlan](./orchestratedWorkflowPipelinePlan.md) | 중요 / P0 — Chat→Plan→Implement→Review 오케스트레이션 파이프라인. Stavros 워크플로우 기반 |
+| [orchestratedWorkflowPipelinePlan](./orchestratedWorkflowPipelinePlan.md) | archived — V1 파이프라인 (Phase A-E 구현 완료). superseded by V2 |
+| [workflowPipelineV2Plan](./workflowPipelineV2Plan.md) | 중요 / P0 — 6-stage 파이프라인 재설계. Plan→Subtask→Approved→Dev→Review→Decision |
 | [memoryPolicyTraceSurfacePlan_2026-03-30](./memoryPolicyTraceSurfacePlan_2026-03-30.md) | 중요 / P1 — memory layer 포함/스킵/threshold 결과를 Trace/Runtime surface에서 읽기 쉽게 노출 |
 | [memorySectionBudgetBreakdownPlan_2026-03-30](./memorySectionBudgetBreakdownPlan_2026-03-30.md) | 중요 / P1 — 각 ContextPack section이 실제 budget을 얼마나 먹는지 Trace/Runtime에서 읽게 하는 observability 보강 |
 | [topHeavySectionTuningPlan_2026-03-30](./topHeavySectionTuningPlan_2026-03-30.md) | 중요 / P1 — top budget consumer section 2~3개를 targeted tuning으로 줄이는 최적화 단계 |

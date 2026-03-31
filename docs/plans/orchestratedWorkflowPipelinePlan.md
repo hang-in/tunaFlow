@@ -1,7 +1,8 @@
 # Orchestrated Workflow Pipeline — Chat → Plan → Implement → Review
 
-> Status: draft
+> Status: archived
 > Created: 2026-03-31
+> Superseded by: workflowPipelineV2Plan.md (6-stage redesign)
 > Inspired by: [Stavros — How I Write Software with LLMs](https://www.stavros.io/posts/how-i-write-software-with-llms/)
 
 ---
