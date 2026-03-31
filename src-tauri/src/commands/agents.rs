@@ -53,7 +53,7 @@ fn identity_fragment(input: &SendWithClaudeInput, engine: &str) -> Option<String
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Background start_* commands — thin wrappers over shared prepare/finalize
+// Background start_* commands — async, DB work runs off main thread
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[derive(Clone, Serialize)]
@@ -68,42 +68,50 @@ pub struct AgentDonePayload { pub message_id: String, pub conversation_id: Strin
 #[serde(rename_all = "camelCase")]
 pub struct AgentErrorPayload { pub message_id: String, pub conversation_id: String, pub engine: String, pub error: String }
 
-/// Background Claude stream — returns immediately, subprocess runs in background.
+/// Background Claude stream — DB prep runs off main thread, subprocess in background.
 #[tauri::command]
-pub fn start_claude_stream(
+pub async fn start_claude_stream(
     input: SendWithClaudeInput, app: AppHandle,
-    state: State<DbState>, cancel: State<crate::CancelRegistry>,
+    state: State<'_, DbState>, cancel: State<'_, crate::CancelRegistry>,
 ) -> Result<StartRunResult, AppError> {
+    let db = state.inner().clone();
     let id_frag = identity_fragment(&input, "claude-code");
-    let prep = prepare_engine_run("claude-code", &input, id_frag.as_deref(), &state)?;
+    let cancel_arc = std::sync::Arc::clone(&cancel.0);
+    let write_arc = db_write_arc(&state);
 
-    // Claude-specific: load resume token + merge agent/custom system_prompt
-    let (resume_token, system_prompt) = {
-        let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-        let rt = conn.query_row(
-            "SELECT resume_token, resume_token_engine FROM conversations WHERE id=?1",
-            [&input.conversation_id],
-            |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
-        ).ok().and_then(|(t, e)| if e.as_deref() == Some("claude-code") { t } else { None });
-        let agent_sp = assemble_system_prompt(
-            input.agent_name.as_deref(), prep.project_path.as_deref(), input.system_prompt.as_deref(),
-        );
-        let sp = match (prep.system_context.clone(), agent_sp) {
-            (Some(c), Some(a)) => Some(format!("{}\n\n{}", c, a)),
-            (c @ Some(_), None) => c,
-            (None, a @ Some(_)) => a,
-            (None, None) => None,
+    // Extract values needed after spawn_blocking (input will be moved)
+    let cid = input.conversation_id.clone();
+    let pr = input.prompt.clone();
+    let mo = input.model.clone();
+
+    // DB-heavy work off main thread
+    let (prep, resume_token, system_prompt) = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
+        let prep = prepare_engine_run("claude-code", &input, id_frag.as_deref(), &db)?;
+
+        let (resume_token, system_prompt) = {
+            let conn = db.write.lock().map_err(|_| AppError::Lock)?;
+            let rt = conn.query_row(
+                "SELECT resume_token, resume_token_engine FROM conversations WHERE id=?1",
+                [&input.conversation_id],
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+            ).ok().and_then(|(t, e)| if e.as_deref() == Some("claude-code") { t } else { None });
+            let agent_sp = assemble_system_prompt(
+                input.agent_name.as_deref(), prep.project_path.as_deref(), input.system_prompt.as_deref(),
+            );
+            let sp = match (prep.system_context.clone(), agent_sp) {
+                (Some(c), Some(a)) => Some(format!("{}\n\n{}", c, a)),
+                (c @ Some(_), None) => c,
+                (None, a @ Some(_)) => a,
+                (None, None) => None,
+            };
+            (rt, sp)
         };
-        (rt, sp)
-    };
 
-    let carc = std::sync::Arc::clone(&cancel.0);
-    let write_arc = std::sync::Arc::clone(&state.write);
+        Ok((prep, resume_token, system_prompt))
+    }).await.map_err(|_| AppError::Lock)??;
+
     let ret = prep.msg_id.clone();
     let PreparedRun { msg_id, job_id, project_path, ctx_meta, .. } = prep;
-    let cid = input.conversation_id;
-    let pr = input.prompt;
-    let mo = input.model;
     let plen = pr.len() + system_prompt.as_ref().map_or(0, |s| s.len());
 
     std::thread::spawn(move || {
@@ -114,7 +122,7 @@ pub fn start_claude_stream(
             claude::RunInput { prompt: pr, model: mo.clone(), system_prompt, resume_token, project_path },
             move |t| { let _ = pa.emit("claude:progress", ChunkPayload { message_id: pi.clone(), text: t }); },
             move |t| { let _ = c2.emit("claude:chunk", ChunkPayload { message_id: ci.clone(), text: t }); },
-            { let c = cid.clone(); let r = carc; move || { if let Ok(mut s) = r.lock() { s.remove(&c) } else { false } } },
+            { let c = cid.clone(); let r = cancel_arc; move || { if let Ok(mut s) = r.lock() { s.remove(&c) } else { false } } },
         );
         let dur = t0.elapsed().as_millis();
         guardrail::log_run("claude-bg", mo.as_deref(), dur, plen, rr.is_ok());
@@ -125,21 +133,25 @@ pub fn start_claude_stream(
     Ok(StartRunResult { message_id: ret })
 }
 
-/// Background Gemini stream — returns immediately.
+/// Background Gemini stream — async, DB prep off main thread.
 #[tauri::command]
-pub fn start_gemini_stream(
+pub async fn start_gemini_stream(
     input: SendWithClaudeInput, app: AppHandle,
-    state: State<DbState>, cancel: State<crate::CancelRegistry>,
+    state: State<'_, DbState>, cancel: State<'_, crate::CancelRegistry>,
 ) -> Result<StartRunResult, AppError> {
+    let db = state.inner().clone();
     let id_frag = identity_fragment(&input, "gemini");
-    let prep = prepare_engine_run("gemini", &input, id_frag.as_deref(), &state)?;
+    let cancel_arc = std::sync::Arc::clone(&cancel.0);
+    let write_arc = db_write_arc(&state);
+    let cid = input.conversation_id.clone();
+    let mo = input.model.clone();
 
-    let carc = std::sync::Arc::clone(&cancel.0);
-    let write_arc = std::sync::Arc::clone(&state.write);
+    let prep = tokio::task::spawn_blocking(move || {
+        prepare_engine_run("gemini", &input, id_frag.as_deref(), &db)
+    }).await.map_err(|_| AppError::Lock)??;
+
     let ret = prep.msg_id.clone();
     let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
-    let cid = input.conversation_id;
-    let mo = input.model;
 
     std::thread::spawn(move || {
         let pa = app.clone(); let pi = msg_id.clone();
@@ -149,7 +161,7 @@ pub fn start_gemini_stream(
             claude::RunInput { prompt: enriched_prompt, model: mo.clone(), system_prompt: None, resume_token: None, project_path },
             move |t| { let _ = pa.emit("gemini:progress", ChunkPayload { message_id: pi.clone(), text: t }); },
             move |t| { let _ = c2.emit("gemini:chunk", ChunkPayload { message_id: ci.clone(), text: t }); },
-            { let c = cid.clone(); let r = carc; move || { if let Ok(mut s) = r.lock() { s.remove(&c) } else { false } } },
+            { let c = cid.clone(); let r = cancel_arc; move || { if let Ok(mut s) = r.lock() { s.remove(&c) } else { false } } },
         );
         let dur = t0.elapsed().as_millis();
         if let Ok(conn) = write_arc.lock() {
@@ -159,19 +171,23 @@ pub fn start_gemini_stream(
     Ok(StartRunResult { message_id: ret })
 }
 
-/// Background Codex run — returns immediately.
+/// Background Codex run — async, DB prep off main thread.
 #[tauri::command]
-pub fn start_codex_run(
-    input: SendWithClaudeInput, app: AppHandle, state: State<DbState>,
+pub async fn start_codex_run(
+    input: SendWithClaudeInput, app: AppHandle, state: State<'_, DbState>,
 ) -> Result<StartRunResult, AppError> {
+    let db = state.inner().clone();
     let id_frag = identity_fragment(&input, "codex");
-    let prep = prepare_engine_run("codex", &input, id_frag.as_deref(), &state)?;
+    let write_arc = db_write_arc(&state);
+    let cid = input.conversation_id.clone();
+    let mo = input.model.clone();
 
-    let write_arc = std::sync::Arc::clone(&state.write);
+    let prep = tokio::task::spawn_blocking(move || {
+        prepare_engine_run("codex", &input, id_frag.as_deref(), &db)
+    }).await.map_err(|_| AppError::Lock)??;
+
     let ret = prep.msg_id.clone();
     let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
-    let cid = input.conversation_id;
-    let mo = input.model;
 
     std::thread::spawn(move || {
         let chunk_mid = msg_id.clone(); let chunk_app = app.clone();
@@ -190,19 +206,23 @@ pub fn start_codex_run(
     Ok(StartRunResult { message_id: ret })
 }
 
-/// Background OpenCode run — returns immediately.
+/// Background OpenCode run — async, DB prep off main thread.
 #[tauri::command]
-pub fn start_opencode_run(
-    input: SendWithClaudeInput, app: AppHandle, state: State<DbState>,
+pub async fn start_opencode_run(
+    input: SendWithClaudeInput, app: AppHandle, state: State<'_, DbState>,
 ) -> Result<StartRunResult, AppError> {
+    let db = state.inner().clone();
     let id_frag = identity_fragment(&input, "opencode");
-    let prep = prepare_engine_run("opencode", &input, id_frag.as_deref(), &state)?;
+    let write_arc = db_write_arc(&state);
+    let cid = input.conversation_id.clone();
+    let mo = input.model.clone();
 
-    let write_arc = std::sync::Arc::clone(&state.write);
+    let prep = tokio::task::spawn_blocking(move || {
+        prepare_engine_run("opencode", &input, id_frag.as_deref(), &db)
+    }).await.map_err(|_| AppError::Lock)??;
+
     let ret = prep.msg_id.clone();
     let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
-    let cid = input.conversation_id;
-    let mo = input.model;
 
     std::thread::spawn(move || {
         let _ = app.emit("opencode:progress", ChunkPayload { message_id: msg_id.clone(), text: "OpenCode starting...".into() });
@@ -216,6 +236,11 @@ pub fn start_opencode_run(
         }
     });
     Ok(StartRunResult { message_id: ret })
+}
+
+/// Helper: clone write Arc from state for background thread use.
+fn db_write_arc(state: &State<DbState>) -> std::sync::Arc<std::sync::Mutex<rusqlite::Connection>> {
+    std::sync::Arc::clone(&state.write)
 }
 
 /// Eval-only: run a prompt through an engine synchronously, return content only.

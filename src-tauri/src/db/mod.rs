@@ -17,6 +17,7 @@ use crate::errors::AppError;
 ///
 /// Fields use `Arc<Mutex<>>` so background threads can clone the Arc
 /// without lifetime issues with Tauri's State wrapper.
+#[derive(Clone)]
 pub struct DbState {
     pub write: Arc<Mutex<Connection>>,
     pub read: Arc<Mutex<Connection>>,

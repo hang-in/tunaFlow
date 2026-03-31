@@ -800,7 +800,7 @@ pub fn prepare_engine_run(
     engine_key: &str,
     input: &super::super::agents::SendWithClaudeInput,
     identity_frag: Option<&str>,
-    state: &tauri::State<DbState>,
+    state: &DbState,
 ) -> Result<PreparedRun, crate::errors::AppError> {
     // Phase A: DB operations under lock — persist user msg, load context data, pre-create streaming msg
     let (data, project_path, msg_id) = {
