@@ -90,7 +90,7 @@ export async function startReviewBranch(
 export async function approveAndStartImplementation(
   plan: Plan,
   developerEngine: string = "claude",
-): Promise<CreateBranchResult> {
+): Promise<CreateBranchResult & { prompt: string }> {
   // Phase transition
   await planApi.updatePlanPhase(plan.id, "implementation");
   await planApi.updatePlanStatus(plan.id, "active");
@@ -102,7 +102,7 @@ export async function approveAndStartImplementation(
     plan, "implementation", `Impl: ${plan.title}`, "chat",
   );
 
-  // Build developer prompt (pre-implementation report)
+  // Build developer prompt — caller will send via sendThreadMessage
   const planContext = await buildPlanContext(plan);
   const prompt = [
     `당신은 Developer입니다. 아래 Plan을 구현해야 합니다.`,
@@ -119,26 +119,17 @@ export async function approveAndStartImplementation(
     `아직 코드를 작성하지 마세요.`,
   ].join("\n");
 
-  await invoke("create_user_message", { input: { conversationId: shadowConvId, content: prompt } });
-
-  return { branch, shadowConvId };
+  return { branch, shadowConvId, prompt };
 }
 
 // ─── Phase D: Approve impl-plan → Start implementation ──────────────────────
 
+/** Returns the prompt string — caller sends via sendThreadMessage */
 export async function approveImplPlan(
   plan: Plan,
-  shadowConvId: string,
-): Promise<void> {
+): Promise<string> {
   await planApi.createPlanEvent(plan.id, "impl_approved", "user");
-
-  // Send "go ahead" message
-  await invoke("create_user_message", {
-    input: {
-      conversationId: shadowConvId,
-      content: "실행 계획이 승인되었습니다. 구현을 시작하세요. 완료되면 `<!-- tunaflow:impl-complete -->`를 포함하세요.",
-    },
-  });
+  return "실행 계획이 승인되었습니다. 구현을 시작하세요. 완료되면 `<!-- tunaflow:impl-complete -->`를 포함하세요.";
 }
 
 // ─── Phase D→E: impl-complete → Start Review RT ─────────────────────────────

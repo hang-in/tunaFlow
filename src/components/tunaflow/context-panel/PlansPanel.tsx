@@ -359,18 +359,29 @@ function ApprovalGate({
   plan: Plan;
   onPlanUpdate: (update: Partial<Plan>) => void;
 }) {
-  const { openThread, loadBranches } = useChatStore();
-  const [mode, setMode] = useState<"idle" | "review-input" | "engine-select" | "busy">("idle");
+  const { openThread, loadBranches, sendThreadMessage, saveConversationEngine } = useChatStore();
+  const profiles = useChatStore((s) => s.agentProfiles);
+  const [mode, setMode] = useState<"idle" | "review-input" | "agent-select" | "busy">("idle");
   const [feedback, setFeedback] = useState("");
-  const [devEngine, setDevEngine] = useState("claude");
+  const [selectedProfileId, setSelectedProfileId] = useState(profiles[0]?.id ?? "");
+
+  const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
 
   const handleApprove = async () => {
     setMode("busy");
     try {
-      const { branch } = await approveAndStartImplementation(plan, devEngine);
+      const engine = selectedProfile?.engine ?? "claude";
+      const { branch, prompt } = await approveAndStartImplementation(plan, engine);
       onPlanUpdate({ phase: "implementation", status: "active" as PlanStatus, implementationBranchId: branch.id });
       await loadBranches(plan.conversationId);
+
+      // Save agent profile for the branch thread
+      const shadowConvId = `branch:${branch.id}`;
+      saveConversationEngine(shadowConvId, { profileId: selectedProfileId, engine });
+
+      // Open thread + send message (triggers actual engine execution)
       await openThread(branch.id);
+      await sendThreadMessage(prompt, engine);
     } catch { setMode("idle"); }
   };
 
@@ -413,13 +424,13 @@ function ApprovalGate({
     );
   }
 
-  if (mode === "engine-select") {
+  if (mode === "agent-select") {
     return (
       <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">Developer 엔진:</span>
-          <select value={devEngine} onChange={(e) => setDevEngine(e.target.value)} className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
-            {OWNER_OPTIONS.map((e) => <option key={e} value={e}>{e}</option>)}
+          <span className="text-[10px] text-muted-foreground">Developer 에이전트:</span>
+          <select value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)} className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.engine})</option>)}
           </select>
         </div>
         <div className="flex gap-1.5">
@@ -432,7 +443,7 @@ function ApprovalGate({
 
   return (
     <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
-      <button onClick={() => setMode("engine-select")} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
+      <button onClick={() => setMode("agent-select")} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
         <Check className="w-3 h-3" />승인
       </button>
       <button onClick={handleHold} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
@@ -450,23 +461,26 @@ function ApprovalGate({
 function ImplPlanCard({
   implPlan,
   plan,
-  shadowConvId,
   onPlanUpdate,
 }: {
   implPlan: ParsedImplPlan;
   plan: Plan;
-  shadowConvId: string;
   onPlanUpdate: (update: Partial<Plan>) => void;
 }) {
-  const { openThread } = useChatStore();
+  const { openThread, sendThreadMessage } = useChatStore();
   const [busy, setBusy] = useState(false);
 
   const handleApproveImpl = async () => {
     setBusy(true);
     try {
-      await approveImplPlan(plan, shadowConvId);
-      // Open the implementation branch to send the agent command
-      if (plan.implementationBranchId) await openThread(plan.implementationBranchId);
+      const prompt = await approveImplPlan(plan);
+      if (plan.implementationBranchId) {
+        await openThread(plan.implementationBranchId);
+        // Get the engine saved for this branch
+        const shadowConvId = `branch:${plan.implementationBranchId}`;
+        const saved = useChatStore.getState().getConversationEngine(shadowConvId);
+        await sendThreadMessage(prompt, saved?.engine ?? "claude");
+      }
     } catch { /* silent */ }
     setBusy(false);
   };
@@ -833,7 +847,7 @@ function PlanCard({
                   </button>
                 </div>
                 {implPlan && !implComplete && (
-                  <ImplPlanCard implPlan={implPlan} plan={plan} shadowConvId={`branch:${plan.implementationBranchId}`} onPlanUpdate={handlePlanUpdate} />
+                  <ImplPlanCard implPlan={implPlan} plan={plan} onPlanUpdate={handlePlanUpdate} />
                 )}
                 {implComplete && (
                   <div className="mt-2 rounded-md border border-status-approved/30 bg-status-approved/5 p-2 text-[10px] text-status-approved flex items-center gap-1.5">

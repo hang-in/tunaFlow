@@ -52,15 +52,21 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     }
   }, [selectedProfileId, profiles]);
 
-  // Restore per-conversation engine state when conversation changes
+  // Restore per-conversation engine state when conversation/thread changes
+  const threadBranchConvIdForRestore = useChatStore((s) => s.threadBranchConvId);
+  const effectiveConvForRestore = threadMode ? threadBranchConvIdForRestore : selectedConversationId;
   useEffect(() => {
-    if (!selectedConversationId) return;
-    const saved = useChatStore.getState().getConversationEngine(selectedConversationId);
+    if (!effectiveConvForRestore) return;
+    const saved = useChatStore.getState().getConversationEngine(effectiveConvForRestore);
     if (saved) {
       setEngine(saved.engine as Engine);
       if (saved.model) setSelectedModel(saved.model);
+      // Restore profile selection for this context
+      if (saved.profileId !== useChatStore.getState().selectedProfileId) {
+        selectProfile(saved.profileId);
+      }
     }
-  }, [selectedConversationId]);
+  }, [effectiveConvForRestore]);
 
   const applyProfile = (profile: AgentProfile) => {
     setEngine(profile.engine as Engine);
@@ -82,13 +88,13 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   const handleProfileSelect = (profileId: string | null) => {
     selectProfile(profileId);
     if (!profileId) {
-      // Custom mode — clear persona
       useChatStore.setState({ personaFragment: null, personaLabel: null });
     }
-    // Save to per-conversation map
-    if (selectedConversationId) {
+    // Save to per-conversation/thread map
+    const saveTarget = threadMode ? threadBranchConvIdForRestore : selectedConversationId;
+    if (saveTarget) {
       const profile = profileId ? profiles.find((p) => p.id === profileId) : null;
-      saveConversationEngine(selectedConversationId, {
+      saveConversationEngine(saveTarget, {
         profileId,
         engine: profile?.engine ?? engine,
         model: profile?.model ?? (selectedModel || undefined),
@@ -246,12 +252,10 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                       selectProfile(null);
                       useChatStore.setState({ personaFragment: null, personaLabel: null });
                     }
-                    // Save to per-conversation map
-                    if (selectedConversationId) {
-                      saveConversationEngine(selectedConversationId, {
-                        profileId: null,
-                        engine: e,
-                      });
+                    // Save to per-conversation/thread map
+                    const target = threadMode ? threadBranchConvIdForRestore : selectedConversationId;
+                    if (target) {
+                      saveConversationEngine(target, { profileId: null, engine: e });
                     }
                   }} />
                   <ModelSelector
