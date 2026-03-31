@@ -8,10 +8,12 @@ export function DraftingActions({
   plan,
   subtasks,
   onPlanUpdate,
+  onSwitchToChat,
 }: {
   plan: Plan;
   subtasks: PlanSubtask[];
   onPlanUpdate: (update: Partial<Plan>) => void;
+  onSwitchToChat?: () => void;
 }) {
   const { sendWithEngine, selectedConversationId, getConversationEngine } = useChatStore();
   const [busy, setBusy] = useState(false);
@@ -43,6 +45,7 @@ export function DraftingActions({
       ].join("\n");
       await sendWithEngine(mainEngine, prompt);
       await planApi.createPlanEvent(plan.id, "detail_design_requested", "user");
+      onSwitchToChat?.();
     } catch { /* silent */ }
     setBusy(false);
   };

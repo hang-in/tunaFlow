@@ -20,11 +20,13 @@ export function PlanCard({
   plan: initialPlan,
   onStatusChange,
   onPlanUpdated,
+  onSwitchToChat,
   defaultExpanded = false,
 }: {
   plan: Plan;
   onStatusChange: (id: string, status: PlanStatus) => void;
   onPlanUpdated: (planId: string, update: Partial<Plan>) => void;
+  onSwitchToChat?: () => void;
   defaultExpanded?: boolean;
 }) {
   const { sendFollowup, setHandoffSource, branches, openThread, loadBranches } = useChatStore();
@@ -209,7 +211,7 @@ export function PlanCard({
           <div className="pl-5">
             {/* Drafting stage — detail design + start review */}
             {plan.phase === "drafting" && subtasks && (
-              <DraftingActions plan={plan} subtasks={subtasks} onPlanUpdate={handlePlanUpdate} />
+              <DraftingActions plan={plan} subtasks={subtasks} onPlanUpdate={handlePlanUpdate} onSwitchToChat={onSwitchToChat} />
             )}
 
             {/* Approval gate (now simplified — Dev start only) */}

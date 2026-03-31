@@ -268,6 +268,7 @@ export function CenterPanel() {
                   const target = PHASE_TO_STAGE[phase];
                   if (target) setActiveStage(target);
                 }}
+                onSwitchToChat={() => setActiveTab("chat")}
               />
             </div>
           </div>

@@ -11,9 +11,10 @@ import { SUBTASK_STATUS_CFG } from "./plans/constants";
 interface SubtaskReviewViewProps {
   plan: Plan;
   onPlanUpdate: (planId: string, update: Partial<Plan>) => void;
+  onSwitchToChat?: () => void;
 }
 
-export function SubtaskReviewView({ plan, onPlanUpdate }: SubtaskReviewViewProps) {
+export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: SubtaskReviewViewProps) {
   const { sendWithEngine, selectedConversationId, getConversationEngine } = useChatStore();
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +84,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate }: SubtaskReviewViewProps
       await sendWithEngine(mainEngine, prompt);
       await planApi.createPlanEvent(plan.id, "subtask_revision_requested", "user",
         `subtask ${subtaskIdx + 1}: ${opinion.slice(0, 100)}`);
+      onSwitchToChat?.();
     } catch { /* silent */ }
     setBusy(false);
   };
@@ -104,6 +106,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate }: SubtaskReviewViewProps
       await sendWithEngine(mainEngine, prompt);
       await planApi.createPlanEvent(plan.id, "detail_design_requested", "user",
         `subtask ${subtaskIdx + 1}`);
+      onSwitchToChat?.();
     } catch { /* silent */ }
     setBusy(false);
   };
@@ -185,6 +188,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate }: SubtaskReviewViewProps
                   ].join("\n");
                   await sendWithEngine(mainEngine, prompt);
                   await planApi.createPlanEvent(plan.id, "detail_design_requested", "user", "all subtasks");
+                  onSwitchToChat?.();
                 } catch { /* silent */ }
                 setBusy(false);
               }}

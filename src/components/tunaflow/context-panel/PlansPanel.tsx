@@ -24,9 +24,11 @@ interface PlansPanelProps {
   activeStage?: string;
   /** Callback when a plan's phase changes — parent can update stage */
   onPhaseChanged?: (planId: string, newPhase: PlanPhase) => void;
+  /** Switch to Chat tab — used after sending prompts to Architect */
+  onSwitchToChat?: () => void;
 }
 
-export function PlansPanel({ activeStage, onPhaseChanged }: PlansPanelProps) {
+export function PlansPanel({ activeStage, onPhaseChanged, onSwitchToChat }: PlansPanelProps) {
   const { selectedConversationId, activeBranchId, parentConversationId } = useChatStore();
   const [plans, setPlans] = useState<Plan[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,7 +92,7 @@ export function PlansPanel({ activeStage, onPhaseChanged }: PlansPanelProps) {
 
       {activeStage === "subtask" ? (
         filteredPlans.map((plan) => (
-          <SubtaskReviewView key={plan.id} plan={plan} onPlanUpdate={handlePlanUpdated} />
+          <SubtaskReviewView key={plan.id} plan={plan} onPlanUpdate={handlePlanUpdated} onSwitchToChat={onSwitchToChat} />
         ))
       ) : activeStage === "dev" ? (
         filteredPlans.map((plan) => (
@@ -103,6 +105,7 @@ export function PlansPanel({ activeStage, onPhaseChanged }: PlansPanelProps) {
             plan={plan}
             onStatusChange={handlePlanStatus}
             onPlanUpdated={handlePlanUpdated}
+            onSwitchToChat={onSwitchToChat}
           />
         ))
       )}
