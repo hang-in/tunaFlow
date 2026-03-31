@@ -19,6 +19,13 @@ const DEFAULT_PROFILES: AgentProfile[] = [
   { id: "general-opencode", label: "General OpenCode", engine: "opencode", defaultSkills: [] },
 ];
 
+/** Per-conversation engine/profile snapshot */
+export interface ConversationEngineState {
+  profileId: string | null;
+  engine: string;
+  model?: string;
+}
+
 export interface AssetSlice {
   memos: Memo[];
   artifacts: Artifact[];
@@ -32,9 +39,15 @@ export interface AssetSlice {
   // Agent profiles — shared between Settings and NewMessageInput
   agentProfiles: AgentProfile[];
   selectedProfileId: string | null;
+  /** Per-conversation engine/profile memory */
+  _convEngineMap: Record<string, ConversationEngineState>;
   loadProfiles: () => Promise<void>;
   saveProfiles: (profiles: AgentProfile[]) => void;
   selectProfile: (profileId: string | null) => void;
+  /** Save current engine/profile state for a conversation */
+  saveConversationEngine: (conversationId: string, state: ConversationEngineState) => void;
+  /** Restore engine/profile state for a conversation. Returns null if none saved. */
+  getConversationEngine: (conversationId: string) => ConversationEngineState | null;
   setHandoffSource: (source: { type: string; content: string } | null) => void;
   loadMemos: () => Promise<void>;
   createMemo: (messageId: string, content: string) => Promise<void>;
@@ -60,12 +73,14 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
   personaLabel: null,
   agentProfiles: [],
   selectedProfileId: null,
+  _convEngineMap: {},
 
   loadProfiles: async () => {
     const profiles = await getSetting<AgentProfile[]>("agentProfiles", DEFAULT_PROFILES);
     const lastId = await getSetting<string | null>("lastProfileId", null);
     const selectedId = lastId && profiles.some((p) => p.id === lastId) ? lastId : profiles[0]?.id ?? null;
-    set({ agentProfiles: profiles, selectedProfileId: selectedId });
+    const convMap = await getSetting<Record<string, ConversationEngineState>>("convEngineMap", {});
+    set({ agentProfiles: profiles, selectedProfileId: selectedId, _convEngineMap: convMap });
   },
 
   saveProfiles: (profiles: AgentProfile[]) => {
@@ -76,6 +91,18 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
   selectProfile: (profileId: string | null) => {
     set({ selectedProfileId: profileId });
     setSetting("lastProfileId", profileId);
+  },
+
+  saveConversationEngine: (conversationId: string, state: ConversationEngineState) => {
+    set((prev) => {
+      const map = { ...prev._convEngineMap, [conversationId]: state };
+      setSetting("convEngineMap", map);
+      return { _convEngineMap: map };
+    });
+  },
+
+  getConversationEngine: (conversationId: string) => {
+    return get()._convEngineMap[conversationId] ?? null;
   },
 
   setHandoffSource: (source) => set({ handoffSource: source }),

@@ -69,6 +69,13 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
   },
 
   selectConversation: async (id: string) => {
+    // Save current conversation's engine state before switching
+    const prevConvId = get().selectedConversationId;
+    if (prevConvId) {
+      // Engine state will be saved by NewMessageInput via saveConversationEngine
+      // (already handled on profile/engine change — no action needed here)
+    }
+
     // Close drawer/thread if open — conversation is the primary view
     set({
       selectedConversationId: id,
@@ -77,6 +84,17 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
       threadBranchLabel: null, threadParentMessage: null,
     });
     import("@/lib/appStore").then(({ setSetting }) => setSetting("lastConversationId", id)).catch(() => {});
+
+    // Restore per-conversation engine/profile state
+    const saved = get().getConversationEngine(id);
+    if (saved) {
+      get().selectProfile(saved.profileId);
+      if (!saved.profileId) {
+        // Custom mode — clear persona (profile effect won't fire)
+        set({ personaFragment: null, personaLabel: null });
+      }
+    }
+
     try {
       const [messages, branches, memos, artifacts] = await Promise.all([
         invoke<Message[]>("list_messages", { conversationId: id }),

@@ -41,6 +41,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   const profiles = useChatStore((s) => s.agentProfiles);
   const selectedProfileId = useChatStore((s) => s.selectedProfileId);
   const selectProfile = useChatStore((s) => s.selectProfile);
+  const saveConversationEngine = useChatStore((s) => s.saveConversationEngine);
   const toggleSkill = useChatStore((s) => s.toggleSkill);
 
   // Apply profile on initial load or when selectedProfileId changes
@@ -50,6 +51,16 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
       if (profile) applyProfile(profile);
     }
   }, [selectedProfileId, profiles]);
+
+  // Restore per-conversation engine state when conversation changes
+  useEffect(() => {
+    if (!selectedConversationId) return;
+    const saved = useChatStore.getState().getConversationEngine(selectedConversationId);
+    if (saved) {
+      setEngine(saved.engine as Engine);
+      if (saved.model) setSelectedModel(saved.model);
+    }
+  }, [selectedConversationId]);
 
   const applyProfile = (profile: AgentProfile) => {
     setEngine(profile.engine as Engine);
@@ -73,6 +84,15 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     if (!profileId) {
       // Custom mode — clear persona
       useChatStore.setState({ personaFragment: null, personaLabel: null });
+    }
+    // Save to per-conversation map
+    if (selectedConversationId) {
+      const profile = profileId ? profiles.find((p) => p.id === profileId) : null;
+      saveConversationEngine(selectedConversationId, {
+        profileId,
+        engine: profile?.engine ?? engine,
+        model: profile?.model ?? (selectedModel || undefined),
+      });
     }
   };
   const [activeParticipants, setActiveParticipants] = useState<Set<string>>(
@@ -225,6 +245,13 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                     if (currentProfile && currentProfile.engine !== e) {
                       selectProfile(null);
                       useChatStore.setState({ personaFragment: null, personaLabel: null });
+                    }
+                    // Save to per-conversation map
+                    if (selectedConversationId) {
+                      saveConversationEngine(selectedConversationId, {
+                        profileId: null,
+                        engine: e,
+                      });
                     }
                   }} />
                   <ModelSelector

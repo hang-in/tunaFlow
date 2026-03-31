@@ -100,9 +100,13 @@ export interface ChatState {
   /** Agent profiles — shared between Settings and NewMessageInput */
   agentProfiles: AgentProfile[];
   selectedProfileId: string | null;
+  /** Per-conversation engine/profile memory */
+  _convEngineMap: Record<string, { profileId: string | null; engine: string; model?: string }>;
   loadProfiles: () => Promise<void>;
   saveProfiles: (profiles: AgentProfile[]) => void;
   selectProfile: (profileId: string | null) => void;
+  saveConversationEngine: (conversationId: string, state: { profileId: string | null; engine: string; model?: string }) => void;
+  getConversationEngine: (conversationId: string) => { profileId: string | null; engine: string; model?: string } | null;
 
   setHandoffSource: (source: { type: string; content: string } | null) => void;
   _startRun: (threadId: string) => void;
