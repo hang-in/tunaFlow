@@ -190,9 +190,17 @@ tunaFlow/
 - **Phase 4-1 clipboard**: navigator.clipboard → native plugin 전환 (7파일)
 - **Phase 4-2 sonner**: toast 알림 도입 (scaffold 알림)
 
+### ✅ 해결됨 (세션 5: 오케스트레이션 워크플로우 파이프라인)
+- **Phase A**: DB v18 migration (plans 확장 + plan_events), Rust 모델/commands, TS 타입/API
+- **Phase B**: `<!-- tunaflow:plan-proposal -->` 마커 파서 + PlanProposalCard (채팅 내 인라인 제안 → 승격)
+- **Phase C**: PlansPanel 3-way approval gate (승인/보류/검토) + event timeline
+- **Phase D**: impl-plan, impl-complete, review-verdict 마커 파서 (3종)
+- **Phase E**: `run_project_tests` Tauri command (cargo/vitest 자동 감지 + 결과 파싱) + frontend API
+- Rust 60 unit tests, Frontend 66 tests (파서 테스트 포함)
+
 ### 기타 알려진 이슈
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- Rust 57 unit test + Frontend 55 test이나, integration test 부재
+- Rust 60 unit test + Frontend 66 test이나, integration test 부재
 - RT에서 `run()` 동기 사용 — progress 가시성 없음
 - 긴 multi-agent 대화 (24+ 메시지) 실사용 검증 미완
 
@@ -247,7 +255,7 @@ tunaFlow/
 
 ---
 
-## 8. DB 스키마 (v17)
+## 8. DB 스키마 (v18)
 
 | 테이블 | 핵심 필드 |
 |---|---|
@@ -258,8 +266,9 @@ tunaFlow/
 | `branches` | id, conversation_id(FK), label, status, checkpoint_id, mode(chat/roundtable), parent_branch_id, git_branch |
 | `memos` | id, message_id, content, type, tags |
 | `artifacts` | id, conversation_id, type, title, status, subtask_id |
-| `plans` | id, conversation_id, title, status |
+| `plans` | id, conversation_id, title, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id |
 | `plan_subtasks` | id, plan_id(FK), title, status, owner_agent |
+| `plan_events` | id, plan_id(FK), event_type, actor, detail, created_at (v18) |
 | `trace_log` | id, conversation_id, trace_id, span_id, engine, context_mode, context_sections, context_length, context_truncated, usage_status |
 | `agent_jobs` | id, conversation_id, message_id, engine, kind, status, error |
 | `conversation_memory` | id, conversation_id(FK), summary, source_count, created_at, updated_at (v17) |
@@ -405,13 +414,10 @@ tunaFlow/
 - Compressed memory 참여자 보존 — 긴 대화 후 에이전트 인식 검증
 - Cross-conversation retrieval — 다중 대화 프로젝트에서 chunk 회수 확인
 
-### P0: 오케스트레이션 워크플로우 파이프라인
-- **Phase A: DB + 타입 + API** — plan phases, events, engine assignment. 프롬프트: `docs/prompts/2026-03-31/orchestrated_workflow_phase_a_prompt.md`
-- **Phase B: Chat → Plan 승격** — 마커 파서 + PlanProposalCard
-- **Phase C: Plan 승인 게이트** — 3-way + 검토 Branch
-- **Phase D: Developer 실행계획 + 구현**
-- **Phase E: 테스트 러너 + RT 리뷰**
+### ✅ 완료: 오케스트레이션 워크플로우 파이프라인 (Phase A-E)
+- **Phase A-E 전체 완료** — DB v18, 마커 파서 4종, PlanProposalCard, Approval Gate, Test Runner
 - 전체 설계: `docs/plans/orchestratedWorkflowPipelinePlan.md`
+- 후속: 실사용 검증 (end-to-end 시나리오), Review RT 자동 실행 연동
 
 ### P1: 의존성 마이그레이션 (Phase 4 잔여)
 - **Phase 4-3: react-virtuoso** — ChatPanel 가상 스크롤. 프롬프트: `docs/prompts/2026-03-31/dependency_migration_phase4_remaining_prompt.md`
