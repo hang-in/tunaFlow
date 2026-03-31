@@ -918,33 +918,29 @@ function PlanCard({
   );
 }
 
-// ─── Phase subtabs ──────────────────────────────────────────────────────────
-
-const PHASE_TABS = [
-  { key: "plan",     label: "PLAN",     phases: ["drafting"] as PlanPhase[] },
-  { key: "approved", label: "APPROVED", phases: ["approval"] as PlanPhase[] },
-  { key: "dev",      label: "DEV",      phases: ["implementation", "rework"] as PlanPhase[] },
-  { key: "review",   label: "REVIEW",   phases: ["review"] as PlanPhase[] },
-  { key: "done",     label: "DONE",     phases: ["done"] as PlanPhase[] },
-] as const;
-
-type PhaseTabKey = typeof PHASE_TABS[number]["key"];
-
-/** Check if a plan belongs to a tab (phase match + status-based fallback for abandoned) */
-function planMatchesTab(plan: Plan, tab: typeof PHASE_TABS[number]): boolean {
-  if (tab.key === "done" && plan.status === "abandoned") return true;
-  return tab.phases.includes(plan.phase);
-}
-
 // ─── PlansPanel (main export) ────────────────────────────────────────────────
 
-export function PlansPanel() {
+/** Phase filter mapping for stage IDs */
+const STAGE_PHASE_MAP: Record<string, { phases: PlanPhase[]; includeAbandoned?: boolean; empty: string }> = {
+  plan:     { phases: ["drafting"],                 empty: "Chat 탭에서 Architect와 대화하여 Plan을 생성하세요." },
+  approved: { phases: ["approval"],                 empty: "승인 대기 중인 Plan이 없습니다." },
+  dev:      { phases: ["implementation", "rework"], empty: "구현 중인 Plan이 없습니다." },
+  review:   { phases: ["review"],                   empty: "리뷰 중인 Plan이 없습니다." },
+  decision: { phases: ["done"], includeAbandoned: true, empty: "완료된 Plan이 없습니다." },
+};
+
+interface PlansPanelProps {
+  /** Active stage from HarnessSummary — filters plans by phase */
+  activeStage?: string;
+  /** Callback when a plan's phase changes — parent can update stage */
+  onPhaseChanged?: (planId: string, newPhase: PlanPhase) => void;
+}
+
+export function PlansPanel({ activeStage, onPhaseChanged }: PlansPanelProps) {
   const { selectedConversationId, activeBranchId, parentConversationId } = useChatStore();
   const [plans, setPlans] = useState<Plan[]>([]);
-  const [activePhaseTab, setActivePhaseTab] = useState<PhaseTabKey>("plan");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // In branch stream: selectedConversationId = "branch:xxx", canonical = parentConversationId
   const canonicalConvId = activeBranchId && parentConversationId
     ? parentConversationId
     : selectedConversationId;
@@ -956,12 +952,9 @@ export function PlansPanel() {
       .catch(() => setPlans([]));
   };
 
-  // Initial load + reload on conversation switch
-  useEffect(() => {
-    loadPlans();
-  }, [canonicalConvId]);
+  useEffect(() => { loadPlans(); }, [canonicalConvId]);
 
-  // Reload plans when Plan tab becomes visible (IntersectionObserver)
+  // Reload when visible
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -973,76 +966,35 @@ export function PlansPanel() {
     return () => observer.disconnect();
   }, [canonicalConvId]);
 
-  // Auto-switch to tab containing newest plan when plans change
-  useEffect(() => {
-    if (plans.length === 0) return;
-    const newest = plans[0]; // plans are sorted by created_at DESC
-    const currentTab = PHASE_TABS.find((t) => t.key === activePhaseTab)!;
-    if (!planMatchesTab(newest, currentTab)) {
-      const targetTab = PHASE_TABS.find((t) => planMatchesTab(newest, t));
-      if (targetTab) setActivePhaseTab(targetTab.key);
-    }
-  }, [plans.length]);
-
   const handlePlanStatus = async (planId: string, status: PlanStatus) => {
     try {
       await planApi.updatePlanStatus(planId, status);
       setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, status } : p)));
-    } catch {
-      // silent
-    }
+    } catch { /* silent */ }
   };
 
   const handlePlanUpdated = (planId: string, update: Partial<Plan>) => {
     setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, ...update } : p)));
-    // Auto-switch to target phase tab
-    if (update.phase) {
-      const targetTab = PHASE_TABS.find((t) => t.phases.includes(update.phase!));
-      if (targetTab) setActivePhaseTab(targetTab.key);
-    }
+    if (update.phase && onPhaseChanged) onPhaseChanged(planId, update.phase);
   };
 
   if (!canonicalConvId) {
     return <p className="text-xs text-muted-foreground px-2">No conversation selected.</p>;
   }
 
-  const activeTab = PHASE_TABS.find((t) => t.key === activePhaseTab)!;
-  const filteredPlans = plans.filter((p) => planMatchesTab(p, activeTab));
+  // Filter by active stage
+  const stageCfg = activeStage ? STAGE_PHASE_MAP[activeStage] : null;
+  const filteredPlans = stageCfg
+    ? plans.filter((p) => stageCfg.phases.includes(p.phase) || (stageCfg.includeAbandoned && p.status === "abandoned"))
+    : plans;
+  const emptyMessage = stageCfg?.empty ?? "No plans yet.";
 
   return (
     <div ref={containerRef} className="space-y-2">
-      {/* Phase subtabs */}
-      <div className="flex items-center gap-0.5 border-b border-border/30 pb-1">
-        {PHASE_TABS.map((tab) => {
-          const count = plans.filter((p) => planMatchesTab(p, tab)).length;
-          const isActive = activePhaseTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActivePhaseTab(tab.key)}
-              className={cn(
-                "px-2 py-1 rounded-t text-[10px] font-medium transition-colors",
-                isActive
-                  ? "text-foreground bg-accent border-b-2 border-primary"
-                  : "text-muted-foreground/50 hover:text-muted-foreground"
-              )}
-            >
-              {tab.label}
-              {count > 0 && <span className="ml-1 text-[9px] opacity-50">({count})</span>}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Filtered plan cards */}
       {filteredPlans.length === 0 && (
         <div className="text-center py-4">
           <ClipboardList className="w-5 h-5 text-muted-foreground/40 mx-auto mb-2" />
-          <p className="text-xs text-muted-foreground">
-            {activePhaseTab === "plan"
-              ? "Chat 탭에서 Architect와 대화하여 Plan을 생성하세요."
-              : `${activeTab.label} 단계의 Plan이 없습니다.`}
-          </p>
+          <p className="text-xs text-muted-foreground">{emptyMessage}</p>
         </div>
       )}
 

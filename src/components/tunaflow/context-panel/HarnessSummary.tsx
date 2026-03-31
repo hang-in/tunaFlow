@@ -37,11 +37,17 @@ function deriveStages(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
+export type WorkflowStageId = "plan" | "approved" | "dev" | "review" | "decision";
+
 interface HarnessSummaryProps {
   conversationId: string;
+  /** Currently selected stage (tab) */
+  activeStage?: WorkflowStageId;
+  /** Stage click handler — used as tab navigation */
+  onStageClick?: (stageId: WorkflowStageId) => void;
 }
 
-export function HarnessSummary({ conversationId }: HarnessSummaryProps) {
+export function HarnessSummary({ conversationId, activeStage, onStageClick }: HarnessSummaryProps) {
   const { branches, artifacts } = useChatStore();
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
@@ -86,28 +92,36 @@ export function HarnessSummary({ conversationId }: HarnessSummaryProps) {
 
   return (
     <div className="mb-3 space-y-2">
-      {/* Stage chips */}
+      {/* Stage chips — clickable as tab navigation */}
       <div className="flex items-center gap-0.5">
-        {stages.map((stage, i) => (
-          <div key={stage.id} className="flex items-center">
-            {i > 0 && (
-              <div className={cn(
-                "w-3 h-px mx-0.5",
-                i <= currentIdx ? "bg-primary/30" : "bg-border/40"
-              )} />
-            )}
-            <span className={cn(
-              "text-[8px] font-medium px-1.5 py-0.5 rounded transition-colors",
-              stage.active
-                ? i === currentIdx
-                  ? "bg-primary/15 text-primary"
-                  : "bg-accent text-foreground/70"
-                : "bg-transparent text-muted-foreground/40"
-            )}>
-              {stage.label}
-            </span>
-          </div>
-        ))}
+        {stages.map((stage, i) => {
+          const isSelected = activeStage === stage.id;
+          return (
+            <div key={stage.id} className="flex items-center">
+              {i > 0 && (
+                <div className={cn(
+                  "w-3 h-px mx-0.5",
+                  i <= currentIdx ? "bg-primary/30" : "bg-border/40"
+                )} />
+              )}
+              <button
+                onClick={() => onStageClick?.(stage.id as WorkflowStageId)}
+                className={cn(
+                  "text-[8px] font-medium px-1.5 py-0.5 rounded transition-colors",
+                  isSelected
+                    ? "bg-primary/20 text-primary ring-1 ring-primary/30"
+                    : stage.active
+                      ? i === currentIdx
+                        ? "bg-primary/15 text-primary hover:bg-primary/25"
+                        : "bg-accent text-foreground/70 hover:bg-accent/80"
+                      : "bg-transparent text-muted-foreground/40 hover:text-muted-foreground/60"
+                )}
+              >
+                {stage.label}
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Compact summary card */}

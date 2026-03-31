@@ -6,7 +6,7 @@ import { MessageSquare, ClipboardList, FileSearch, TestTube, FileText, GitBranch
 
 import { ChatPanel } from "./ChatPanel";
 import { PlansPanel } from "./context-panel/PlansPanel";
-import { HarnessSummary } from "./context-panel/HarnessSummary";
+import { HarnessSummary, type WorkflowStageId } from "./context-panel/HarnessSummary";
 import { ReviewPanel } from "./context-panel/ReviewPanel";
 import { TestPanel } from "./context-panel/TestPanel";
 import { ArtifactsPanel } from "./context-panel/ArtifactsPanel";
@@ -22,8 +22,16 @@ const TABS: { id: CenterTab; label: string; icon: React.ReactNode }[] = [
   { id: "test", label: "Test", icon: <TestTube className="w-3.5 h-3.5" /> },
 ];
 
+/** Map PlanPhase → WorkflowStageId for auto-switching */
+const PHASE_TO_STAGE: Record<string, WorkflowStageId> = {
+  drafting: "plan", approval: "approved",
+  implementation: "dev", rework: "dev",
+  review: "review", done: "decision",
+};
+
 export function CenterPanel() {
   const [activeTab, setActiveTab] = useState<CenterTab>("chat");
+  const [activeStage, setActiveStage] = useState<WorkflowStageId>("plan");
   const artifacts = useChatStore((s) => s.artifacts);
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const conversations = useChatStore((s) => s.conversations);
@@ -242,9 +250,20 @@ export function CenterPanel() {
         {activeTab === "plan" && (
           <div className="flex-1 overflow-y-auto p-5">
             <div className="max-w-4xl mx-auto">
-              {canonicalConvId && <HarnessSummary conversationId={canonicalConvId} />}
-              <h3 className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-3">Plans</h3>
-              <PlansPanel />
+              {canonicalConvId && (
+                <HarnessSummary
+                  conversationId={canonicalConvId}
+                  activeStage={activeStage}
+                  onStageClick={setActiveStage}
+                />
+              )}
+              <PlansPanel
+                activeStage={activeStage}
+                onPhaseChanged={(_id, phase) => {
+                  const target = PHASE_TO_STAGE[phase];
+                  if (target) setActiveStage(target);
+                }}
+              />
             </div>
           </div>
         )}
