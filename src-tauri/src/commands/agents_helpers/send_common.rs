@@ -63,6 +63,7 @@ pub fn build_lite_enriched_prompt(
 /// All data needed to assemble a ContextPack, pre-loaded from DB.
 /// Separating data loading (DB-dependent) from prompt assembly (pure function)
 /// enables unit testing of assembly logic and tighter DB lock scopes.
+#[allow(dead_code)]
 pub struct ContextData {
     pub conversation_id: String,
     pub project_path: Option<String>,
@@ -150,7 +151,6 @@ pub fn load_context_data(
         retrieve_relevant_chunks_with_overlap,
     };
     use crate::commands::conversation_memory::load_compressed_memory;
-    use crate::guardrail;
 
     let is_branch = conversation_id.starts_with("branch:");
 
