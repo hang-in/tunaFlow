@@ -105,18 +105,14 @@ export async function approveAndStartImplementation(
   // Build developer prompt — caller will send via sendThreadMessage
   const planContext = await buildPlanContext(plan);
   const prompt = [
-    `당신은 Developer입니다. 아래 Plan을 구현해야 합니다.`,
+    `당신은 Developer입니다. 아래 Plan의 모든 subtask를 **순서대로** 구현하세요.`,
     "",
     planContext,
     "",
-    `코드를 작성하기 전에 먼저 실행 계획을 보고하세요:`,
-    `1. 수정/생성할 파일 목록`,
-    `2. 각 파일의 변경 내용 요약`,
-    `3. 의존성 변경 여부`,
-    `4. 예상 위험/주의사항`,
-    "",
-    `\`<!-- tunaflow:impl-plan -->\` 형식으로 보고하세요.`,
-    `아직 코드를 작성하지 마세요.`,
+    `## 작업 규칙`,
+    `1. subtask 순서대로 진행하세요.`,
+    `2. 각 subtask의 상세 설계(details)를 따르세요.`,
+    `3. 전체 구현 완료 후 \`<!-- tunaflow:impl-complete -->\`를 포함하세요.`,
   ].join("\n");
 
   return { branch, shadowConvId, prompt };
