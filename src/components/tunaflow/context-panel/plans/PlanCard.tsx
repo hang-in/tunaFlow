@@ -2,12 +2,13 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { ChevronDown, ChevronRight, GitBranch, Check } from "lucide-react";
+import { ChevronDown, ChevronRight, GitBranch, Check, FileText } from "lucide-react";
 import type { Plan, PlanEvent, PlanPhase, PlanSubtask, PlanStatus, SubtaskStatus, Message } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { scanMessagesForMarkers, startReviewRT } from "@/lib/workflowOrchestration";
 import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 import { PLAN_STATUS_CFG, PLAN_PHASE_CFG, OWNER_OPTIONS } from "./constants";
+import { PlanDocumentModal } from "../PlanDocumentModal";
 import { SubtaskRow } from "./SubtaskRow";
 import { EventTimeline } from "./EventTimeline";
 import { DraftingActions } from "./DraftingActions";
@@ -34,6 +35,7 @@ export function PlanCard({
   const [loading, setLoading] = useState(false);
   const [reviewVerdict, setReviewVerdict] = useState<ParsedReviewVerdict | null>(null);
   const [implComplete, setImplComplete] = useState(false);
+  const [showDoc, setShowDoc] = useState(false);
   const statusCfg = PLAN_STATUS_CFG[plan.status];
   const phaseCfg = PLAN_PHASE_CFG[plan.phase] ?? PLAN_PHASE_CFG.drafting;
 
@@ -136,6 +138,9 @@ export function PlanCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-xs font-medium text-foreground leading-snug">{plan.title}</p>
+            <button onClick={(e) => { e.stopPropagation(); setShowDoc(true); }} title="문서 보기" className="shrink-0 text-muted-foreground/30 hover:text-primary/60 transition-colors">
+              <FileText className="w-3 h-3" />
+            </button>
             {plan.phase !== "drafting" && (
               <span className={cn("text-[8px] font-semibold px-1.5 py-0 rounded-full border whitespace-nowrap", phaseCfg.cls)}>
                 {phaseCfg.label}
@@ -311,6 +316,7 @@ export function PlanCard({
           )}
         </div>
       )}
+      {showDoc && <PlanDocumentModal plan={plan} onClose={() => setShowDoc(false)} />}
     </div>
   );
 }

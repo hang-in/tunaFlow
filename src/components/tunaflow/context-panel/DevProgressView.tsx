@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList } from "lucide-react";
+import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileText } from "lucide-react";
 import type { Plan, PlanPhase, PlanSubtask, Message } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { scanCompletedSubtasks, hasImplComplete } from "@/lib/planProposalParser";
 import { startReviewRT } from "@/lib/workflowOrchestration";
+import { PlanDocumentModal } from "./PlanDocumentModal";
 
 interface DevProgressViewProps {
   plan: Plan;
@@ -20,6 +21,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
   const [implComplete, setImplComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [showDoc, setShowDoc] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +110,9 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         <div className="flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-primary/60" />
           <span className="text-xs font-medium text-foreground flex-1">{plan.title}</span>
+          <button onClick={() => setShowDoc(true)} className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-primary/60 transition-colors">
+            <FileText className="w-3 h-3" />문서
+          </button>
           {plan.implementationBranchId && (
             <button onClick={handleOpenBranch} className="flex items-center gap-1 text-[9px] text-primary/60 hover:text-primary transition-colors">
               <GitBranch className="w-3 h-3" />Branch 열기
@@ -183,6 +188,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           </button>
         )}
       </div>
+      {showDoc && <PlanDocumentModal plan={plan} onClose={() => setShowDoc(false)} />}
     </div>
   );
 }
