@@ -71,47 +71,9 @@ export function SubtaskRow({
         ) : (
           <p className="text-[10px] text-amber-600/40 italic mt-0.5">상세 설계 없음</p>
         )}
-        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-          {/* Owner selector */}
-          <select
-            value={owner || ""}
-            onChange={(e) => onOwnerChange(subtask.id, e.target.value || null)}
-            className="text-[9px] bg-transparent border border-border/30 rounded px-1 py-0 text-muted-foreground/60 outline-none"
-            title="Assign owner"
-          >
-            <option value="">unassigned</option>
-            {profiles.map((p) => <option key={p.id} value={p.label}>{p.label}</option>)}
-          </select>
-          {subtask.lastUpdatedBy && (
-            <span className="text-[8px] text-muted-foreground/40">by: {subtask.lastUpdatedBy}</span>
-          )}
-          {/* Forward actions — owner shortcut + manual target */}
-          {canForward && onForwardSubtask && (
-            <>
-              {owner && (
-                <button
-                  onClick={() => onForwardSubtask(owner, buildPayload())}
-                  className="inline-flex items-center gap-0.5 text-[8px] font-medium text-primary/70 hover:text-primary hover:underline transition-colors"
-                  title={`Forward task to ${owner}`}
-                >
-                  <Forward className="w-2.5 h-2.5" />
-                  → {owner}
-                </button>
-              )}
-              {/* Manual forward to any engine */}
-              {profiles.filter((p) => p.label !== owner).slice(0, 2).map((p) => (
-                <button key={p.id}
-                  onClick={() => onForwardSubtask(p.engine, buildPayload())}
-                  className="text-[7px] text-muted-foreground/40 hover:text-primary/60 hover:underline transition-colors"
-                  title={`Forward task to ${p.label}`}
-                >
-                  → {p.label}
-                </button>
-              ))}
-            </>
-          )}
-          {/* Linked branch */}
-          {linkedBranch && (
+        {/* Linked branch — if any */}
+        {linkedBranch && (
+          <div className="flex items-center gap-1.5 mt-1">
             <button
               onClick={() => onOpenThread?.(linkedBranch.id)}
               className="inline-flex items-center gap-0.5 text-[8px] font-medium text-primary/60 bg-primary/6 hover:bg-primary/12 px-1 py-0 rounded transition-colors"
@@ -121,8 +83,8 @@ export function SubtaskRow({
               {linkedBranch.customLabel ?? linkedBranch.label}
               <span className="text-muted-foreground/40 ml-0.5">{linkedBranch.status}</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -59,6 +59,15 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
         }
       }
 
+      // Check if a plan with the same title already exists (already promoted)
+      const alreadyPromoted = activePlans.some((p) =>
+        p.title.toLowerCase() === proposal.title.toLowerCase()
+      );
+      if (alreadyPromoted) {
+        setStatus("promoted");
+        return;
+      }
+
       // No revision request found — this is a fresh proposal
       setStatus("idle");
     }).catch(() => setStatus("idle"));

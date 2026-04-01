@@ -126,6 +126,30 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
     setBusy(false);
   };
 
+  const handleDiscuss = async (subtaskIdx: number) => {
+    if (!isActionable) return;
+    setBusy(true);
+    try {
+      const st = subtasks[subtaskIdx];
+      const branchLabel = `검토: ${st.title.slice(0, 30)}`;
+      const input = { conversationId: plan.conversationId, label: branchLabel, mode: "chat" };
+      const branch = await invoke<Branch>("create_branch", { input });
+      const shadowConvId = await invoke<string>("open_branch_stream", { branchId: branch.id });
+      saveConversationEngine(shadowConvId, { profileId: null, engine: mainEngine });
+      await loadBranches(plan.conversationId);
+      await openThread(branch.id);
+
+      const prompt = [
+        `Subtask ${subtaskIdx + 1} "${st.title}"에 대해 논의합니다.`,
+        st.details ? `\n### 현재 작업 지시서\n${st.details}` : "\n작업 지시서가 아직 없습니다.",
+        `\n이 subtask에 대해 질문하거나 검토 의견을 나눠주세요.`,
+      ].join("\n");
+
+      await sendThreadMessage(prompt, mainEngine);
+    } catch { /* silent */ }
+    setBusy(false);
+  };
+
   const handleDetailRequest = async (subtaskIdx: number) => {
     if (!isActionable) return;
     setBusy(true);
@@ -193,6 +217,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
             index={i}
             onRevisionRequest={(opinion) => handleRevisionRequest(i, opinion)}
             onDetailRequest={() => handleDetailRequest(i)}
+            onDiscuss={() => handleDiscuss(i)}
             busy={busy}
             actionable={isActionable}
           />
@@ -267,6 +292,7 @@ function SubtaskReviewCard({
   index,
   onRevisionRequest,
   onDetailRequest,
+  onDiscuss,
   busy,
   actionable,
 }: {
@@ -274,6 +300,7 @@ function SubtaskReviewCard({
   index: number;
   onRevisionRequest: (opinion: string) => void;
   onDetailRequest: () => void;
+  onDiscuss: () => void;
   busy: boolean;
   actionable: boolean;
 }) {
@@ -352,13 +379,19 @@ function SubtaskReviewCard({
             <p className="text-[9px] text-muted-foreground/40">Owner: {subtask.ownerAgent}</p>
           )}
 
-          {/* Opinion-based revision request */}
-          {actionable && hasDetails && !opinionMode && (
+          {/* Actions: discuss + revision request */}
+          {actionable && !opinionMode && (
             <div className="flex items-center gap-2 pt-1">
-              <button onClick={(e) => { e.stopPropagation(); setOpinionMode(true); }} disabled={busy}
-                className="flex items-center gap-0.5 text-[9px] text-amber-600/60 hover:text-amber-600 disabled:opacity-40 transition-colors">
-                <RotateCcw className="w-2.5 h-2.5" />수정 요청
+              <button onClick={(e) => { e.stopPropagation(); onDiscuss(); }} disabled={busy}
+                className="flex items-center gap-0.5 text-[9px] text-primary/60 hover:text-primary disabled:opacity-40 transition-colors">
+                <ChevronRight className="w-2.5 h-2.5" />대화하기
               </button>
+              {hasDetails && (
+                <button onClick={(e) => { e.stopPropagation(); setOpinionMode(true); }} disabled={busy}
+                  className="flex items-center gap-0.5 text-[9px] text-amber-600/60 hover:text-amber-600 disabled:opacity-40 transition-colors">
+                  <RotateCcw className="w-2.5 h-2.5" />수정 요청
+                </button>
+              )}
             </div>
           )}
 
