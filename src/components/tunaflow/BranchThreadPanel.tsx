@@ -261,11 +261,8 @@ export function BranchThreadPanel() {
               onClick={async () => {
                 if (!threadBranchId) return;
                 await invoke("archive_branch", { id: threadBranchId });
-                if (linkedPlan) {
-                  // minor++ via replace_plan_subtasks is overkill — just bump directly
-                  await invoke("update_plan_phase", { id: linkedPlan.id, phase: linkedPlan.phase });
-                }
-                await loadBranches(linkedPlan?.conversationId ?? "");
+                const convId = selectedConversationId ?? "";
+                if (convId) await loadBranches(convId);
                 closeThread();
               }}
               className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-status-approved/70 hover:bg-status-approved/8 transition-colors"
