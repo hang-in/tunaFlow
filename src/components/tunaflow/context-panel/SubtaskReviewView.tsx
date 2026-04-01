@@ -6,6 +6,9 @@ import { Check, RotateCcw, ClipboardList, FileText, ArrowLeft, ChevronDown, Chev
 import type { Plan, PlanPhase, PlanSubtask, Branch } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { syncPlanDocument } from "@/lib/workflowOrchestration";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { markdownComponents } from "../chat/MarkdownComponents";
 import { PlanDocumentModal } from "./PlanDocumentModal";
 import { SUBTASK_STATUS_CFG } from "./plans/constants";
 
@@ -19,6 +22,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
   const { sendWithEngine, selectedConversationId, getConversationEngine,
     createBranch, openThread, sendThreadMessage, saveConversationEngine, loadBranches } = useChatStore();
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
+  const [taskFiles, setTaskFiles] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
@@ -29,6 +33,26 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       .then(setSubtasks)
       .catch(() => setSubtasks([]))
       .finally(() => setLoading(false));
+
+    // Load task files from filesystem
+    (async () => {
+      try {
+        const projectKey = useChatStore.getState().selectedProjectKey;
+        if (!projectKey) return;
+        const project = await invoke("get_project", { key: projectKey }) as { path?: string };
+        if (!project?.path) return;
+        const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+        const files: Record<number, string> = {};
+        for (let i = 1; i <= 50; i++) {
+          const taskPath = `${project.path}/docs/plans/${slug}-task-${String(i).padStart(2, "0")}.md`;
+          try {
+            const content = await invoke<{ content: string }>("read_text_file", { filePath: taskPath, projectPath: project.path });
+            files[i] = content.content;
+          } catch { break; }
+        }
+        setTaskFiles(files);
+      } catch { /* silent */ }
+    })();
   }, [plan.id, plan.revision]);
 
   const isActionable = plan.phase === "subtask_review";
@@ -215,6 +239,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
             key={st.id}
             subtask={st}
             index={i}
+            taskFileContent={taskFiles[i + 1]}
             onRevisionRequest={(opinion) => handleRevisionRequest(i, opinion)}
             onDetailRequest={() => handleDetailRequest(i)}
             onDiscuss={() => handleDiscuss(i)}
@@ -290,6 +315,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
 function SubtaskReviewCard({
   subtask,
   index,
+  taskFileContent,
   onRevisionRequest,
   onDetailRequest,
   onDiscuss,
@@ -298,6 +324,7 @@ function SubtaskReviewCard({
 }: {
   subtask: PlanSubtask;
   index: number;
+  taskFileContent?: string;
   onRevisionRequest: (opinion: string) => void;
   onDetailRequest: () => void;
   onDiscuss: () => void;
@@ -351,12 +378,25 @@ function SubtaskReviewCard({
       {/* Expanded: full work instruction + actions */}
       {expanded && (
         <div className="px-2.5 pb-2.5 ml-9 space-y-2 border-t border-border/20 pt-2">
-          {/* Work instruction */}
-          {hasDetails ? (
+          {/* Work instruction — file content > DB details > empty */}
+          {taskFileContent ? (
             <div>
               <div className="flex items-center gap-1 mb-1">
                 <FileText className="w-3 h-3 text-primary/50" />
                 <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">작업 지시서</span>
+                <span className="text-[8px] text-status-approved/50">파일</span>
+              </div>
+              <div className="rounded bg-card/80 border border-border/30 px-3 py-2 prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+                  {taskFileContent}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ) : hasDetails ? (
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <FileText className="w-3 h-3 text-primary/50" />
+                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">작업 지시서 (요약)</span>
               </div>
               <div className="rounded bg-card/80 border border-border/30 px-3 py-2">
                 <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">{subtask.details}</p>

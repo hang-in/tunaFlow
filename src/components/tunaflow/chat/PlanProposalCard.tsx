@@ -123,7 +123,41 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
       });
       // Plan starts at drafting — user must go through Plan → Subtask → Approved
       await planApi.createPlanEvent(plan.id, "promoted", "user", "Promoted from chat");
-      syncPlanDocument(plan.id);
+
+      // Auto-request Architect to write plan documents
+      const slug = proposal.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+      const subtaskList = proposal.subtasks.map((s, i) =>
+        `${i + 1}. ${s.title}${s.details ? ` — ${s.details}` : ""}`
+      ).join("\n");
+
+      const docPrompt = [
+        `Plan "${proposal.title}"이 승격되었습니다. 아래 문서를 작성하세요.`,
+        "",
+        `## 작성할 문서`,
+        `1. \`docs/plans/${slug}.md\` — 전체 계획서 (description, expected outcome, 기술 스택, 핵심 결정, subtask 요약, 버전)`,
+        `2. 각 subtask별 작업 지시서:`,
+        ...proposal.subtasks.map((s, i) =>
+          `   - \`docs/plans/${slug}-task-${String(i + 1).padStart(2, "0")}.md\` — ${s.title}`
+        ),
+        "",
+        `## 작업 지시서 포함 내용`,
+        `- 대상 파일 및 경로`,
+        `- 구현 접근법 (단계별)`,
+        `- 의존성 (패키지, 다른 subtask)`,
+        `- 리스크 및 주의사항`,
+        `- 완료 기준`,
+        "",
+        `### Subtask 목록`,
+        subtaskList,
+        "",
+        `모든 문서 작성이 완료되면 알려주세요.`,
+      ].join("\n");
+
+      await sendWithEngine(
+        useChatStore.getState().getConversationEngine(conversationId)?.engine ?? "claude",
+        docPrompt,
+      );
+      await planApi.createPlanEvent(plan.id, "detail_design_requested", "system", "Auto-requested on promotion");
       setStatus("promoted");
     } catch {
       setStatus("idle");
