@@ -140,7 +140,10 @@ function parseNumberedList(text: string): { title: string; details?: string }[] 
   const re = /^\d+\.\s+(.+?)(?:\s*[—\-–]\s+(.+))?$/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    items.push({ title: m[1].trim(), details: m[2]?.trim() });
+    // Strip markdown bold markers from title
+    const title = m[1].trim().replace(/\*\*/g, "");
+    const details = m[2]?.trim();
+    items.push({ title, details });
   }
   return items;
 }

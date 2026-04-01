@@ -63,6 +63,22 @@ describe("planProposalParser", () => {
     expect(p.nonGoals).toHaveLength(1);
   });
 
+  it("parses bold subtask titles", () => {
+    const content = `<!-- tunaflow:plan-proposal -->
+## Plan Proposal: Test
+
+### Subtasks
+1. **Bold Title** — Some details
+2. **Another Bold** — More details
+<!-- /tunaflow:plan-proposal -->`;
+    const segments = splitPlanProposals(content);
+    const seg = segments.find((s) => s.type === "plan-proposal");
+    if (seg?.type !== "plan-proposal") throw new Error("expected plan-proposal");
+    expect(seg.proposal.subtasks).toHaveLength(2);
+    expect(seg.proposal.subtasks[0].title).toBe("Bold Title");
+    expect(seg.proposal.subtasks[0].details).toBe("Some details");
+  });
+
   it("returns single segment for plain content", () => {
     const segments = splitPlanProposals("just markdown");
     expect(segments).toHaveLength(1);
