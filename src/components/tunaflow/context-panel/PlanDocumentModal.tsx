@@ -41,7 +41,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
           <ClipboardList className="w-4 h-4 text-primary/60" />
           <span className="text-sm font-medium text-foreground flex-1">{plan.title}</span>
           {plan.revision > 0 && (
-            <span className="text-[9px] font-mono text-muted-foreground/50 px-1.5 rounded bg-accent/50">rev.{plan.revision}</span>
+            <span className="text-[9px] font-mono text-muted-foreground/50 px-1.5 rounded bg-accent/50">v{plan.versionMajor}.{plan.versionMinor}</span>
           )}
           <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full border", phaseCfg.cls)}>
             {phaseCfg.label}

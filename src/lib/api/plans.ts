@@ -82,6 +82,10 @@ export async function getPlan(id: string): Promise<Plan> {
   return invoke<Plan>("get_plan", { id });
 }
 
+export async function bumpPlanMajorVersion(id: string): Promise<void> {
+  return invoke("bump_plan_major_version", { id });
+}
+
 /** Generate/update plan document markdown in project directory. Returns file path. */
 export async function generatePlanDocument(planId: string, projectPath: string): Promise<string> {
   return invoke<string>("generate_plan_document", { planId, projectPath });

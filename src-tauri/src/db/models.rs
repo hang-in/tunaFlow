@@ -117,6 +117,10 @@ pub struct Plan {
     pub review_branch_id: Option<String>,
     /// Revision counter — incremented on each subtask merge/replacement
     pub revision: i64,
+    /// Semantic version major (v{major}.{minor})
+    pub version_major: i64,
+    /// Semantic version minor
+    pub version_minor: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }

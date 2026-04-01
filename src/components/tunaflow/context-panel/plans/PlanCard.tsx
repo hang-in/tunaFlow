@@ -148,9 +148,9 @@ export function PlanCard({
                 {phaseCfg.label}
               </span>
             )}
-            {plan.revision > 0 && (
-              <span className="text-[8px] font-mono text-muted-foreground/50 px-1 py-0 rounded bg-accent/50" title={`Revision ${plan.revision}`}>
-                rev.{plan.revision}
+            {(plan.versionMajor > 1 || plan.versionMinor > 0) && (
+              <span className="text-[8px] font-mono text-muted-foreground/50 px-1 py-0 rounded bg-accent/50" title={`Version ${plan.versionMajor}.${plan.versionMinor}`}>
+                v{plan.versionMajor}.{plan.versionMinor}
               </span>
             )}
             {plan.branchId && (

@@ -82,6 +82,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 19 {
         apply_v19(conn)?;
     }
+    if current < 20 {
+        apply_v20(conn)?;
+    }
     Ok(())
 }
 
@@ -383,6 +386,16 @@ fn apply_v18(conn: &Connection) -> Result<(), AppError> {
     ")?;
 
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (18, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// Semantic versioning for plans: revision → version_major + version_minor
+fn apply_v20(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "plans", "version_major", "INTEGER NOT NULL DEFAULT 1")?;
+    add_column_if_missing(conn, "plans", "version_minor", "INTEGER NOT NULL DEFAULT 0")?;
+    // Migrate existing revision to version_major (revision 0 → v1.0, revision N → v1.N)
+    conn.execute("UPDATE plans SET version_minor = revision WHERE revision > 0", [])?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (20, ?1)", [now_epoch()])?;
     Ok(())
 }
 

@@ -66,8 +66,10 @@ fn map_plan(row: &rusqlite::Row) -> rusqlite::Result<Plan> {
         implementation_branch_id: row.get(11)?,
         review_branch_id: row.get(12)?,
         revision: row.get(13)?,
-        created_at: row.get(14)?,
-        updated_at: row.get(15)?,
+        version_major: row.get(14)?,
+        version_minor: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
     })
 }
 
@@ -88,7 +90,7 @@ fn map_subtask(row: &rusqlite::Row) -> rusqlite::Result<PlanSubtask> {
 }
 
 const PLAN_COLS: &str =
-    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, revision, created_at, updated_at";
+    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, revision, version_major, version_minor, created_at, updated_at";
 
 const SUBTASK_COLS: &str =
     "id, plan_id, idx, title, details, status, outcome, owner_agent, last_updated_by, created_at, updated_at";
@@ -147,6 +149,8 @@ pub fn create_plan(
         implementation_branch_id: None,
         review_branch_id: None,
         revision: 0,
+        version_major: 1,
+        version_minor: 0,
         created_at: now,
         updated_at: now,
     })
@@ -254,7 +258,7 @@ pub fn replace_plan_subtasks(
 
     conn.execute("DELETE FROM plan_subtasks WHERE plan_id = ?1", [&plan_id])?;
     conn.execute(
-        "UPDATE plans SET revision = revision + 1, updated_at = ?1 WHERE id = ?2",
+        "UPDATE plans SET revision = revision + 1, version_minor = version_minor + 1, updated_at = ?1 WHERE id = ?2",
         params![now, plan_id],
     )?;
 
@@ -473,6 +477,21 @@ pub fn generate_plan_document(
         .map_err(|e| AppError::Agent(format!("Failed to write plan doc: {}", e)))?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Bump version_major and reset version_minor (for full plan updates from Chat).
+#[tauri::command]
+pub fn bump_plan_major_version(
+    id: String,
+    state: State<DbState>,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let now = now_epoch_ms();
+    conn.execute(
+        "UPDATE plans SET version_major = version_major + 1, version_minor = 0, revision = revision + 1, updated_at = ?1 WHERE id = ?2",
+        params![now, id],
+    )?;
+    Ok(())
 }
 
 /// Public accessor for slugify — used by ContextPack plan document loader

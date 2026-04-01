@@ -130,8 +130,8 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
         <div className="flex items-center gap-2 mb-1.5">
           <ClipboardList className="w-4 h-4 text-primary/60" />
           <span className="text-xs font-medium text-foreground flex-1">{plan.title}</span>
-          {plan.revision > 0 && (
-            <span className="text-[8px] font-mono text-muted-foreground/50 px-1 rounded bg-accent/50">rev.{plan.revision}</span>
+          {(plan.versionMajor > 1 || plan.versionMinor > 0) && (
+            <span className="text-[8px] font-mono text-muted-foreground/50 px-1 rounded bg-accent/50">v{plan.versionMajor}.{plan.versionMinor}</span>
           )}
           <button onClick={() => setShowDoc(true)} className="flex items-center gap-1 text-[9px] text-primary/60 hover:text-primary transition-colors">
             <FileText className="w-3 h-3" />문서 보기
