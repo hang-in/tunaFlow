@@ -8,6 +8,7 @@ import { SUBTASK_STATUS_CFG } from "./constants";
 export function SubtaskRow({
   subtask,
   planTitle,
+  fileTitle,
   onStatusChange,
   onOwnerChange,
   onForwardSubtask,
@@ -16,6 +17,7 @@ export function SubtaskRow({
 }: {
   subtask: PlanSubtask;
   planTitle: string;
+  fileTitle?: string;
   onStatusChange: (id: string, status: SubtaskStatus) => void;
   onOwnerChange: (id: string, owner: string | null) => void;
   onForwardSubtask?: (engine: string, payload: string) => void;
@@ -56,7 +58,7 @@ export function SubtaskRow({
       </button>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <p className="text-[11px] text-foreground leading-snug flex-1">{subtask.title}</p>
+          <p className="text-[11px] text-foreground leading-snug flex-1">{fileTitle ?? subtask.title}</p>
           {owner ? (
             <span className="inline-flex items-center gap-1 text-[8px] font-medium px-1.5 py-0.5 rounded bg-accent shrink-0" title={`Owner: ${owner}`}>
               <AgentAvatar engine={owner} size="sm" className="w-3 h-3" />

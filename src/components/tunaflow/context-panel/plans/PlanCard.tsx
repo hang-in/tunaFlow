@@ -38,6 +38,7 @@ export function PlanCard({
   const [reviewVerdict, setReviewVerdict] = useState<ParsedReviewVerdict | null>(null);
   const [implComplete, setImplComplete] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
+  const [taskFileTitles, setTaskFileTitles] = useState<Record<number, string>>({});
   const statusCfg = PLAN_STATUS_CFG[plan.status];
   const phaseCfg = PLAN_PHASE_CFG[plan.phase] ?? PLAN_PHASE_CFG.drafting;
 
@@ -84,6 +85,26 @@ export function PlanCard({
             if (markers.reviewVerdict) setReviewVerdict(markers.reviewVerdict);
           } catch { /* branch may not exist yet */ }
         }
+        // Load task file titles
+        try {
+          const projectKey = useChatStore.getState().selectedProjectKey;
+          if (projectKey) {
+            const project = await invoke("get_project", { key: projectKey }) as { path?: string };
+            if (project?.path) {
+              const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+              const titles: Record<number, string> = {};
+              for (let i = 1; i <= (tasks?.length ?? 0); i++) {
+                const taskPath = `${project.path}/docs/plans/${slug}-task-${String(i).padStart(2, "0")}.md`;
+                try {
+                  const content = await invoke<{ content: string }>("read_text_file", { filePath: taskPath, projectPath: project.path });
+                  const m = content.content.match(/^#\s+(.+)$/m);
+                  if (m) titles[i] = m[1].trim();
+                } catch { /* file doesn't exist */ }
+              }
+              setTaskFileTitles(titles);
+            }
+          }
+        } catch { /* silent */ }
       } catch {
         tasks = [];
         setSubtasks([]);
@@ -191,13 +212,14 @@ export function PlanCard({
             {!loading && subtasks !== null && subtasks.length === 0 && (
               <p className="text-[10px] text-muted-foreground">No subtasks.</p>
             )}
-            {!loading && subtasks && subtasks.map((st) => {
+            {!loading && subtasks && subtasks.map((st, idx) => {
               const linked = branches.find((b) => b.subtaskId === st.id);
               return (
                 <SubtaskRow
                   key={st.id}
                   subtask={st}
                   planTitle={plan.title}
+                  fileTitle={taskFileTitles[idx + 1]}
                   onStatusChange={handleSubtaskStatus}
                   onOwnerChange={handleOwnerChange}
                   onForwardSubtask={(engine, payload) => sendFollowup(engine, "plan", payload)}
