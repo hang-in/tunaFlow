@@ -73,10 +73,25 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
     set({ selectedProjectKey: key, selectedConversationId: null, messages: [], branches: [], rawqStatus: null, projectLoading: "Loading project..." });
     import("@/lib/appStore").then(({ setSetting }) => setSetting("lastProjectKey", key)).catch(() => {});
     try {
-      const conversations = await invoke<import("./types").Conversation[]>("list_conversations", {
+      let conversations = await invoke<import("./types").Conversation[]>("list_conversations", {
         projectKey: key,
       });
+
+      // Auto-create Main conversation if none exist
+      if (conversations.length === 0) {
+        const main = await invoke<import("./types").Conversation>("create_conversation", {
+          input: { projectKey: key, label: "Main", type: "main", mode: "chat", source: "tunadish" },
+        });
+        conversations = [main];
+      }
+
       set({ conversations, error: null, projectLoading: null });
+
+      // Auto-select first main conversation
+      const mainConv = conversations.find((c) => c.type === "main") ?? conversations[0];
+      if (mainConv) {
+        await get().selectConversation(mainConv.id);
+      }
     } catch (e) {
       set({ error: String(e), projectLoading: null });
       return;
