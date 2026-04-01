@@ -76,33 +76,34 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
     setBusy(false);
   };
 
-  const handleFullRevision = async () => {
+  const handleSyncToMainPlan = async () => {
     if (!isActionable) return;
     setBusy(true);
     try {
-      await planApi.updatePlanPhase(plan.id, "drafting");
-      await planApi.createPlanEvent(plan.id, "plan_full_revision_requested", "user");
-      onPlanUpdate(plan.id, { phase: "drafting" as PlanPhase });
+      const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
 
-      // Send context to main chat Architect
-      const list = subtasks.map((s, i) =>
-        `${i + 1}. ${s.title}${s.details ? ` — ${s.details}` : ""}`
-      ).join("\n");
+      // Create a branch for plan document sync
+      const branchLabel = `Plan 문서 반영: ${plan.title.slice(0, 20)}`;
+      const input = { conversationId: plan.conversationId, label: branchLabel, mode: "chat" };
+      const branch = await invoke<Branch>("create_branch", { input });
+      const shadowConvId = await invoke<string>("open_branch_stream", { branchId: branch.id });
+      saveConversationEngine(shadowConvId, { profileId: null, engine: mainEngine });
+      await loadBranches(plan.conversationId);
+      await openThread(branch.id);
+
       const prompt = [
-        `[전체 Plan 수정 요청] "${plan.title}" v${plan.versionMajor}.${plan.versionMinor}`,
+        `[Plan 문서 반영] "${plan.title}"`,
         "",
-        `Subtask 검토 결과 전체 Plan의 구조적 수정이 필요합니다.`,
-        `기존 Plan을 검토하고 변경이 필요한 부분을 업데이트하세요.`,
+        `Subtask 검토에서 수정된 작업 지시서 파일들의 내용을 메인 Plan 문서에 반영하세요.`,
+        `메인 문서: \`docs/plans/${slug}.md\``,
+        `작업 지시서: \`docs/plans/${slug}-task-*.md\``,
         "",
-        `### 현재 Subtasks`,
-        list,
-        "",
-        `\`<!-- tunaflow:plan-proposal -->\` 형식으로 수정된 전체 Plan을 제안하세요.`,
-        `**모든 subtask를 포함하세요. 누락된 subtask는 삭제됩니다.**`,
+        `각 task 파일을 읽고, 메인 문서의 subtask 요약 섹션을 업데이트하세요.`,
+        `완료되면 변경 내용을 요약해주세요.`,
       ].join("\n");
 
-      await sendWithEngine(mainEngine, prompt);
-      onSwitchToChat?.();
+      await sendThreadMessage(prompt, mainEngine);
+      await planApi.createPlanEvent(plan.id, "plan_sync_requested", "user");
     } catch { /* silent */ }
     setBusy(false);
   };
@@ -255,9 +256,9 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
             className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
             <Check className="w-3.5 h-3.5" />승인 → Approved
           </button>
-          <button onClick={handleFullRevision} disabled={busy}
+          <button onClick={handleSyncToMainPlan} disabled={busy}
             className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
-            <ArrowLeft className="w-3.5 h-3.5" />전체 수정 → Chat
+            <FileText className="w-3.5 h-3.5" />Plan 문서 반영
           </button>
           {/* Debug: 전체 작업지시서 일괄 요청 — details 없는 subtask가 있을 때만 */}
           {subtasks.some((s) => !s.details?.trim()) && (
