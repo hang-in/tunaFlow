@@ -112,9 +112,6 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
     setBusy(true);
     try {
       const st = subtasks[subtaskIdx];
-      const list = subtasks.map((s, i) =>
-        `${i + 1}. ${s.title}${s.details ? ` — ${s.details}` : ""}`
-      ).join("\n");
 
       // Create a branch for this subtask revision discussion
       const branchLabel = `Subtask ${subtaskIdx + 1}: ${st.title.slice(0, 30)}`;
@@ -128,19 +125,17 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
 
-      // Send revision prompt in the branch
-      const planContext = `## Plan: ${plan.title}\n${plan.description ?? ""}\n\n### Subtasks\n${list}`;
+      // Send lightweight revision prompt — agent reads the file directly
+      const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+      const taskFile = `docs/plans/${slug}-task-${String(subtaskIdx + 1).padStart(2, "0")}.md`;
       const prompt = [
         `[Subtask ${subtaskIdx + 1} 수정 요청] "${st.title}"`,
         "",
         `### 검토 의견`,
         opinion,
         "",
-        planContext,
-        "",
-        `위 검토 의견을 반영하여 Subtask ${subtaskIdx + 1}의 작업 지시서를 수정하세요.`,
-        `docs/plans/ 에 해당 subtask의 task 파일을 직접 수정하세요.`,
-        `수정 완료 후 변경 내용을 요약해주세요.`,
+        `작업 지시서 파일: \`${taskFile}\``,
+        `위 검토 의견을 반영하여 파일을 직접 수정하고 변경 내용을 요약해주세요.`,
       ].join("\n");
 
       await sendThreadMessage(prompt, mainEngine);
@@ -163,9 +158,11 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
 
+      const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+      const taskFile = `docs/plans/${slug}-task-${String(subtaskIdx + 1).padStart(2, "0")}.md`;
       const prompt = [
         `Subtask ${subtaskIdx + 1} "${st.title}"에 대해 논의합니다.`,
-        st.details ? `\n### 현재 작업 지시서\n${st.details}` : "\n작업 지시서가 아직 없습니다.",
+        `작업 지시서 파일: \`${taskFile}\``,
         `\n이 subtask에 대해 질문하거나 검토 의견을 나눠주세요.`,
       ].join("\n");
 
@@ -191,12 +188,14 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
 
+      const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+      const taskFile = `docs/plans/${slug}-task-${String(subtaskIdx + 1).padStart(2, "0")}.md`;
       const prompt = [
-        `[작업 지시서 작성] "${plan.title}" Subtask ${subtaskIdx + 1}: "${st.title}"`,
+        `[작업 지시서 작성] Subtask ${subtaskIdx + 1}: "${st.title}"`,
         "",
+        `파일: \`${taskFile}\``,
         `이 subtask의 상세 작업 지시서를 작성해주세요.`,
-        `docs/plans/ 에 task 파일을 직접 작성하세요.`,
-        `수정/생성할 파일, 접근 방법, 의존성, 주의사항을 포함하세요.`,
+        `대상 파일, 구현 접근법, 의존성, 리스크, 완료 기준을 포함하세요.`,
       ].join("\n");
 
       await sendThreadMessage(prompt, mainEngine);

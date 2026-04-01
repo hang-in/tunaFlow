@@ -46,10 +46,9 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
           if (plan.title.toLowerCase() !== proposal.title.toLowerCase()) continue;
           const events = await planApi.listPlanEvents(plan.id);
           const lastEvent = events[events.length - 1];
-          // Only auto-merge if the very last event is a revision request
+          // Only auto-merge for Chat-level revision requests (not subtask slider)
           const lastIsRevisionRequest = lastEvent && (
             lastEvent.eventType === "revision_requested" ||
-            lastEvent.eventType === "subtask_revision_requested" ||
             lastEvent.eventType === "plan_full_revision_requested"
           );
           if (lastIsRevisionRequest) {

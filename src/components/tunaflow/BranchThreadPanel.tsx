@@ -31,6 +31,7 @@ export function BranchThreadPanel() {
     createBranch,
     createMemo,
     openThread,
+    loadBranches,
     branches,
     conversations,
   } = useChatStore();
@@ -56,6 +57,10 @@ export function BranchThreadPanel() {
   if (!threadBranchId) return null;
 
   const threadBranch = branches.find((b) => b.id === threadBranchId);
+  // Detect subtask discussion branch (not impl/review, label starts with known prefix)
+  const isSubtaskDiscussion = threadBranch && !isImplBranch &&
+    linkedPlan?.reviewBranchId !== threadBranchId &&
+    (threadBranch.label.startsWith("Subtask") || threadBranch.label.startsWith("검토") || threadBranch.label.startsWith("작업지시"));
   const isRT = threadBranch?.mode === "roundtable";
   const isReadOnly = threadBranch?.status === "adopted" || threadBranch?.status === "archived";
 
@@ -249,6 +254,25 @@ export function BranchThreadPanel() {
           )}
           {isImplBranch && revisionMode === "busy" && (
             <span className="text-[9px] text-amber-600/50">전송 중...</span>
+          )}
+          {/* Subtask discussion: [완료] button — archives branch + minor++ */}
+          {isSubtaskDiscussion && !isReadOnly && (
+            <button
+              onClick={async () => {
+                if (!threadBranchId) return;
+                await invoke("archive_branch", { id: threadBranchId });
+                if (linkedPlan) {
+                  // minor++ via replace_plan_subtasks is overkill — just bump directly
+                  await invoke("update_plan_phase", { id: linkedPlan.id, phase: linkedPlan.phase });
+                }
+                await loadBranches(linkedPlan?.conversationId ?? "");
+                closeThread();
+              }}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-status-approved/70 hover:bg-status-approved/8 transition-colors"
+              title="대화 완료 → Branch 아카이브"
+            >
+              <Check className="w-2.5 h-2.5" />완료
+            </button>
           )}
           {!isReadOnly && threadBranch?.checkpointId && (
             <button onClick={handleAdopt} title="Adopt" className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:bg-primary/8 transition-colors">
