@@ -6,7 +6,8 @@ import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileT
 import type { Plan, PlanPhase, PlanSubtask, Message } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { scanCompletedSubtasks, hasImplComplete } from "@/lib/planProposalParser";
-import { startReviewRT } from "@/lib/workflowOrchestration";
+import { syncResultReport } from "@/lib/workflowOrchestration";
+import type { Branch } from "@/types";
 import { PlanDocumentModal } from "./PlanDocumentModal";
 
 interface DevProgressViewProps {
@@ -15,13 +16,20 @@ interface DevProgressViewProps {
 }
 
 export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
-  const { openThread, sendThreadMessage, loadBranches } = useChatStore();
+  const { openThread, sendThreadMessage, loadBranches, saveConversationEngine } = useChatStore();
+  const profiles = useChatStore((s) => s.agentProfiles);
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
   const [completedNums, setCompletedNums] = useState<Set<number>>(new Set());
   const [implComplete, setImplComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
+  const [reviewMode, setReviewMode] = useState<"idle" | "select">("idle");
+  const [selectedReviewerId, setSelectedReviewerId] = useState(() => {
+    // Default to a profile with "review" in label, or first profile
+    const reviewer = profiles.find((p) => p.label.toLowerCase().includes("review"));
+    return reviewer?.id ?? profiles[0]?.id ?? "";
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -68,16 +76,47 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
 
   const handleStartReview = async () => {
     if (!plan.implementationBranchId) return;
+    const selectedProfile = profiles.find((p) => p.id === selectedReviewerId);
+    if (!selectedProfile) return;
     setBusy(true);
     try {
-      const shadowConvId = `branch:${plan.implementationBranchId}`;
-      const msgs = await invoke<Message[]>("list_messages", { conversationId: shadowConvId });
-      const { branch } = await startReviewRT(plan, msgs);
-      onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
+      // Generate result report
+      const implShadow = `branch:${plan.implementationBranchId}`;
+      const msgs = await invoke<Message[]>("list_messages", { conversationId: implShadow });
+      await syncResultReport(plan.id, msgs, plan.developerEngine ?? undefined);
+
+      // Phase transition
+      await planApi.updatePlanPhase(plan.id, "review");
+      await planApi.createPlanEvent(plan.id, "review_started", "user", `reviewer=${selectedProfile.label}`);
+
+      // Create review branch (single reviewer, not RT)
+      const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
+      const input = { conversationId: plan.conversationId, label: `Review: ${plan.title.slice(0, 30)}`, mode: "chat" };
+      const branch = await invoke<Branch>("create_branch", { input });
+      const shadowConvId = await invoke<string>("open_branch_stream", { branchId: branch.id });
+      await planApi.linkPlanBranch(plan.id, "review", branch.id);
+      saveConversationEngine(shadowConvId, { profileId: selectedReviewerId, engine: selectedProfile.engine });
+
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
+
+      // Send review prompt
+      const prompt = [
+        `[Review] "${plan.title}"`,
+        "",
+        `Plan 문서: \`docs/plans/${slug}.md\``,
+        `구현 결과: \`docs/plans/${slug}-result.md\``,
+        `작업 지시서: \`docs/plans/${slug}-task-*.md\``,
+        "",
+        `Plan 문서와 작업 지시서를 기준으로 구현 결과를 검증하세요.`,
+        `\`<!-- tunaflow:review-verdict -->\` 형식으로 verdict를 제출하세요.`,
+      ].join("\n");
+
+      await sendThreadMessage(prompt, selectedProfile.engine);
+      onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
     } catch { /* silent */ }
     setBusy(false);
+    setReviewMode("idle");
   };
 
   const handleCreateSubPlan = async (subtask: PlanSubtask, index: number) => {
@@ -181,11 +220,25 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           {completedNums.size}/{subtasks.length} 완료
         </span>
         <span className="flex-1" />
-        {implComplete && (
-          <button onClick={handleStartReview} disabled={busy}
+        {implComplete && reviewMode === "idle" && (
+          <button onClick={() => setReviewMode("select")} disabled={busy}
             className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
-            <Check className="w-3.5 h-3.5" />{busy ? "시작 중..." : "Review 시작"}
+            <Check className="w-3.5 h-3.5" />Review 시작
           </button>
+        )}
+        {implComplete && reviewMode === "select" && (
+          <div className="flex items-center gap-2">
+            <select value={selectedReviewerId} onChange={(e) => setSelectedReviewerId(e.target.value)}
+              className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
+              {profiles.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.engine})</option>)}
+            </select>
+            <button onClick={handleStartReview} disabled={busy}
+              className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
+              {busy ? "시작 중..." : "Review 시작"}
+            </button>
+            <button onClick={() => setReviewMode("idle")}
+              className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
+          </div>
         )}
       </div>
       {showDoc && <PlanDocumentModal plan={plan} onClose={() => setShowDoc(false)} />}

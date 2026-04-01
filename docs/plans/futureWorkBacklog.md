@@ -18,6 +18,12 @@
 - 필요: agent:completed 이벤트 또는 슬라이더 닫힘 시 자동 리스캔
 - 우선순위: 워크플로우 테스트 안정화 후
 
+### Review RT (Roundtable) 다중 리뷰어
+- 현재: 단일 Reviewer로 리뷰
+- 필요: RT 모드로 2+ Reviewer 병렬 토론 후 verdict
+- RT 자체 안정화 필요 (progress 가시성, 동기 실행 문제)
+- 우선순위: 단일 Reviewer 안정화 후
+
 ### 스킬 자동 주입
 - 워크플로우 phase별 자동 스킬 주입
 - 에이전트 role 기반 자동 스킬
