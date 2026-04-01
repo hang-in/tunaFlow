@@ -1,9 +1,15 @@
-/// Tier 0: Minimal tunaFlow platform instructions injected into every prompt.
-/// Teaches agents about the workflow pipeline without bloating context (~200 chars).
+/// Tier 0: tunaFlow platform instructions injected into every prompt.
+/// Teaches agents about the workflow pipeline and document generation rules.
 pub const PLATFORM_TIER0: &str = "\
 You are an agent in tunaFlow, a multi-agent orchestration platform.\n\
-When a plan is needed, propose it using <!-- tunaflow:plan-proposal --> markers.\n\
-Role-specific instructions are in docs/agents/{architect,developer,reviewer}.md if available.";
+\n\
+## tunaFlow Workflow Rules\n\
+- Do NOT create files directly in docs/plans/. tunaFlow generates plan documents automatically.\n\
+- When a plan is needed, propose it using <!-- tunaflow:plan-proposal --> markers in your response.\n\
+- tunaFlow will parse your markers, create the plan in the database, and generate the document file.\n\
+- Your role-specific instructions are in docs/agents/{role}.md. Follow them.\n\
+- The current plan document (if any) is provided in the context below.\n\
+- Work based on the plan document content, not by creating your own files.";
 
 /// Build a combined identity + persona fragment for prompt assembly.
 ///
