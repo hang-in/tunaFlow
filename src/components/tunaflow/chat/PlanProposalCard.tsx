@@ -35,40 +35,36 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
       const activePlans = plans.filter((p) => p.status !== "abandoned" && p.status !== "done");
       if (activePlans.length === 0) { setStatus("idle"); return; }
 
-      // Find a plan that has a pending revision_requested event (= this is a revision response)
-      for (const plan of activePlans) {
-        const events = await planApi.listPlanEvents(plan.id);
-        const hasRevisionRequest = events.some((e: PlanEvent) =>
-          e.eventType === "revision_requested" ||
-          e.eventType === "subtask_revision_requested" ||
-          e.eventType === "detail_design_requested" ||
-          e.eventType === "plan_full_revision_requested"
-        );
-        const isFullRevision = events.some((e: PlanEvent) =>
-          e.eventType === "plan_full_revision_requested"
-        );
-        // Check the last event isn't already a merge (avoid double-merge on re-render)
-        const lastEvent = events[events.length - 1];
-        const alreadyMerged = lastEvent?.eventType === "review_merged";
-
-        if (hasRevisionRequest && !alreadyMerged) {
-          setRevisionTarget(plan);
-          // Auto-merge (major++ for full revision, minor++ for subtask revision)
-          await autoMerge(plan, isFullRevision);
-          return;
-        }
-      }
-
       // Check if a plan with the same title already exists (already promoted)
       const alreadyPromoted = activePlans.some((p) =>
         p.title.toLowerCase() === proposal.title.toLowerCase()
       );
       if (alreadyPromoted) {
+        // Check if there's a pending revision that needs auto-merge
+        // Only auto-merge if the LAST event is a revision request (not already merged/promoted)
+        for (const plan of activePlans) {
+          if (plan.title.toLowerCase() !== proposal.title.toLowerCase()) continue;
+          const events = await planApi.listPlanEvents(plan.id);
+          const lastEvent = events[events.length - 1];
+          // Only auto-merge if the very last event is a revision request
+          const lastIsRevisionRequest = lastEvent && (
+            lastEvent.eventType === "revision_requested" ||
+            lastEvent.eventType === "subtask_revision_requested" ||
+            lastEvent.eventType === "plan_full_revision_requested"
+          );
+          if (lastIsRevisionRequest) {
+            const isFullRevision = lastEvent.eventType === "plan_full_revision_requested";
+            setRevisionTarget(plan);
+            await autoMerge(plan, isFullRevision);
+            return;
+          }
+        }
+        // Already promoted, no pending revision → just show "등록됨"
         setStatus("promoted");
         return;
       }
 
-      // No revision request found — this is a fresh proposal
+      // No matching plan — this is a fresh proposal
       setStatus("idle");
     }).catch(() => setStatus("idle"));
   }, [conversationId]);
