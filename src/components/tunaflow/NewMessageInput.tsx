@@ -61,9 +61,20 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     if (saved) {
       setEngine(saved.engine as Engine);
       if (saved.model) setSelectedModel(saved.model);
-      // Restore profile selection for this context
       if (saved.profileId !== useChatStore.getState().selectedProfileId) {
         selectProfile(saved.profileId);
+      }
+    } else {
+      // No saved profile — apply role-based default
+      // Main chat / subtask discussion → first profile (architect)
+      // Profiles are ordered: architect first by convention
+      const defaultProfile = profiles[0];
+      if (defaultProfile) {
+        selectProfile(defaultProfile.id);
+        saveConversationEngine(effectiveConvForRestore, {
+          profileId: defaultProfile.id,
+          engine: defaultProfile.engine,
+        });
       }
     }
   }, [effectiveConvForRestore]);
