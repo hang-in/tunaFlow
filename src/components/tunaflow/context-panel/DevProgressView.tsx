@@ -43,8 +43,15 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       const shadowConvId = `branch:${plan.implementationBranchId}`;
       const msgs = await invoke<Message[]>("list_messages", { conversationId: shadowConvId });
       if (cancelled.current) return;
-      setCompletedNums(scanCompletedSubtasks(msgs));
+      const scanned = scanCompletedSubtasks(msgs);
       const complete = msgs.some((m) => m.role === "assistant" && hasImplComplete(m.content));
+      // If impl-complete but no subtask-done markers, treat all as complete
+      if (complete && scanned.size === 0) {
+        const allNums = new Set(Array.from({ length: 50 }, (_, i) => i + 1));
+        setCompletedNums(allNums);
+      } else {
+        setCompletedNums(scanned);
+      }
       setImplComplete(complete);
 
       // Auto-run tests when implementation is complete (only once)
