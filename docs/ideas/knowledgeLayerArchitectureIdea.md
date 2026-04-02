@@ -405,79 +405,69 @@ cross    (0.6) → 1,200
 
 ---
 
-## 6. 구현 계획
+## 6. 현재 상태 (2026-04-03)
 
-### Phase 1: rawq 고도화 + KnowledgeLayer 기초 (지금)
+### ✅ 이미 구현됨 (세션 7)
+- **rawq 옵션 확장**: `SearchOptions` + `search_with_options()` — rerank, token-budget, text-weight, rrf-weight 전부 활성화
+- **prompt_needs_rawq() 완화**: 10자+ 프롬프트면 코드 키워드 없어도 검색 포함
+- **개념 쿼리 감지**: text-weight 0.8 + rrf-weight 0.7로 문서 검색 강화
+- **자동 세션 발견**: `session_discovery.rs` — FTS5 + vector 기반 session_links
+- **Vector DB**: `vector_search.rs` — conversation_chunks BLOB 임베딩 + cosine 검색
+- **토픽별 메모리**: `conversation_memory.rs` — JSON 토픽 분할 압축
 
-```
-1-1. KnowledgeSource trait + KnowledgeChunk 정의
-     → send_common.rs 또는 별도 knowledge.rs
+### ⏳ 보류: KnowledgeLayer trait
+**왜 보류**: 현재 5개 소스(rawq/fts5/memory/cross-session/vector)가 `send_common.rs` Layer 2-5에서 하드코딩으로 잘 동작 중. trait 추상화는 기능 추가 없이 구조만 바꾸는 리팩토링.
 
-1-2. 기존 4개 소스를 KnowledgeSource로 래핑
-     → RawqSource, Fts5Source, MemorySource, CrossSessionSource
-     → 기존 로직 그대로, 인터페이스만 통일
+**도입 시점**: 아래 중 하나가 발생할 때
+1. **6번째 지식 소스 추가 시** — code-review-graph, SDK embeddings 등. 하드코딩 섹션이 6개 이상이면 trait이 관리 비용을 줄여줌
+2. **소스 간 교차 dedup 품질 문제 시** — 현재 rawq/fts5/vector가 각각 따로 dedup. 같은 코드가 rawq와 fts5에서 중복 출현하는 불만이 반복되면 통합 dedup이 필요
+3. **예산 배분 불균형 체감 시** — 특정 소스가 예산을 독점하고 다른 소스가 잘리는 현상이 반복되면 동적 배분이 필요
 
-1-3. KnowledgeLayer 퓨전 + 예산 배분
-     → context_pack.rs의 개별 섹션 빌드를 KnowledgeLayer.query()로 대체
+**어떻게**: §2-5의 설계 그대로. `KnowledgeSource` trait + `KnowledgeLayer` 퓨전. 기존 소스를 래핑 (로직 변경 없이 인터페이스만 통일).
 
-1-4. rawq 미사용 옵션 활성화
-     → --rerank, --token-budget, --text-weight, --rrf-weight
-     → rawq.rs의 search() 함수 확장
+### ⏳ 보류: code-review-graph 통합
+**왜 보류**: 워크플로우(Plan→Dev→Review) 실사용 검증이 먼저. graph가 주는 가치(영향 범위, 커버리지 검증)는 워크플로우를 실제로 반복 사용할 때 체감됨.
 
-1-5. Cross-session 자동 발견
-     → FTS5로 다른 대화 검색 (수동 선택과 병행)
+**도입 시점**: 아래 중 하나가 발생할 때
+1. **"변경 영향 범위를 놓쳤다"는 리뷰 피드백이 2회 이상 반복** — Developer가 caller를 놓쳐서 Review fail
+2. **"테스트 커버리지 판단이 어렵다"는 Reviewer 불만** — 변경 파일의 테스트 유무를 구조적으로 모름
+3. **프로젝트 규모 100+ 파일** — 구조 파악에 시간이 걸려서 에이전트에게 미리 제공해야 할 때
 
-검증: 기존 테스트 통과 + rawq 검색 품질 비교
-```
+**어떻게**:
+1. `agents/graph.rs` CLI 래퍼 (rawq.rs 패턴 동일)
+2. sidecar 바이너리 (`src-tauri/binaries/crg-{triple}`)
+3. KnowledgeLayer가 이미 있으면 `GraphSource` 1줄 추가
+4. KnowledgeLayer가 없으면 `context_pack.rs`에 `build_graph_section()` 하드코딩 추가 (rawq와 동일 패턴)
+5. 워크플로우 프롬프트 보강: `workflowOrchestration.ts`에서 `graph_expand`/`graph_coverage_check` 직접 호출
 
-### Phase 2: code-review-graph 추가 (나중)
-
-```
-2-1. code-review-graph 바이너리 sidecar 통합
-     → rawq와 동일 패턴 (agents/graph.rs)
-
-2-2. GraphSource 구현
-     → KnowledgeSource trait 구현
-
-2-3. KnowledgeLayer에 등록
-     → 1줄 추가
-
-검증: Developer/Reviewer 워크플로우에서 구조 정보 포함 확인
-```
-
-### Phase 3: 향후 확장 (선택)
-
-```
-3-1. Vector DB Source (Ollama embeddings 기반)
-3-2. SDK Embeddings Source (유료, 고품질)
-3-3. 임베딩 모델 교체 (한국어 지원)
-```
+**위험 관리**:
+- 바이너리 크기: graph sidecar 크기 실측 후 판단 (52MB+ 이면 lazy download 검토)
+- graph 미설치 시 graceful degradation 필수 (`try { ... } catch { /* 무시 */ }`)
 
 ---
 
 ## 7. 변경 범위 예측
 
-### Phase 1 (rawq 고도화)
+### KnowledgeLayer trait 도입 시
 
 | 파일 | 변경 |
 |------|------|
-| `send_common.rs` | KnowledgeLayer 호출로 대체 (~50줄 변경) |
+| `send_common.rs` | Layer 2-5 호출을 KnowledgeLayer.query()로 대체 (~50줄) |
 | `context_pack.rs` | 개별 빌드 함수 → KnowledgeSource 래핑 (~200줄 리팩토링) |
-| `rawq.rs` | `search_with_options()` 확장 (~30줄 추가) |
-| `context_queries.rs` | FTS5 cross-conversation 검색 추가 (~50줄) |
 | 새 파일: `knowledge.rs` | trait + layer + dedup (~150줄) |
 
-**총 예상**: ~300줄 신규 + ~200줄 리팩토링. 기존 API 변경 없음.
+**총 예상**: ~150줄 신규 + ~200줄 리팩토링. 기존 API 변경 없음.
 
-### Phase 2 (graph 추가)
+### code-review-graph 추가 시
 
 | 파일 | 변경 |
 |------|------|
 | 새 파일: `agents/graph.rs` | CLI 래퍼 (~100줄) |
-| `knowledge.rs` | GraphSource 추가 (~50줄) |
-| `lib.rs` | source 등록 1줄 |
+| `context_pack.rs` 또는 `knowledge.rs` | GraphSource 추가 (~50줄) |
+| `lib.rs` | Tauri 커맨드 등록 |
+| `workflowOrchestration.ts` | graph_expand/coverage_check 호출 (~100줄) |
 
-**총 예상**: ~150줄 신규. Phase 1 코드 변경 없음.
+**총 예상**: ~250줄 신규.
 
 ---
 

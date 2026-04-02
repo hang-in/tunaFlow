@@ -257,21 +257,33 @@ ContextPack 주입(Knowledge Layer)과 워크플로우 프롬프트 보강은 **
 
 ---
 
-## 7. 판단 기준: "지금 graph가 필요한가?"
+## 7. 판단 기준: "지금 graph가 필요한가?" (2026-04-03 갱신)
 
-### 필요하지 않은 상황
+### 현재 상태: Stage 1 완료, Stage 2 보류
+
+**Stage 1 ✅ 완료 (세션 7)**:
+- rawq search 옵션 전면 활성화 (rerank, text-weight, rrf-weight, token-budget)
+- prompt_needs_rawq() 완화 → 코드 키워드 없어도 검색 포함
+- 자동 세션 발견 (session_links + FTS5 + vector)
+- Vector DB (conversation_chunks + cosine + FTS5 하이브리드)
+- 토픽별 메모리 압축
+
+**KnowledgeLayer trait는 보류**: 5개 소스 하드코딩으로 충분. 상세 → `knowledgeLayerArchitectureIdea.md` §6
+
+### graph가 필요하지 않은 상황
 
 - rawq 검색만으로 에이전트가 충분한 컨텍스트를 받는 경우
 - 프로젝트가 작아서 (< 50파일) 구조 탐색이 불필요한 경우
-- 워크플로우를 아직 안 쓰는 경우 (일반 대화만)
+- 워크플로우를 아직 실사용하지 않는 경우 (일반 대화만)
 
-### 필요해지는 시점
+### graph가 필요해지는 시점 (구체적 트리거)
 
-- Developer가 "이 변경이 다른 곳에 영향을 줬다"는 리뷰 피드백이 반복될 때
-- Reviewer가 "테스트 커버리지 판단이 어렵다"고 할 때
-- 프로젝트가 커져서 (100+ 파일) 구조 파악에 시간이 걸릴 때
+1. **"변경 영향 범위 누락" 리뷰 피드백 2회 이상** — Developer가 caller를 놓쳐서 Review fail이 반복
+2. **"테스트 커버리지 판단 불가" Reviewer 불만** — 변경 파일의 테스트 유무를 구조적으로 확인할 수 없음
+3. **프로젝트 100+ 파일** — rawq 검색만으로는 구조 파악에 한계, 에이전트에게 graph 제공 필요
+4. **워크플로우 풀사이클 3회 이상 완료** — Plan→Dev→Review→Done 경험이 쌓여야 graph 가치 판단 가능
 
-**rawq 고도화가 먼저.** rawq를 제대로 활용한 후에도 부족한 부분이 명확해지면 graph를 추가.
+**이 트리거가 발생하기 전까지는 rawq 단독으로 충분하다.**
 
 ---
 
