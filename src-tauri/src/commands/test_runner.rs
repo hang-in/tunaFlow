@@ -74,7 +74,16 @@ fn execute_tests(path: &Path, runner: &str) -> Result<(String, bool), AppError> 
             .current_dir(path)
             .output(),
         "vitest" => Command::new("npx")
-            .args(["vitest", "run"])
+            .args([
+                "vitest", "run",
+                // Exclude directories that commonly contain external/cloned repos or generated code
+                "--exclude", "**/data/**",
+                "--exclude", "**/node_modules/**",
+                "--exclude", "**/dist/**",
+                "--exclude", "**/vendor/**",
+                "--exclude", "**/.git/**",
+                "--exclude", "**/target/**",
+            ])
             .current_dir(path)
             .output(),
         _ => return Err(AppError::NotFound(format!("Unknown test runner: {}", runner))),
