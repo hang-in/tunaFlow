@@ -48,12 +48,16 @@ where
         content: input.prompt.clone(),
     });
 
+    let tools = crate::agents::tool_handler::workflow_tools();
+    let tools_json = crate::agents::tool_handler::to_openai_tools(&tools);
+
     let body = ChatCompletionRequest {
         model: model.to_string(),
         messages,
         stream: true,
         max_tokens: Some(16384),
         temperature: Some(1.0),
+        tools: Some(tools_json),
     };
 
     on_progress("OpenAI SDK initializing...".into());
@@ -170,6 +174,8 @@ struct ChatCompletionRequest {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]

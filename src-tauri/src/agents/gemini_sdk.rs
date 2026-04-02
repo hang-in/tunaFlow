@@ -47,6 +47,10 @@ where
         parts: vec![Part { text: Some(sp.clone()) }],
     });
 
+    // Add workflow tools for function calling
+    let tools = crate::agents::tool_handler::workflow_tools();
+    let tools_json = crate::agents::tool_handler::to_gemini_tools(&tools);
+
     let body = GenerateContentRequest {
         contents,
         system_instruction,
@@ -54,6 +58,7 @@ where
             temperature: Some(1.0),
             max_output_tokens: Some(65536),
         }),
+        tools: Some(tools_json),
     };
 
     on_progress("Gemini SDK initializing...".into());
@@ -181,6 +186,8 @@ struct GenerateContentRequest {
     system_instruction: Option<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
     generation_config: Option<GenerationConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Deserialize)]

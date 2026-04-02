@@ -8,3 +8,4 @@ pub mod loader;
 pub mod openai_sdk;
 pub mod opencode;
 pub mod rawq;
+pub mod tool_handler;

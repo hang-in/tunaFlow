@@ -43,12 +43,16 @@ where
         content: input.prompt.clone(),
     }];
 
+    let tools = crate::agents::tool_handler::workflow_tools();
+    let tools_json = crate::agents::tool_handler::to_anthropic_tools(&tools);
+
     let body = CreateMessageRequest {
         model: model.to_string(),
         messages,
         system: input.system_prompt.clone(),
         max_tokens: 16384,
         stream: true,
+        tools: Some(tools_json),
     };
 
     on_progress("Anthropic SDK initializing...".into());
@@ -172,6 +176,8 @@ struct CreateMessageRequest {
     system: Option<String>,
     max_tokens: u32,
     stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
