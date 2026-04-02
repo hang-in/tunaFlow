@@ -1,7 +1,7 @@
 use tauri::Emitter;
 use serde::{Deserialize, Serialize};
 
-use crate::agents::{claude, codex, gemini, opencode};
+use crate::agents::{claude, codex, gemini, openai_compat, opencode};
 use crate::db::{models::Message, DbState};
 use crate::errors::AppError;
 use crate::CancelRegistry;
@@ -131,6 +131,7 @@ pub fn run_participant(
             "codex" => (codex::run(run_input), "codex"),
             "gemini" => (gemini::run(run_input), "gemini"),
             "opencode" => (opencode::run(run_input), "opencode"),
+            "ollama" => (openai_compat::run(run_input), "ollama"),
             _ => (
                 Err(AppError::Agent(format!("unsupported engine: {}", engine_key_owned))),
                 "unknown",

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::agents::{anthropic_sdk, claude, codex, gemini, gemini_sdk, openai_sdk, opencode};
+use crate::agents::{anthropic_sdk, claude, codex, gemini, gemini_sdk, openai_compat, openai_sdk, opencode};
 use crate::db::DbState;
 use crate::errors::AppError;
 use crate::guardrail;
@@ -302,6 +302,43 @@ pub async fn start_opencode_run(
     Ok(StartRunResult { message_id: ret })
 }
 
+/// Background OpenAI-compatible stream — Ollama, LM Studio, vLLM, etc.
+#[tauri::command]
+pub async fn start_openai_compat_stream(
+    input: SendWithClaudeInput, app: AppHandle, state: State<'_, DbState>,
+) -> Result<StartRunResult, AppError> {
+    let db = state.inner().clone();
+    let id_frag = identity_fragment(&input, "ollama");
+    let write_arc = db_write_arc(&state);
+    let cid = input.conversation_id.clone();
+    let mo = input.model.clone();
+
+    let prep = tokio::task::spawn_blocking(move || {
+        prepare_engine_run("ollama", &input, id_frag.as_deref(), &db)
+    }).await.map_err(|_| AppError::Lock)??;
+
+    let ret = prep.msg_id.clone();
+    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
+    let system_prompt = prep.system_context;
+
+    tokio::spawn(async move {
+        let pa = app.clone(); let pi = msg_id.clone();
+        let c2 = app.clone(); let ci = msg_id.clone();
+        let t0 = std::time::Instant::now();
+        let rr = openai_compat::stream_run(
+            claude::RunInput { prompt: enriched_prompt, model: mo.clone(), system_prompt, resume_token: None, project_path },
+            move |t| { let _ = pa.emit("ollama:progress", ChunkPayload { message_id: pi.clone(), text: t }); },
+            move |t| { let _ = c2.emit("ollama:chunk", ChunkPayload { message_id: ci.clone(), text: t }); },
+        ).await;
+        let dur = t0.elapsed().as_millis();
+        guardrail::log_run("ollama", mo.as_deref(), dur, 0, rr.is_ok());
+        if let Ok(conn) = write_arc.lock() {
+            finalize_engine_run(&conn, "ollama", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+        }
+    });
+    Ok(StartRunResult { message_id: ret })
+}
+
 /// Helper: clone write Arc from state for background thread use.
 fn db_write_arc(state: &State<DbState>) -> std::sync::Arc<std::sync::Mutex<rusqlite::Connection>> {
     std::sync::Arc::clone(&state.write)
@@ -333,6 +370,7 @@ pub fn run_eval_agent(
         "codex" => codex::run(run_input),
         "gemini" => gemini::run(run_input),
         "opencode" => opencode::run(run_input),
+        "ollama" => openai_compat::run(run_input),
         _ => claude::run(run_input),
     };
     let duration_ms = t0.elapsed().as_millis() as i64;

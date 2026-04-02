@@ -6,7 +6,14 @@
  * - `<!-- tunaflow:impl-plan -->` — Developer implementation plan report
  * - `<!-- tunaflow:impl-complete -->` — Implementation completion signal
  * - `<!-- tunaflow:review-verdict -->` — Reviewer verdict
+ *
+ * All parsers validate output against zod schemas (src/lib/schemas/).
+ * Validation failures log warnings but do not break — graceful degradation.
  */
+
+import { PlanProposalSchema } from "@/lib/schemas/planProposal";
+import { ImplPlanSchema } from "@/lib/schemas/implPlan";
+import { ReviewVerdictSchema } from "@/lib/schemas/reviewVerdict";
 
 export interface ParsedPlanProposal {
   title: string;
@@ -106,6 +113,19 @@ function parseProposalBody(raw: string): ParsedPlanProposal {
     } else if (h.includes("non-goal") || h.includes("nongoal")) {
       result.nonGoals = parseBulletList(body);
     }
+  }
+
+  // Validate against schema
+  const validation = PlanProposalSchema.safeParse({
+    title: result.title,
+    description: result.description,
+    expected_outcome: result.expectedOutcome,
+    subtasks: result.subtasks,
+    constraints: result.constraints,
+    non_goals: result.nonGoals,
+  });
+  if (!validation.success) {
+    console.warn("[planProposalParser] plan-proposal schema validation failed:", validation.error.issues);
   }
 
   return result;
@@ -228,7 +248,15 @@ export function extractImplPlan(content: string): ParsedImplPlan | null {
     }
   }
 
-  return { files, dependencies, risks, raw };
+  const implResult = { files, dependencies, risks, raw };
+
+  // Validate against schema
+  const validation = ImplPlanSchema.safeParse(implResult);
+  if (!validation.success) {
+    console.warn("[planProposalParser] impl-plan schema validation failed:", validation.error.issues);
+  }
+
+  return implResult;
 }
 
 // ─── Implementation complete marker ─────────────────────────────────────────
@@ -309,5 +337,23 @@ export function extractReviewVerdict(content: string): ParsedReviewVerdict | nul
     };
   }
 
-  return { verdict, rubric, findings, recommendations, raw };
+  const reviewResult = { verdict, rubric, findings, recommendations, raw };
+
+  // Validate against schema
+  const schemaInput: Record<string, unknown> = { verdict, findings: findings.map((f) => ({ description: f })), recommendations };
+  if (rubric) {
+    schemaInput.rubric = {
+      plan_coverage: rubric.planCoverage,
+      code_quality: rubric.codeQuality,
+      test_coverage: rubric.testCoverage,
+      doc_quality: rubric.docQuality,
+      convention: rubric.convention,
+    };
+  }
+  const validation = ReviewVerdictSchema.safeParse(schemaInput);
+  if (!validation.success) {
+    console.warn("[planProposalParser] review-verdict schema validation failed:", validation.error.issues);
+  }
+
+  return reviewResult;
 }

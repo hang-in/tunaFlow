@@ -50,8 +50,8 @@ export function CreatePlanForm({
         subtasks,
       });
       onCreated(plan);
-    } catch {
-      // silent — user can retry
+    } catch (e) {
+      console.error("[CreatePlanForm] plan creation failed:", e);
     } finally {
       setSaving(false);
     }

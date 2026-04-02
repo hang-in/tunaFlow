@@ -227,8 +227,8 @@ function CreateRunForm({ conversationId, onCreated, onCancel }: {
         },
       });
       onCreated(run.id);
-    } catch {
-      // silent
+    } catch (e) {
+      console.error("[EvaluationPanel] eval run creation failed:", e);
     } finally {
       setCreating(false);
     }

@@ -253,23 +253,44 @@ where
 
         match parsed.line_type.as_str() {
             "system" => {
-                // Init event — report as progress
                 on_progress("Agent initializing...".into());
             }
             "assistant" => {
                 if let Some(msg) = &parsed.message {
-                    // Thinking → progress (show full thinking content, not just last line)
+                    // Thinking → structured step
                     if let Some(thinking) = extract_thinking(msg) {
-                        for line in thinking.lines() {
-                            let trimmed = line.trim();
-                            if !trimmed.is_empty() {
-                                on_progress(format!("💭 {}", trimmed));
-                            }
+                        let last_line = thinking.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("").trim();
+                        if !last_line.is_empty() {
+                            let step = serde_json::json!({
+                                "type": "thinking",
+                                "name": "Thinking",
+                                "input": last_line.chars().take(120).collect::<String>(),
+                                "status": "done"
+                            });
+                            on_progress(format!("__STEP__:{}", step));
                         }
                     }
-                    // Tool use → progress
-                    for tool_line in extract_tool_uses(msg) {
-                        on_progress(tool_line);
+                    // Tool use → structured step
+                    if let Some(blocks) = &msg.content {
+                        for block in blocks.iter().filter(|b| b.block_type == "tool_use") {
+                            if let Some(name) = &block.name {
+                                let input_summary = block.input.as_ref().map(|v| {
+                                    let s = v.to_string();
+                                    if s.len() > 120 {
+                                        let mut end = 120;
+                                        while end > 0 && !s.is_char_boundary(end) { end -= 1; }
+                                        format!("{}…", &s[..end])
+                                    } else { s }
+                                }).unwrap_or_default();
+                                let step = serde_json::json!({
+                                    "type": "tool_use",
+                                    "name": name,
+                                    "input": input_summary,
+                                    "status": "running"
+                                });
+                                on_progress(format!("__STEP__:{}", step));
+                            }
+                        }
                     }
                     // Text → final answer chunk
                     let text = extract_text(msg);

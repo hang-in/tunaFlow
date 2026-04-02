@@ -9,6 +9,9 @@ import { PlanProposalCard } from "./chat/PlanProposalCard";
 import { MessageMeta } from "./message/MessageMeta";
 import { MessageActions } from "./message/MessageActions";
 import { TypingIndicator } from "./message/ProgressSurface";
+import { ToolStepsView } from "./message/ToolStepsView";
+import { useToolStepsStore } from "@/stores/toolStepsStore";
+import { deserializeSteps } from "@/lib/toolSteps";
 import { hasPlanProposal, splitPlanProposals } from "@/lib/planProposalParser";
 
 const PROSE_CLS = "prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>hr:last-child]:hidden [&>hr]:border-sidebar-foreground/20 [&>hr]:my-3";
@@ -73,6 +76,15 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
   const isStreaming = message.status === "streaming";
   const isCompact = variant === "compact";
 
+  // Tool steps — live from store during streaming, from progressContent after completion
+  const liveSteps = useToolStepsStore((s) => s.stepsMap[message.id]);
+  const elapsed = useToolStepsStore((s) => s.startTimeMap[message.id] ? Date.now() - s.startTimeMap[message.id] : 0);
+  const toolSteps = useMemo(() => {
+    if (isStreaming && liveSteps?.length) return liveSteps;
+    if (!isStreaming && message.progressContent) return deserializeSteps(message.progressContent);
+    return [];
+  }, [isStreaming, liveSteps, message.progressContent]);
+
   return (
     <div
       className={cn(
@@ -97,6 +109,11 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
             threadBranches={threadBranches}
             onOpenThread={onOpenThread}
           />
+        )}
+
+        {/* Tool steps — streaming live or completed collapsed */}
+        {!isUser && toolSteps.length > 0 && (
+          <ToolStepsView steps={toolSteps} isStreaming={isStreaming} durationMs={isStreaming ? elapsed : undefined} />
         )}
 
         {/* Body */}

@@ -207,11 +207,22 @@ tunaFlow/
 - **인프라**: `link_plan_branch` command, `workflowOrchestration.ts` 유틸, ImplPlanCard/ReviewVerdictCard/MergeBranchButton 컴포넌트
 - Rust 60 unit tests, Frontend 66 tests (파서 테스트 포함)
 
+### ✅ 해결됨 (세션 6: 내부 품질 + 엔진 확장 + tool 가시화)
+- **zod 스키마 검증 인프라**: `src/lib/schemas/` 5개 워크플로우 스키마 SSOT (planProposal, implPlan, reviewVerdict, subtaskDone, implComplete). `planProposalParser.ts` 3개 파서에 zod 검증 추가 (graceful degradation). 17개 스키마 테스트 추가.
+- **OpenAI Compatible 엔진 (Ollama)**: `openai_compat.rs` — Ollama/LM Studio/vLLM 범용 HTTP 클라이언트. SSE 스트리밍 + tool call 지원 + tools 미지원 모델 자동 fallback. `base_url` 교체로 모든 OpenAI 호환 백엔드 지원. 전체 엔진 통합 (command, RT executor, model discovery, frontend ENGINE_CONFIGS).
+- **Tool Steps 가시화**: 3개 CLI 엔진(claude/codex/gemini)에서 중간 이벤트(thinking, tool_use, command_execution, file_change) 구조화 전송 (`__STEP__:{json}` 프로토콜). `toolStepsStore.ts` 경량 store + `ToolStepsView.tsx` 컴포넌트. 스트리밍 중 3줄/5줄 스크롤, 완료 후 접힘 요약. `progressContent`에 JSON 저장 (lazy-load, 검색/ContextPack 미사용).
+- **Silent error 표면화**: 12개 파일에서 `catch { /* silent */ }` → `console.error` + `toast.error`. 워크플로우 버튼(Dev 시작, 완료, Rework, 병합, 상세설계 요청 등) 실패 시 사용자에게 에러 표시.
+- **Developer 프롬프트 수정**: 결과 문서 이중 작성 방지 (tunaFlow 자동 생성 명시, Developer 직접 작성 금지). 마커는 채팅 메시지에만 포함 (파일에 쓰지 않음). 검증 범위 제한 (변경 파일만 확인, 전체 프로젝트 타입 체크 결과 주장 금지).
+- **Reviewer 프롬프트 수정**: result report는 자동 생성이므로 문서 품질로 fail 주지 않도록. 프로젝트 전체 체크 실패는 Developer 실패가 아님.
+- Rust 60 unit tests, Frontend 96 tests (스키마 17개 포함)
+
 ### 기타 알려진 이슈
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- Rust 60 unit test + Frontend 66 test이나, integration test 부재
+- Rust 60 unit test + Frontend 96 test이나, integration test 부재
 - RT에서 `run()` 동기 사용 — progress 가시성 없음
 - 긴 multi-agent 대화 (24+ 메시지) 실사용 검증 미완
+- Tool steps: Gemini CLI 버전에 따라 `tool_use` 이벤트 미지원 가능 (tool_result만 올 수 있음)
+- docs/plans/ 문서 정리 필요 — 40+개 문서 status 갱신, 폐기 idea 정리
 
 ---
 
@@ -418,28 +429,34 @@ tunaFlow/
 
 ## 11. 다음 우선순위
 
-### P0: 실사용 검증 (기능 구현 후)
-- 긴 multi-agent 대화 (4엔진 × 3턴 = 24msg) — dynamic window + participant meta 동작 확인
-- Compressed memory 참여자 보존 — 긴 대화 후 에이전트 인식 검증
-- Cross-conversation retrieval — 다중 대화 프로젝트에서 chunk 회수 확인
+### P0: 문서 정리 + 세션 연속성
+- `docs/plans/` 40+개 문서 status 갱신, index.md 업데이트, 폐기 idea 정리
+- `docs/plans/futureWorkBacklog.md` 동기화
+- CLAUDE.md §10 이전 세션 이력 압축 검토
+
+### P0: 장기기억 + 에이전트 연속성
+- **Vector DB Phase 1** — 대화 메시지 의미 검색 (FTS5만으로는 50+ 대화 시 회수율 급락)
+- **자동 세션 발견** — 관련 대화를 수동 crossSessionIds 대신 자동 연결
+- **주제별 메모리** — 대화 단위 1개 요약에서 주제/phase별 분리
+- 로드맵: `docs/reference/multiAgentContextStrategy.md`
+
+### ✅ 완료: 내부 품질 강화 (세션 6)
+- zod 스키마 검증 인프라, OpenAI Compatible 엔진 (Ollama), Tool Steps 가시화
+- Silent error 표면화, Developer/Reviewer 프롬프트 수정
 
 ### ✅ 완료: 오케스트레이션 워크플로우 파이프라인 (Phase A-E)
 - **Phase A-E 전체 완료** — DB v18, 마커 파서 4종, PlanProposalCard, Approval Gate, Test Runner, 전체 자동화
 - Chat→Plan 승격→Approval(3-way)→Implementation Branch(Developer 자동 호출)→Review RT(2-agent)→Verdict→Done/Rework 루프
-- 전체 설계: `docs/plans/orchestratedWorkflowPipelinePlan.md`
-- 후속: 실사용 검증 (end-to-end 시나리오)
 
-### P1: 의존성 마이그레이션 (Phase 4 잔여)
-- **Phase 4-3: react-virtuoso** — ChatPanel 가상 스크롤. 프롬프트: `docs/prompts/2026-03-31/dependency_migration_phase4_remaining_prompt.md`
+### P1: 의존성 마이그레이션 + 구조 개선
+- **Phase 4-3: react-virtuoso** — ChatPanel 가상 스크롤
 - **Phase 4-4: cmdk** — 커맨드 팔레트
-
-### P1: 구조 개선
-- **ContextPack DB/assembly 완전 분리**: 프롬프트: `docs/prompts/2026-03-30/contextpack_db_separation_prompt.md`
-- **Phase 5: tokio async** — `docs/plans/dependencyAdoptionPlan.md`
+- **ContextPack DB/assembly 완전 분리**
+- **Phase 5: tokio async**
 
 ### P2: 후순위
-- Vector DB Phase 1. 로드맵: `docs/reference/multiAgentContextStrategy.md`
-- 긴 multi-agent 대화 실사용 검증
+- 실사용 검증 (긴 multi-agent 대화)
+- context-hub 활성화 (외부 라이브러리 문서 검색)
 - smoke test 복구
 
 ---
@@ -456,8 +473,8 @@ npx vite build                # Frontend
 cd src-tauri && cargo check   # Rust
 
 # 테스트
-npx vitest run                # Frontend (55 tests)
-cd src-tauri && cargo test --lib  # Rust unit tests (57 tests)
+npx vitest run                # Frontend (96 tests)
+cd src-tauri && cargo test --lib  # Rust unit tests (60 tests)
 
 # rawq sidecar 준비
 ./scripts/build-rawq.sh       # macOS/Linux

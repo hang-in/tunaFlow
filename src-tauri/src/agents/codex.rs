@@ -342,17 +342,80 @@ where
         let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
         match event_type {
+            "item.started" => {
+                if let Some(item) = event.get("item") {
+                    let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    match item_type {
+                        "command_execution" => {
+                            let cmd = item.get("command").and_then(|v| v.as_str()).unwrap_or("bash");
+                            let step = serde_json::json!({
+                                "type": "command",
+                                "name": "Bash",
+                                "input": cmd.chars().take(120).collect::<String>(),
+                                "status": "running"
+                            });
+                            on_progress(&format!("__STEP__:{}", step));
+                        }
+                        "file_change" => {
+                            let file = item.get("file").and_then(|v| v.as_str()).unwrap_or("file");
+                            let step = serde_json::json!({
+                                "type": "file_change",
+                                "name": "Edit",
+                                "input": file,
+                                "status": "running"
+                            });
+                            on_progress(&format!("__STEP__:{}", step));
+                        }
+                        "reasoning" => {
+                            let step = serde_json::json!({
+                                "type": "thinking",
+                                "name": "Reasoning",
+                                "input": "",
+                                "status": "running"
+                            });
+                            on_progress(&format!("__STEP__:{}", step));
+                        }
+                        _ => {
+                            on_progress(event_type);
+                        }
+                    }
+                }
+            }
             "item.completed" => {
                 if let Some(item) = event.get("item") {
                     let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    if item_type == "agent_message" {
-                        if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
-                            if !text.is_empty() {
-                                agent_texts.push(text.to_string());
-                                let accumulated = agent_texts.join("\n\n");
-                                on_chunk(&accumulated);
+                    match item_type {
+                        "agent_message" => {
+                            if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
+                                if !text.is_empty() {
+                                    agent_texts.push(text.to_string());
+                                    let accumulated = agent_texts.join("\n\n");
+                                    on_chunk(&accumulated);
+                                }
                             }
                         }
+                        "command_execution" => {
+                            let cmd = item.get("command").and_then(|v| v.as_str()).unwrap_or("bash");
+                            let status_str = item.get("status").and_then(|v| v.as_str()).unwrap_or("done");
+                            let step = serde_json::json!({
+                                "type": "command",
+                                "name": "Bash",
+                                "input": cmd.chars().take(120).collect::<String>(),
+                                "status": if status_str == "failed" { "error" } else { "done" }
+                            });
+                            on_progress(&format!("__STEP__:{}", step));
+                        }
+                        "file_change" => {
+                            let file = item.get("file").and_then(|v| v.as_str()).unwrap_or("file");
+                            let step = serde_json::json!({
+                                "type": "file_change",
+                                "name": "Edit",
+                                "input": file,
+                                "status": "done"
+                            });
+                            on_progress(&format!("__STEP__:{}", step));
+                        }
+                        _ => {}
                     }
                 }
             }

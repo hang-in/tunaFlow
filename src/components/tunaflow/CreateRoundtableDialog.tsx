@@ -161,8 +161,8 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
         await useChatStore.getState().openThread(newBranch.id);
       }
       onClose();
-    } catch {
-      // silent
+    } catch (e) {
+      console.error("[CreateRoundtableDialog] creation failed:", e);
     } finally {
       setCreating(false);
     }

@@ -183,7 +183,7 @@ export interface SendWithClaudeInput {
 export interface RoundtableParticipant {
   name: string;
   model?: string;
-  /** "claude" | "codex" | "gemini" | "opencode" — defaults to "claude" on backend */
+  /** "claude" | "codex" | "gemini" | "opencode" | "ollama" — defaults to "claude" on backend */
   engine?: string;
   /** Blind verifier — receives topic only, no prior/current transcript */
   blind?: boolean;

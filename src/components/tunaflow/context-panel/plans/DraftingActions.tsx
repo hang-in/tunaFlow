@@ -3,6 +3,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { FileText, Search } from "lucide-react";
 import type { Plan, PlanPhase, PlanSubtask } from "@/types";
 import * as planApi from "@/lib/api/plans";
+import { toast } from "sonner";
 
 export function DraftingActions({
   plan,
@@ -46,7 +47,10 @@ export function DraftingActions({
       await sendWithEngine(mainEngine, prompt);
       await planApi.createPlanEvent(plan.id, "detail_design_requested", "user");
       onSwitchToChat?.();
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error("[DraftingActions] detail design request failed:", e);
+      toast.error("상세 설계 요청 실패: " + (e instanceof Error ? e.message : String(e)));
+    }
     setBusy(false);
   };
 
@@ -56,7 +60,10 @@ export function DraftingActions({
       await planApi.updatePlanPhase(plan.id, "subtask_review");
       await planApi.createPlanEvent(plan.id, "subtask_review_started", "user");
       onPlanUpdate({ phase: "subtask_review" as PlanPhase });
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error("[DraftingActions] start review failed:", e);
+      toast.error("Subtask 검토 전환 실패: " + (e instanceof Error ? e.message : String(e)));
+    }
     setBusy(false);
   };
 

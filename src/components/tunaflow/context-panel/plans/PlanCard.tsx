@@ -104,8 +104,11 @@ export function PlanCard({
               setTaskFileTitles(titles);
             }
           }
-        } catch { /* silent */ }
-      } catch {
+        } catch (e) {
+          console.warn("[PlanCard] task file title load failed:", e);
+        }
+      } catch (e) {
+        console.error("[PlanCard] subtask/event load failed:", e);
         tasks = [];
         setSubtasks([]);
       } finally {
@@ -128,8 +131,8 @@ export function PlanCard({
       setSubtasks((prev) =>
         prev ? prev.map((st) => (st.id === subtaskId ? { ...st, status } : st)) : prev
       );
-    } catch {
-      // silent
+    } catch (e) {
+      console.error("[PlanCard] subtask status update failed:", e);
     }
   };
 
@@ -139,8 +142,8 @@ export function PlanCard({
       setSubtasks((prev) =>
         prev ? prev.map((st) => (st.id === subtaskId ? { ...st, ownerAgent: owner ?? undefined } : st)) : prev
       );
-    } catch {
-      // silent
+    } catch (e) {
+      console.error("[PlanCard] subtask owner change failed:", e);
     }
   };
 

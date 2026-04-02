@@ -62,7 +62,9 @@ export function PlansPanel({ activeStage, onPhaseChanged, onSwitchToChat }: Plan
     try {
       await planApi.updatePlanStatus(planId, status);
       setPlans((prev) => prev.map((p) => (p.id === planId ? { ...p, status } : p)));
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error("[PlansPanel] plan status update failed:", e);
+    }
   };
 
   const handlePlanUpdated = (planId: string, update: Partial<Plan>) => {

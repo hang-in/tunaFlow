@@ -653,6 +653,9 @@ pub fn generate_result_report(
     }
 
     let file_path = dir.join(format!("{}-result.md", slug));
+    if file_path.exists() {
+        eprintln!("[generate_result_report] Overwriting existing result report: {}", file_path.display());
+    }
     std::fs::write(&file_path, &md).map_err(|e| AppError::Agent(format!("write: {}", e)))?;
     Ok(file_path.to_string_lossy().to_string())
 }

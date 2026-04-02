@@ -199,6 +199,12 @@ struct GeminiStreamLine {
     // message event
     role: Option<String>,
     content: Option<String>,
+    // tool_use event
+    tool_name: Option<String>,
+    parameters: Option<serde_json::Value>,
+    // tool_result event
+    tool_id: Option<String>,
+    output: Option<String>,
     // result event
     status: Option<String>,
     stats: Option<GeminiStats>,
@@ -302,22 +308,62 @@ where
                 if parsed.role.as_deref() == Some("assistant") {
                     if let Some(delta) = parsed.content {
                         if !delta.is_empty() {
-                            // Gemini sends incremental deltas — accumulate and emit full content
                             accumulated_content.push_str(&delta);
                             on_chunk(accumulated_content.clone());
                         }
                     }
                 } else if parsed.role.as_deref() == Some("tool") {
-                    // Tool result — show as progress
+                    // Tool result — structured step (done)
                     if let Some(text) = &parsed.content {
-                        let summary = if text.len() > 100 {
-                            let mut end = 100;
+                        let summary = if text.len() > 120 {
+                            let mut end = 120;
                             while end > 0 && !text.is_char_boundary(end) { end -= 1; }
                             format!("{}…", &text[..end])
                         } else { text.clone() };
-                        on_progress(format!("🔧 Tool result: {}", summary));
+                        let step = serde_json::json!({
+                            "type": "tool_result",
+                            "name": "Tool",
+                            "input": summary,
+                            "status": "done"
+                        });
+                        on_progress(format!("__STEP__:{}", step));
                     }
                 }
+            }
+            "tool_use" => {
+                let name = parsed.tool_name.as_deref().unwrap_or("Tool");
+                let input_summary = parsed.parameters.as_ref().map(|v| {
+                    let s = v.to_string();
+                    if s.len() > 120 {
+                        let mut end = 120;
+                        while end > 0 && !s.is_char_boundary(end) { end -= 1; }
+                        format!("{}…", &s[..end])
+                    } else { s }
+                }).unwrap_or_default();
+                let step = serde_json::json!({
+                    "type": "tool_use",
+                    "name": name,
+                    "input": input_summary,
+                    "status": "running"
+                });
+                on_progress(format!("__STEP__:{}", step));
+            }
+            "tool_result" => {
+                let name = parsed.tool_id.as_deref().unwrap_or("Tool");
+                let output = parsed.output.as_deref().unwrap_or("");
+                let summary = if output.len() > 120 {
+                    let mut end = 120;
+                    while end > 0 && !output.is_char_boundary(end) { end -= 1; }
+                    format!("{}…", &output[..end])
+                } else { output.to_string() };
+                let status = parsed.status.as_deref().unwrap_or("success");
+                let step = serde_json::json!({
+                    "type": "tool_result",
+                    "name": name,
+                    "input": summary,
+                    "status": if status == "error" { "error" } else { "done" }
+                });
+                on_progress(format!("__STEP__:{}", step));
             }
             "result" => {
                 got_result = true;

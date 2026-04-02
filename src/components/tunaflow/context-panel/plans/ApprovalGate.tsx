@@ -6,6 +6,7 @@ import * as planApi from "@/lib/api/plans";
 import {
   approveAndStartImplementation,
 } from "@/lib/workflowOrchestration";
+import { toast } from "sonner";
 
 export function ApprovalGate({
   plan,
@@ -36,7 +37,11 @@ export function ApprovalGate({
 
       await openThread(branch.id);
       await sendThreadMessage(prompt, engine);
-    } catch { setMode("idle"); }
+    } catch (e) {
+      console.error("[ApprovalGate] dev start failed:", e);
+      toast.error("Dev 시작 실패: " + (e instanceof Error ? e.message : String(e)));
+      setMode("idle");
+    }
   };
 
   const handleRevert = async () => {
@@ -45,7 +50,11 @@ export function ApprovalGate({
       await planApi.updatePlanPhase(plan.id, "subtask_review");
       await planApi.createPlanEvent(plan.id, "reverted_to_subtask_review", "user");
       onPlanUpdate({ phase: "subtask_review" as PlanPhase });
-    } catch { setMode("idle"); }
+    } catch (e) {
+      console.error("[ApprovalGate] revert failed:", e);
+      toast.error("되돌리기 실패: " + (e instanceof Error ? e.message : String(e)));
+      setMode("idle");
+    }
   };
 
   if (mode === "agent-select") {

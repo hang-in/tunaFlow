@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ENGINE_CONFIGS } from "@/lib/engineConfig";
+import { useToolStepsStore } from "@/stores/toolStepsStore";
+import { serializeSteps } from "@/lib/toolSteps";
 import type {
   SetState,
   GetState,
@@ -84,7 +86,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
           try {
             const parentBranchMsgs = await invoke<Message[]>("list_messages", { conversationId: parentShadowId });
             parentMsg = parentBranchMsgs.find((m) => m.id === branch.checkpointId) ?? null;
-          } catch { /* ignore */ }
+          } catch (e) { console.warn("[thread] parent branch message load failed:", e); }
         }
       }
       set((state) => ({
@@ -172,13 +174,23 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       });
     };
 
-    const ulP = await listen<{ messageId: string; text: string }>(progressEvent, (e) => replaceOrAdd(e.payload.messageId, "progressContent", e.payload.text));
+    const ulP = await listen<{ messageId: string; text: string }>(progressEvent, (e) => {
+      useToolStepsStore.getState().handleProgress(e.payload.messageId, e.payload.text);
+      replaceOrAdd(e.payload.messageId, "progressContent", e.payload.text);
+    });
     const ulC = chunkEvent ? await listen<{ messageId: string; text: string }>(chunkEvent, (e) => replaceOrAdd(e.payload.messageId, "content", e.payload.text)) : () => {};
     const cleanup = () => { ulP(); ulC(); ulD(); ulE(); };
 
-    const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
+    const ulD = await listen<{ messageId: string; conversationId: string }>("agent:completed", async (e) => {
       if (e.payload.conversationId !== threadBranchConvId) return;
       cleanup();
+      // Save tool steps
+      const tsStore = useToolStepsStore.getState();
+      const steps = tsStore.getSteps(e.payload.messageId);
+      if (steps.length > 0) {
+        invoke("save_progress_content", { messageId: e.payload.messageId, content: serializeSteps(steps) }).catch(() => {});
+        tsStore.clear(e.payload.messageId);
+      }
       const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId! });
       set({ threadMessages }); get()._endRun(threadBranchConvId!);
     });

@@ -4,6 +4,7 @@ import type { Plan, PlanPhase, PlanStatus } from "@/types";
 import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 import { processReviewVerdict } from "@/lib/workflowOrchestration";
 import * as planApi from "@/lib/api/plans";
+import { toast } from "sonner";
 
 export function ReviewVerdictCard({
   verdict,
@@ -21,7 +22,10 @@ export function ReviewVerdictCard({
     try {
       await processReviewVerdict(plan, { ...verdict, verdict: "pass" });
       onPlanUpdate({ phase: "done" as PlanPhase, status: "done" as PlanStatus });
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error("[ReviewVerdictCard] approve failed:", e);
+      toast.error("완료 처리 실패: " + (e instanceof Error ? e.message : String(e)));
+    }
     setBusy(false);
   };
 
@@ -30,7 +34,10 @@ export function ReviewVerdictCard({
     try {
       await processReviewVerdict(plan, { ...verdict, verdict: "fail" });
       onPlanUpdate({ phase: "rework" as PlanPhase });
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error("[ReviewVerdictCard] rework failed:", e);
+      toast.error("Rework 처리 실패: " + (e instanceof Error ? e.message : String(e)));
+    }
     setBusy(false);
   };
 

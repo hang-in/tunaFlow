@@ -73,6 +73,12 @@ fn fallback_models(engine: &str) -> Vec<(&'static str, &'static str, bool)> {
             ("anthropic:claude-sonnet-4-6", "Claude Sonnet 4.6", true),
             ("openai:gpt-4.1", "GPT-4.1", false),
         ],
+        "ollama" => vec![
+            ("qwen3:8b", "Qwen 3 8B", true),
+            ("llama3.3:latest", "Llama 3.3", false),
+            ("gemma3:12b", "Gemma 3 12B", false),
+            ("phi-4:latest", "Phi-4", false),
+        ],
         _ => vec![],
     }
 }
@@ -234,7 +240,7 @@ fn discover_opencode() -> Option<Vec<String>> {
 
 // ─── Core API ───────────────────────────────────────────────────────────────
 
-const ENGINES: &[&str] = &["claude", "codex", "gemini", "opencode"];
+const ENGINES: &[&str] = &["claude", "codex", "gemini", "opencode", "ollama"];
 
 fn get_models_for_engine(engine: &str, force: bool) -> (Vec<String>, String) {
     // Check cache
@@ -254,6 +260,7 @@ fn get_models_for_engine(engine: &str, force: bool) -> (Vec<String>, String) {
         "gemini" => discover_gemini(),
         "claude" => discover_claude(),
         "opencode" => discover_opencode(),
+        "ollama" => crate::agents::openai_compat::discover_models(),
         _ => None,
     };
 

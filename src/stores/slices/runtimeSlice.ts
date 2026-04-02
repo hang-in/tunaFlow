@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getSetting } from "@/lib/appStore";
+import { useToolStepsStore } from "@/stores/toolStepsStore";
+import { serializeSteps } from "@/lib/toolSteps";
 import type {
   SetState,
   GetState,
@@ -145,7 +147,9 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const eventPrefix = engine === "claude" ? "claude" : engine;
     const unlistenProgress = await listen<{ messageId: string; text: string }>(
       `${eventPrefix}:progress`, (e) => {
-        // Progress events only swap the placeholder to real messageId (content stays empty → typing indicator)
+        // Parse tool steps from __STEP__ prefix
+        useToolStepsStore.getState().handleProgress(e.payload.messageId, e.payload.text);
+        // Swap the placeholder to real messageId (content stays empty → typing indicator)
         set((state) => {
           const hasReal = state.messages.some((m) => m.id === e.payload.messageId);
           if (hasReal) return state; // already swapped
@@ -165,6 +169,13 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const unlistenDone = await listen<{ messageId: string; conversationId: string }>("agent:completed", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;
       cleanup();
+      // Save tool steps to progressContent for lazy-load display
+      const tsStore = useToolStepsStore.getState();
+      const steps = tsStore.getSteps(e.payload.messageId);
+      if (steps.length > 0) {
+        invoke("save_progress_content", { messageId: e.payload.messageId, content: serializeSteps(steps) }).catch(() => {});
+        tsStore.clear(e.payload.messageId);
+      }
       const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
       set({ messages });
       get()._endRun(selectedConversationId);
@@ -226,7 +237,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const target = threadId ?? get().selectedConversationId;
 
     if (target) {
-      try { await invoke("cancel_running", { conversationId: target }); } catch { /* best-effort */ }
+      try { await invoke("cancel_running", { conversationId: target }); } catch (e) { console.warn("[runtime] cancel_running failed (best-effort):", e); }
     }
 
     if (!target) {
@@ -244,7 +255,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       try {
         const messages = await invoke<Message[]>("list_messages", { conversationId: target });
         set({ messages });
-      } catch { /* ignore */ }
+      } catch (e) { console.warn("[runtime] message reload after cancel failed:", e); }
     }
   },
 });
