@@ -112,6 +112,16 @@
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* prose-chat: optimized for technical agent responses (code + tables + lists) */
+.prose-chat { font-size: 14px; line-height: 1.65; }
+.prose-chat h2 { margin-top: 1.5em; margin-bottom: 0.5em; }
+.prose-chat h3 { margin-top: 1.25em; margin-bottom: 0.4em; }
+.prose-chat pre { margin-top: 1em; margin-bottom: 1em; }
+.prose-chat table { margin-top: 0.75em; margin-bottom: 0.75em; }
+.prose-chat ul, .prose-chat ol { margin-top: 0.5em; margin-bottom: 0.5em; }
+.prose-chat li { margin-top: 0.15em; margin-bottom: 0.15em; }
+.prose-chat blockquote { margin-top: 0.75em; margin-bottom: 0.75em; }
+
 @keyframes typing-dot {
   0%, 60%, 100% { opacity: 0.2; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-3px); }

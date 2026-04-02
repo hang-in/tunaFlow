@@ -172,30 +172,27 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       const prevFindingsBlock = reviewVerdict && reviewVerdict.findings.length > 0
         ? [
             `│`,
-            `│ 이전 Review Findings (수정 확인 필요):`,
-            ...reviewVerdict.findings.map((f, i) => `│ □ ${i + 1}. ${f.slice(0, 150)}`),
-            `│`,
-            `│ 위 사항이 수정되었는지 반드시 확인하세요.`,
+            `**이전 Review Findings (수정 확인 필요)**:`,
+            ...reviewVerdict.findings.map((f, i) => `${i + 1}. ${f.slice(0, 150)}`),
+            ``,
+            `> 위 사항이 수정되었는지 반드시 확인하세요.`,
           ]
         : [];
 
       const prompt = [
-        `┌─ ${roundLabel} 요청 ────────────────────────┐`,
-        `│`,
-        `│ Plan: "${plan.title}"`,
-        `│`,
-        `│ 검증 문서:`,
-        `│ • Plan: docs/plans/${slug}.md`,
-        `│ • 결과: docs/plans/${slug}-result.md`,
-        `│ • 지시서: docs/plans/${slug}-task-*.md`,
+        `### 🔍 ${roundLabel} 요청`,
+        ``,
+        `**Plan**: "${plan.title}"`,
+        ``,
+        `**검증 문서**:`,
+        `- Plan: \`docs/plans/${slug}.md\``,
+        `- 결과: \`docs/plans/${slug}-result.md\``,
+        `- 지시서: \`docs/plans/${slug}-task-*.md\``,
         ...prevFindingsBlock,
-        `│`,
-        `│ Plan 문서와 작업 지시서를 기준으로`,
-        `│ 구현 결과를 검증하세요.`,
-        `│`,
-        `│ 완료 조건:`,
-        `│ <!-- tunaflow:review-verdict --> 제출`,
-        `└──────────────────────────────────────────────┘`,
+        ``,
+        `Plan 문서와 작업 지시서를 기준으로 구현 결과를 검증하세요.`,
+        ``,
+        `> 완료 조건: \`<!-- tunaflow:review-verdict -->\` 제출`,
       ].join("\n");
 
       await sendThreadMessage(prompt, selectedProfile.engine);
@@ -335,16 +332,13 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                   const recItems = reviewVerdict?.recommendations.map((r) => `• ${r.slice(0, 100)}`) ?? [];
 
                   const reworkPrompt = [
-                    `┌─ Rework ──────────────────────────────┐`,
-                    `│`,
-                    `│ 수정 항목 (${findingItems.length}건):`,
-                    `│`,
-                    ...findingItems.map((f) => `│ ${f}`),
-                    `│`,
-                    ...(recItems.length > 0 ? [`│ Recommendations:`, ...recItems.map((r) => `│ ${r}`), `│`] : []),
-                    `│ 완료 조건: 위 항목 모두 해결 후`,
-                    `│ <!-- tunaflow:impl-complete --> 포함`,
-                    `└──────────────────────────────────────┘`,
+                    `### 🔄 Rework`,
+                    ``,
+                    `**수정 항목** (${findingItems.length}건):`,
+                    ...findingItems.map((f) => `- ${f}`),
+                    ...(recItems.length > 0 ? [``, `**Recommendations**:`, ...recItems.map((r) => `- ${r}`)] : []),
+                    ``,
+                    `> 완료 조건: 위 항목 모두 해결 후 \`<!-- tunaflow:impl-complete -->\` 포함`,
                   ].join("\n");
                   const shadowConvId = `branch:${plan.implementationBranchId}`;
                   const saved = useChatStore.getState().getConversationEngine(shadowConvId);

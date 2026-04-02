@@ -98,17 +98,15 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       await openThread(branch.id);
 
       const prompt = [
-        `┌─ Plan 문서 반영 ────────────────────┐`,
-        `│`,
-        `│ Plan: "${plan.title}"`,
-        `│ 메인: docs/plans/${slug}.md`,
-        `│ 지시서: docs/plans/${slug}-task-*.md`,
-        `│`,
-        `│ 수정된 작업 지시서의 내용을`,
-        `│ 메인 문서의 subtask 요약에 반영하세요.`,
-        `│`,
-        `│ 완료 조건: 변경 내용 요약`,
-        `└──────────────────────────────────────┘`,
+        `### 📌 Plan 문서 반영`,
+        ``,
+        `**Plan**: "${plan.title}"`,
+        `- 메인: \`docs/plans/${slug}.md\``,
+        `- 지시서: \`docs/plans/${slug}-task-*.md\``,
+        ``,
+        `수정된 작업 지시서의 내용을 메인 문서의 subtask 요약에 반영하세요.`,
+        ``,
+        `> 완료 조건: 변경 내용 요약`,
       ].join("\n");
 
       await sendThreadMessage(prompt, mainEngine);
@@ -139,16 +137,15 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
       const taskFile = `docs/plans/${slug}-task-${String(subtaskIdx + 1).padStart(2, "0")}.md`;
       const prompt = [
-        `┌─ Subtask 수정 요청 ─────────────────┐`,
-        `│`,
-        `│ Subtask ${subtaskIdx + 1}: "${st.title}"`,
-        `│ 파일: ${taskFile}`,
-        `│`,
-        `│ 검토 의견:`,
-        `│ ${opinion}`,
-        `│`,
-        `│ 완료 조건: 파일 수정 후 변경 내용 요약`,
-        `└──────────────────────────────────────┘`,
+        `### ✏️ Subtask 수정 요청`,
+        ``,
+        `**Subtask ${subtaskIdx + 1}**: "${st.title}"`,
+        `- 파일: \`${taskFile}\``,
+        ``,
+        `**검토 의견**:`,
+        `${opinion}`,
+        ``,
+        `> 완료 조건: 파일 수정 후 변경 내용 요약`,
       ].join("\n");
 
       await sendThreadMessage(prompt, mainEngine);
@@ -174,14 +171,12 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
       const taskFile = `docs/plans/${slug}-task-${String(subtaskIdx + 1).padStart(2, "0")}.md`;
       const prompt = [
-        `┌─ Subtask 논의 ──────────────────────┐`,
-        `│`,
-        `│ Subtask ${subtaskIdx + 1}: "${st.title}"`,
-        `│ 파일: ${taskFile}`,
-        `│`,
-        `│ 이 subtask에 대해 논의합니다.`,
-        `│ 질문하거나 검토 의견을 나눠주세요.`,
-        `└──────────────────────────────────────┘`,
+        `### 💬 Subtask 논의`,
+        ``,
+        `**Subtask ${subtaskIdx + 1}**: "${st.title}"`,
+        `- 파일: \`${taskFile}\``,
+        ``,
+        `이 subtask에 대해 논의합니다. 질문하거나 검토 의견을 나눠주세요.`,
       ].join("\n");
 
       await sendThreadMessage(prompt, mainEngine);
@@ -209,20 +204,19 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       const slug = plan.title.replace(/[^\w가-힣-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 80);
       const taskFile = `docs/plans/${slug}-task-${String(subtaskIdx + 1).padStart(2, "0")}.md`;
       const prompt = [
-        `┌─ 작업 지시서 작성 ──────────────────┐`,
-        `│`,
-        `│ Subtask ${subtaskIdx + 1}: "${st.title}"`,
-        `│ 파일: ${taskFile}`,
-        `│`,
-        `│ 포함 내용:`,
-        `│ • 대상 파일 및 경로`,
-        `│ • 구현 접근법 (단계별)`,
-        `│ • 의존성 (패키지, 다른 subtask)`,
-        `│ • 리스크 및 주의사항`,
-        `│ • 완료 기준`,
-        `│`,
-        `│ 완료 조건: 파일 작성 후 알려주세요`,
-        `└──────────────────────────────────────┘`,
+        `### 📝 작업 지시서 작성`,
+        ``,
+        `**Subtask ${subtaskIdx + 1}**: "${st.title}"`,
+        `- 파일: \`${taskFile}\``,
+        ``,
+        `**포함 내용**:`,
+        `- 대상 파일 및 경로`,
+        `- 구현 접근법 (단계별)`,
+        `- 의존성 (패키지, 다른 subtask)`,
+        `- 리스크 및 주의사항`,
+        `- 완료 기준`,
+        ``,
+        `> 완료 조건: 파일 작성 후 알려주세요`,
       ].join("\n");
 
       await sendThreadMessage(prompt, mainEngine);

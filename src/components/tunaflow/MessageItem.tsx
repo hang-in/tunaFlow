@@ -14,7 +14,7 @@ import { useToolStepsStore } from "@/stores/toolStepsStore";
 import { deserializeSteps } from "@/lib/toolSteps";
 import { hasPlanProposal, splitPlanProposals } from "@/lib/planProposalParser";
 
-const PROSE_CLS = "prose prose-sm prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>hr:last-child]:hidden [&>hr]:border-sidebar-foreground/20 [&>hr]:my-3";
+const PROSE_CLS = "prose prose-invert prose-chat max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>hr:last-child]:hidden [&>hr]:border-sidebar-foreground/20 [&>hr]:my-3";
 
 /** Detect if user message content contains markdown that benefits from rich rendering. */
 function hasMarkdownSignal(content: string): boolean {
@@ -89,7 +89,7 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
     <div
       className={cn(
         "group relative flex gap-2.5 px-4 transition-colors",
-        grouped ? "py-0.5" : "py-1.5",
+        grouped ? "py-1" : "py-2",
         isCompact && "px-3 py-1",
         "hover:bg-accent/20",
       )}
@@ -117,7 +117,7 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
         )}
 
         {/* Body */}
-        <div className={cn("text-foreground/90 leading-relaxed", isCompact ? "text-xs" : "text-[13px]")}>
+        <div className={cn("text-foreground leading-relaxed", isCompact ? "text-xs" : "text-sm")}>
           {isUser && hasMarkdownSignal(message.content) ? (
             <div className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block", isCompact && "line-clamp-3")}>
               <MarkdownBody content={message.content} conversationId={message.conversationId} />

@@ -184,21 +184,20 @@ export async function approveAndStartImplementation(
   ).join("\n");
 
   const taskItems = subtasks.map((_, i) =>
-    `│ □ docs/plans/${slug}-task-${String(i + 1).padStart(2, "0")}.md`
+    `- \`docs/plans/${slug}-task-${String(i + 1).padStart(2, "0")}.md\``
   );
   const prompt = [
-    `┌─ 구현 시작 ──────────────────────────┐`,
-    `│`,
-    `│ Plan: "${plan.title}"`,
-    `│`,
-    `│ 작업 지시서:`,
+    `### 🔧 구현 시작`,
+    ``,
+    `**Plan**: "${plan.title}"`,
+    ``,
+    `**작업 지시서**:`,
     ...taskItems,
-    `│`,
-    `│ 규칙:`,
-    `│ 1. 각 task 파일을 읽고 순서대로 구현`,
-    `│ 2. 각 완료 시 <!-- subtask-done:N -->`,
-    `│ 3. 전체 완료 시 <!-- impl-complete -->`,
-    `└──────────────────────────────────────┘`,
+    ``,
+    `**규칙**:`,
+    `1. 각 task 파일을 읽고 순서대로 구현`,
+    `2. 각 완료 시 \`<!-- subtask-done:N -->\``,
+    `3. 전체 완료 시 \`<!-- impl-complete -->\``,
   ].join("\n");
 
   return { branch, shadowConvId, prompt };

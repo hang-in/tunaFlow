@@ -59,7 +59,7 @@ function CodeBlock({ children, ...rest }: ComponentPropsWithoutRef<"pre">) {
   };
 
   return (
-    <div className="relative my-2 rounded-md bg-card/80 border border-border/20 overflow-hidden">
+    <div className="relative my-2 rounded-md bg-card/80 border border-border/30 overflow-hidden">
       {/* ─── Header bar ─── */}
       <div className="flex items-center gap-2 px-3 py-1 bg-white/[0.03] border-b border-border/10 text-[10px] text-muted-foreground/50">
         {shouldCollapse && (
@@ -92,7 +92,7 @@ function CodeBlock({ children, ...rest }: ComponentPropsWithoutRef<"pre">) {
         <pre
           {...rest}
           className={cn(
-            "text-[12px] leading-relaxed overflow-x-auto [&>code]:!bg-transparent [&>code]:!p-0",
+            "text-[13px] leading-relaxed overflow-x-auto [&>code]:!bg-transparent [&>code]:!p-0",
             !expanded && "overflow-hidden"
           )}
           style={!expanded ? { maxHeight: `${COLLAPSED_VISIBLE_LINES * 1.6 + 0.75}rem` } : undefined}
@@ -173,7 +173,7 @@ function InlineCode({ children, className, ...rest }: ComponentPropsWithoutRef<"
       <code
         {...rest}
         onClick={() => fileViewer.openFile(fileParsed.path, fileParsed.line)}
-        className="text-[12px] bg-accent/40 text-primary/80 px-1 py-0.5 rounded cursor-pointer hover:bg-accent/60 hover:text-primary transition-colors inline-flex items-center gap-0.5"
+        className="text-[13px] bg-accent/60 text-primary px-1 py-0.5 rounded cursor-pointer hover:bg-accent/60 hover:text-primary transition-colors inline-flex items-center gap-0.5"
         title={`Open ${fileParsed.path}${fileParsed.line ? `:${fileParsed.line}` : ""}`}
       >
         <FileCode className="w-3 h-3 shrink-0 opacity-50" />
@@ -184,7 +184,7 @@ function InlineCode({ children, className, ...rest }: ComponentPropsWithoutRef<"
 
   return (
     <code {...rest}
-      className="text-[12px] bg-accent/40 text-foreground/90 px-1 py-0.5 rounded">
+      className="text-[13px] bg-accent/60 text-foreground/90 px-1 py-0.5 rounded">
       {children}
     </code>
   );
@@ -196,7 +196,7 @@ function ScrollTable({ children, ...rest }: ComponentPropsWithoutRef<"table">) {
   return (
     <div className="overflow-x-auto my-2 rounded-md max-w-full border border-border/20">
       <table {...rest}
-        className="w-full border-collapse text-[12px] [&_th]:bg-accent/30 [&_th]:px-2.5 [&_th]:py-1 [&_th]:text-left [&_th]:font-medium [&_th]:text-foreground/70 [&_th]:border-b [&_th]:border-border/20 [&_td]:px-2.5 [&_td]:py-1 [&_td]:border-b [&_td]:border-border/10">
+        className="w-full border-collapse text-[13px] [&_th]:bg-accent/30 [&_th]:px-2.5 [&_th]:py-1 [&_th]:text-left [&_th]:font-medium [&_th]:text-foreground/70 [&_th]:border-b [&_th]:border-border/20 [&_td]:px-2.5 [&_td]:py-1 [&_td]:border-b [&_td]:border-border/10">
         {children}
       </table>
     </div>
@@ -210,7 +210,7 @@ function SafeLink({ href, children, ...rest }: ComponentPropsWithoutRef<"a">) {
   return (
     <a {...rest} href={href}
       {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-      className="text-primary/80 hover:text-primary hover:underline transition-colors">
+      className="text-primary hover:text-primary hover:underline transition-colors">
       {children}
       {isExternal && <span className="inline-block ml-0.5 text-[9px] opacity-30">↗</span>}
     </a>
@@ -222,7 +222,7 @@ function SafeLink({ href, children, ...rest }: ComponentPropsWithoutRef<"a">) {
 function Quote({ children, ...rest }: ComponentPropsWithoutRef<"blockquote">) {
   return (
     <blockquote {...rest}
-      className="my-2 pl-3 border-l-2 border-border/40 text-muted-foreground/70 italic">
+      className="my-2 pl-3 border-l-2 border-border/40 text-muted-foreground/80 italic">
       {children}
     </blockquote>
   );

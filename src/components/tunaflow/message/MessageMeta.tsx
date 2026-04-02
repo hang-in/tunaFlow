@@ -26,11 +26,11 @@ export function MessageMeta({ message, isCompact = false, threadBranches, onOpen
             {displayName}
           </span>
           {message.model && (
-            <span className="text-sidebar-foreground/50 font-mono text-[10px]">{message.model}</span>
+            <span className="text-sidebar-foreground/50 font-mono text-[11px]">{message.model}</span>
           )}
         </>
       )}
-      <span className={cn("text-sidebar-foreground/50 font-mono", isCompact ? "text-[9px]" : "text-[10px]")}>
+      <span className={cn("text-sidebar-foreground/50 font-mono", isCompact ? "text-[10px]" : "text-[11px]")}>
         {formatTimestamp(message.timestamp)}
       </span>
       {/* Branch badges inline in header */}
