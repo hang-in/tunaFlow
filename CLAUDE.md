@@ -371,6 +371,13 @@ tunaFlow/
 - `execute_parallel()`: `std::sync::mpsc` → `tokio::sync::mpsc`, `std::thread::spawn` → `tokio::spawn`
 - background 커맨드: `std::thread::spawn` → `tokio::spawn(async move { ... .await })`
 
+### ✅ 완료: rawq 고도화 (세션 7)
+- `SearchOptions` 구조체 + `search_with_options()` — rerank, token-budget, text-weight, rrf-weight 지원
+- `prompt_needs_rawq()` 게이트 완화 — 코드 키워드 없어도 10자+ 프롬프트에 검색 포함
+- 개념 쿼리 감지 → text-weight 0.8 + rrf-weight 0.7 (문서 검색 강화)
+- 코드 쿼리 → text-weight 0.5 + auto rrf-weight (rawq 자체 판단)
+- rerank 항상 활성화 (2-pass keyword overlap)
+
 ### P1: 구조 개선
 - **ContextPack DB/assembly 완전 분리** (논리적 2-phase 분리 완료, 파일 분리는 후순위)
 

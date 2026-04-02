@@ -339,34 +339,86 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
-/// Search using the real rawq CLI. No fallback.
-///
-/// CLI invocation (from rawq source args.rs):
-///   rawq search "<query>" <path> -n <top> --threshold 0.3 -C 2 --json
+/// Extended search options for rawq CLI.
+pub struct SearchOptions {
+    pub limit: usize,
+    pub threshold: f32,
+    /// Enable keyword overlap reranking (2-pass). Improves precision.
+    pub rerank: bool,
+    /// Max total tokens across all results. None = unlimited.
+    pub token_budget: Option<usize>,
+    /// Weight multiplier for text/markdown chunks (0.0–1.0). Default 0.5.
+    /// Set to 1.0 to include docs equally with code.
+    pub text_weight: Option<f32>,
+    /// Semantic weight in RRF (0.0–1.0). None = auto-detect by query type.
+    pub rrf_weight: Option<f32>,
+    /// Context lines around each result.
+    pub context_lines: usize,
+}
+
+impl Default for SearchOptions {
+    fn default() -> Self {
+        Self {
+            limit: 10,
+            threshold: 0.3,
+            rerank: false,
+            token_budget: None,
+            text_weight: None,
+            rrf_weight: None,
+            context_lines: 2,
+        }
+    }
+}
+
+/// Search using the real rawq CLI with default options.
+#[allow(dead_code)]
 pub fn search(project_path: &str, query: &str, limit: usize) -> Result<Vec<SearchResult>, RawqError> {
-    if query.trim().is_empty() || limit == 0 {
+    search_with_options(project_path, query, SearchOptions { limit, ..Default::default() })
+}
+
+/// Search with extended options.
+pub fn search_with_options(project_path: &str, query: &str, opts: SearchOptions) -> Result<Vec<SearchResult>, RawqError> {
+    if query.trim().is_empty() || opts.limit == 0 {
         return Err(RawqError::NoResults);
     }
 
     let bin = resolve_rawq_bin()?;
     let t0 = std::time::Instant::now();
 
+    let mut args = vec![
+        "search".to_string(),
+        query.to_string(),
+        project_path.to_string(),
+        "-n".to_string(), opts.limit.to_string(),
+        "--threshold".to_string(), format!("{:.2}", opts.threshold),
+        "-C".to_string(), opts.context_lines.to_string(),
+        "--json".to_string(),
+    ];
+
+    if opts.rerank {
+        args.push("--rerank".to_string());
+    }
+    if let Some(budget) = opts.token_budget {
+        args.push("--token-budget".to_string());
+        args.push(budget.to_string());
+    }
+    if let Some(tw) = opts.text_weight {
+        args.push("--text-weight".to_string());
+        args.push(format!("{:.2}", tw));
+    }
+    if let Some(rw) = opts.rrf_weight {
+        args.push("--rrf-weight".to_string());
+        args.push(format!("{:.2}", rw));
+    }
+
+    let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let mut child = Command::new(&bin)
-        .args([
-            "search",
-            query,
-            project_path,
-            "-n", &limit.to_string(),
-            "--threshold", "0.3",
-            "-C", "2",
-            "--json",
-        ])
+        .args(&args_ref)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
 
-    // Timeout: 5 seconds max for search
     let timeout = std::time::Duration::from_secs(5);
     loop {
         match child.try_wait() {
@@ -385,12 +437,11 @@ pub fn search(project_path: &str, query: &str, limit: usize) -> Result<Vec<Searc
 
     let output = child.wait_with_output()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
-    eprintln!("[rawq] search completed in {}ms", t0.elapsed().as_millis());
+    eprintln!("[rawq] search completed in {}ms (rerank={}, text_weight={:?})", t0.elapsed().as_millis(), opts.rerank, opts.text_weight);
 
     if !output.status.success() {
         let code = output.status.code().unwrap_or(-1);
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        // rawq exit code 1 = no results found (not an error)
         if code == 1 {
             return Err(RawqError::NoResults);
         }
@@ -398,7 +449,7 @@ pub fn search(project_path: &str, query: &str, limit: usize) -> Result<Vec<Searc
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_json(&stdout, limit)
+    parse_json(&stdout, opts.limit)
 }
 
 /// Parse rawq search --json output.

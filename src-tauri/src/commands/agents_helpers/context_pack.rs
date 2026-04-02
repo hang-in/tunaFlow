@@ -300,9 +300,16 @@ const CODE_SIGNAL_KEYWORDS: &[&str] = &[
 ];
 
 /// Check if a prompt likely needs code context from rawq.
+/// Relaxed: returns true for prompts longer than 10 chars (nearly all real prompts).
+/// Short prompts (greetings, single words) still skip.
 fn prompt_needs_rawq(prompt: &str) -> bool {
     let lower = prompt.to_lowercase();
-    CODE_SIGNAL_KEYWORDS.iter().any(|kw| lower.contains(kw))
+    // Always include if explicit code signals
+    if CODE_SIGNAL_KEYWORDS.iter().any(|kw| lower.contains(kw)) {
+        return true;
+    }
+    // Include for any substantive prompt (> 10 chars, not just a greeting)
+    prompt.trim().len() > 10
 }
 
 /// Maximum snippet length per rawq result (chars).
@@ -336,8 +343,19 @@ pub fn build_rawq_section(project_path: Option<&str>, prompt: &str) -> Option<St
         }
     }
 
-    // Fetch more than needed to allow post-processing headroom
-    match rawq::search(path, prompt, RAWQ_MAX_RESULTS + 3) {
+    // Detect if prompt is conceptual (favor semantic) or code-specific (favor BM25)
+    let is_conceptual = !CODE_SIGNAL_KEYWORDS.iter().any(|kw| prompt.to_lowercase().contains(kw));
+    let opts = rawq::SearchOptions {
+        limit: RAWQ_MAX_RESULTS + 3,
+        threshold: 0.3,
+        rerank: true,
+        token_budget: None,
+        text_weight: Some(if is_conceptual { 0.8 } else { 0.5 }),
+        rrf_weight: if is_conceptual { Some(0.7) } else { None }, // None = auto-detect
+        context_lines: 2,
+    };
+
+    match rawq::search_with_options(path, prompt, opts) {
         Ok(mut results) => {
             // Post-processing: filter low confidence
             results.retain(|r| r.confidence >= RAWQ_MIN_CONFIDENCE);
