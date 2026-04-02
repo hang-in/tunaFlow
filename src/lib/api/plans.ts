@@ -34,8 +34,9 @@ export async function setSubtaskOwner(
 
 // ─── Orchestration (Phase A) ────────────────────────────────────────────────
 
-export async function updatePlanPhase(id: string, phase: PlanPhase): Promise<void> {
-  return invoke("update_plan_phase", { id, phase });
+/** Update plan phase. Returns the current rework_count after update. */
+export async function updatePlanPhase(id: string, phase: PlanPhase): Promise<number> {
+  return invoke<number>("update_plan_phase", { id, phase });
 }
 
 export async function createPlanEvent(

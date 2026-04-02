@@ -91,6 +91,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 22 {
         apply_v22(conn)?;
     }
+    if current < 23 {
+        apply_v23(conn)?;
+    }
     Ok(())
 }
 
@@ -440,6 +443,13 @@ fn apply_v21(conn: &Connection) -> Result<(), AppError> {
     ")?;
 
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (21, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// Doom loop detection: rework cycle counter on plans
+fn apply_v23(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "plans", "rework_count", "INTEGER NOT NULL DEFAULT 0")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (23, ?1)", [now_epoch()])?;
     Ok(())
 }
 

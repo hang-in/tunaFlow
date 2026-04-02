@@ -121,6 +121,8 @@ pub struct Plan {
     pub version_major: i64,
     /// Semantic version minor
     pub version_minor: i64,
+    /// Number of rework cycles (doom loop detection)
+    pub rework_count: i64,
     pub created_at: i64,
     pub updated_at: i64,
 }

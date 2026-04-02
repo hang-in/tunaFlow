@@ -68,8 +68,9 @@ fn map_plan(row: &rusqlite::Row) -> rusqlite::Result<Plan> {
         revision: row.get(13)?,
         version_major: row.get(14)?,
         version_minor: row.get(15)?,
-        created_at: row.get(16)?,
-        updated_at: row.get(17)?,
+        rework_count: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
     })
 }
 
@@ -90,7 +91,7 @@ fn map_subtask(row: &rusqlite::Row) -> rusqlite::Result<PlanSubtask> {
 }
 
 const PLAN_COLS: &str =
-    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, revision, version_major, version_minor, created_at, updated_at";
+    "id, conversation_id, branch_id, title, description, expected_outcome, status, phase, architect_engine, developer_engine, reviewer_engines, implementation_branch_id, review_branch_id, revision, version_major, version_minor, rework_count, created_at, updated_at";
 
 const SUBTASK_COLS: &str =
     "id, plan_id, idx, title, details, status, outcome, owner_agent, last_updated_by, created_at, updated_at";
@@ -151,6 +152,7 @@ pub fn create_plan(
         revision: 0,
         version_major: 1,
         version_minor: 0,
+        rework_count: 0,
         created_at: now,
         updated_at: now,
     })
@@ -318,19 +320,45 @@ pub fn find_plan_by_branch(
 // ─── Orchestration Commands (Phase A) ────────────────────────────────────────
 
 /// Update the orchestration phase of a plan.
+/// When transitioning to "rework", increments rework_count automatically.
+/// Returns the current rework_count after the update.
 #[tauri::command]
 pub fn update_plan_phase(
     id: String,
     phase: String,
     state: State<DbState>,
-) -> Result<(), AppError> {
+) -> Result<i64, AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let now = now_epoch_ms();
-    conn.execute(
-        "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
-        params![phase, now, id],
-    )?;
-    Ok(())
+
+    if phase == "rework" {
+        // Increment rework counter on each rework cycle
+        conn.execute(
+            "UPDATE plans SET phase = ?1, rework_count = rework_count + 1, updated_at = ?2 WHERE id = ?3",
+            params![phase, now, id],
+        )?;
+    } else if phase == "implementation" {
+        // No reset — rework_count tracks total cycles, not current attempt
+        conn.execute(
+            "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
+            params![phase, now, id],
+        )?;
+    } else {
+        conn.execute(
+            "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
+            params![phase, now, id],
+        )?;
+    }
+
+    // Return current rework_count
+    let count: i64 = conn
+        .query_row(
+            "SELECT rework_count FROM plans WHERE id = ?1",
+            [&id],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    Ok(count)
 }
 
 /// Create a plan event (history log entry).

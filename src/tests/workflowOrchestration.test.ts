@@ -40,6 +40,7 @@ const mockPlan: Plan = {
   revision: 0,
   versionMajor: 1,
   versionMinor: 0,
+  reworkCount: 0,
   createdAt: 0,
   updatedAt: 0,
 };

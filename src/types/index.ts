@@ -294,6 +294,7 @@ export interface Plan {
   revision: number;
   versionMajor: number;
   versionMinor: number;
+  reworkCount: number;
   createdAt: number;
   updatedAt: number;
 }

@@ -303,6 +303,11 @@ export function PlanCard({
             {plan.phase === "rework" && plan.implementationBranchId && (
               <div className="mt-2 rounded-md border border-status-rejected/30 bg-status-rejected/5 p-2.5 text-[10px] text-status-rejected space-y-2">
                 <p>Rework 필요 — Review findings를 Developer에게 전달합니다.</p>
+                {plan.reworkCount >= 2 && (
+                  <p className="text-[9px] font-medium text-amber-500">
+                    ⚠ Rework {plan.reworkCount}회차 — {plan.reworkCount >= 3 ? "설계 재검토가 필요합니다." : "다음 실패 시 설계 재검토로 에스컬레이션됩니다."}
+                  </p>
+                )}
                 {reviewVerdict && reviewVerdict.findings.length > 0 && (
                   <ul className="space-y-0.5 text-[9px] text-foreground/60 pl-2">
                     {reviewVerdict.findings.map((f, i) => <li key={i}>- {f}</li>)}
