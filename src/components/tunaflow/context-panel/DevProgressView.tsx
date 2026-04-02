@@ -6,6 +6,7 @@ import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileT
 import type { Plan, PlanPhase, PlanSubtask, Message } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { scanCompletedSubtasks, hasImplComplete, hasReviewVerdict, extractReviewVerdict } from "@/lib/planProposalParser";
+import { runProjectTests, type TestRunResult } from "@/lib/api/testRunner";
 import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 import { syncResultReport } from "@/lib/workflowOrchestration";
 import type { Branch } from "@/types";
@@ -25,6 +26,8 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
+  const [testResult, setTestResult] = useState<TestRunResult | null>(null);
+  const [testRunning, setTestRunning] = useState(false);
   const [reviewVerdict, setReviewVerdict] = useState<ParsedReviewVerdict | null>(null);
   const [reviewMode, setReviewMode] = useState<"idle" | "select">("idle");
   const [selectedReviewerId, setSelectedReviewerId] = useState(() => {
@@ -49,7 +52,29 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           const msgs = await invoke<Message[]>("list_messages", { conversationId: shadowConvId });
           if (!cancelled) {
             setCompletedNums(scanCompletedSubtasks(msgs));
-            setImplComplete(msgs.some((m) => m.role === "assistant" && hasImplComplete(m.content)));
+            const complete = msgs.some((m) => m.role === "assistant" && hasImplComplete(m.content));
+            setImplComplete(complete);
+
+            // Auto-run tests when implementation is complete
+            if (complete && !cancelled) {
+              try {
+                const projectKey = useChatStore.getState().selectedProjectKey;
+                if (projectKey) {
+                  const project = await invoke("get_project", { key: projectKey }) as { path?: string };
+                  if (project?.path) {
+                    setTestRunning(true);
+                    const result = await runProjectTests(project.path);
+                    if (!cancelled) {
+                      setTestResult(result);
+                      setTestRunning(false);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn("[tunaflow] test run failed:", e);
+                setTestRunning(false);
+              }
+            }
           }
         } catch { /* branch may not exist */ }
       }
@@ -331,6 +356,37 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
               설계 변경 → Subtask
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Test results — informational, does not block Review */}
+      {testRunning && (
+        <div className="rounded-md border border-primary/20 bg-primary/5 p-2.5 text-[10px] text-primary flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />테스트 실행 중...
+        </div>
+      )}
+      {testResult && !testRunning && (
+        <div className={cn(
+          "rounded-md border p-2.5 text-[10px] space-y-1",
+          testResult.success
+            ? "border-status-approved/30 bg-status-approved/5 text-status-approved"
+            : "border-status-rejected/30 bg-status-rejected/5 text-status-rejected"
+        )}>
+          <div className="font-medium">{testResult.testType} 테스트: {testResult.success ? "PASS" : "FAIL"}</div>
+          <div className="flex gap-3 text-[9px]">
+            <span>통과: {testResult.passed}</span>
+            <span>실패: {testResult.failed}</span>
+            {testResult.skipped > 0 && <span>건너뜀: {testResult.skipped}</span>}
+            <span>{testResult.durationMs}ms</span>
+          </div>
+          {!testResult.success && testResult.output && (
+            <details className="mt-1">
+              <summary className="text-[9px] cursor-pointer text-muted-foreground/60 hover:text-foreground">출력 보기</summary>
+              <pre className="text-[8px] mt-1 max-h-32 overflow-auto bg-card/50 rounded p-1.5 whitespace-pre-wrap">
+                {testResult.output.slice(0, 2000)}
+              </pre>
+            </details>
+          )}
         </div>
       )}
 
