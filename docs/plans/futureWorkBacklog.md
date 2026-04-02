@@ -13,10 +13,7 @@
 - 참고: `~/.claude/settings.json` permissions으로 명령별 화이트리스트 가능
 - 우선순위: 워크플로우 안정화 후
 
-### DevProgressView 실시간 업데이트
-- 현재: 페이지 로딩 시점에만 마커 스캔 → 에이전트 완료 후 수동 리로드 필요
-- 필요: agent:completed 이벤트 또는 슬라이더 닫힘 시 자동 리스캔
-- 우선순위: 워크플로우 테스트 안정화 후
+### ~~DevProgressView 실시간 업데이트~~ — ✅ 완료 (5초 폴링)
 
 ### Review RT (Roundtable) 다중 리뷰어
 - 현재: 단일 Reviewer로 리뷰
