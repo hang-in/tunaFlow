@@ -55,14 +55,22 @@ fn detect_test_runner(path: &Path) -> Result<String, AppError> {
         return Ok("cargo".into());
     }
     if path.join("package.json").exists() {
-        // Check for vitest config first, then jest
+        // Check for vitest config
         if path.join("vitest.config.ts").exists()
             || path.join("vitest.config.js").exists()
             || path.join("vitest.config.mts").exists()
         {
             return Ok("vitest".into());
         }
-        return Ok("vitest".into()); // default to vitest for npm projects
+        // Check for jest config
+        if path.join("jest.config.ts").exists()
+            || path.join("jest.config.js").exists()
+            || path.join("jest.config.mjs").exists()
+        {
+            return Ok("jest".into());
+        }
+        // Fallback: vitest (most npm projects with vite)
+        return Ok("vitest".into());
     }
     Err(AppError::NotFound("No supported test runner detected".into()))
 }
@@ -76,7 +84,6 @@ fn execute_tests(path: &Path, runner: &str) -> Result<(String, bool), AppError> 
         "vitest" => Command::new("npx")
             .args([
                 "vitest", "run",
-                // Exclude directories that commonly contain external/cloned repos or generated code
                 "--exclude", "**/data/**",
                 "--exclude", "**/node_modules/**",
                 "--exclude", "**/dist/**",
@@ -84,6 +91,10 @@ fn execute_tests(path: &Path, runner: &str) -> Result<(String, bool), AppError> 
                 "--exclude", "**/.git/**",
                 "--exclude", "**/target/**",
             ])
+            .current_dir(path)
+            .output(),
+        "jest" => Command::new("npx")
+            .args(["jest", "--no-coverage", "--forceExit"])
             .current_dir(path)
             .output(),
         _ => return Err(AppError::NotFound(format!("Unknown test runner: {}", runner))),
@@ -105,8 +116,32 @@ fn parse_test_counts(output: &str, runner: &str) -> (i32, i32, i32) {
     match runner {
         "cargo" => parse_cargo_counts(output),
         "vitest" => parse_vitest_counts(output),
+        "jest" => parse_jest_counts(output),
         _ => (0, 0, 0),
     }
+}
+
+fn parse_jest_counts(output: &str) -> (i32, i32, i32) {
+    // "Tests:  2 failed, 53 passed, 55 total"
+    let mut passed = 0i32;
+    let mut failed = 0i32;
+    let mut skipped = 0i32;
+    if let Some(re) = regex::Regex::new(r"(\d+) passed").ok() {
+        if let Some(caps) = re.captures(output) {
+            passed = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        }
+    }
+    if let Some(re) = regex::Regex::new(r"(\d+) failed").ok() {
+        if let Some(caps) = re.captures(output) {
+            failed = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        }
+    }
+    if let Some(re) = regex::Regex::new(r"(\d+) skipped").ok() {
+        if let Some(caps) = re.captures(output) {
+            skipped = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        }
+    }
+    (passed, failed, skipped)
 }
 
 fn parse_cargo_counts(output: &str) -> (i32, i32, i32) {

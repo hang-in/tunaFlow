@@ -2,7 +2,7 @@
 
 > 대화 중 발견된 개선 사항 중 현재 우선순위가 아닌 것들을 기록.
 > 컨텍스트 유실 방지용. 워크플로우 안정화 후 착수.
-> 최종 갱신: 2026-04-02
+> 최종 갱신: 2026-04-03 (세션 7 반영)
 
 ---
 
@@ -24,19 +24,18 @@
 
 ### 스킬 자동 주입
 - ~~키워드 매칭 선택적 주입~~ — ✅ 완료 (세션 4b, 8k→3k 절감)
-- 워크플로우 phase별 자동 스킬 주입 (Workflow Skill Tier 1/2)
-- 에이전트 role 기반 자동 스킬
-- 우선순위: 워크플로우 안정화 후
+- ~~워크플로우 phase별 자동 스킬 주입~~ — ✅ 완료 (세션 7, appStore workflowSkills 매핑 + effectiveSkills)
+- ~~스킬 세트 그룹화 (Toolset Composition)~~ — ✅ 완료 (세션 7, SKILL_SETS + set: 접두사)
+- 에이전트 role 기반 자동 스킬 (Persona recommendedSkills) — 미구현
+- 온보딩 메타에이전트 자동 추천 — 미구현
+- 우선순위: 스킬 선택 UX 개선 시
 
-### ChatPanel 가상 스크롤
-- react-virtuoso 의존성 도입 완료 (세션 4b)
-- 실제 ChatPanel 적용은 성능 문제 체감 시
-- 참고: `docs/plans/chatVirtualizationPlan.md`
+### ~~ChatPanel 가상 스크롤~~ — ✅ 완료 (세션 7)
+- react-virtuoso Virtuoso 컴포넌트로 ChatPanel 전환
+- followOutput + scrollToIndex + initialTopMostItemIndex
 
-### 커맨드 팔레트
-- cmdk 의존성 도입 완료 (세션 4b)
-- 실제 UI 구현 미착수
-- 우선순위: P1
+### ~~커맨드 팔레트~~ — ✅ 완료 (세션 7)
+- cmdk Cmd+K 커맨드 팔레트 (탭/대화/프로젝트 전환, 새 대화, 설정)
 
 ---
 
@@ -57,14 +56,13 @@
 - 우선순위: context 부족 체감 시
 
 ### E2E Smoke Test
-- integration test 부재 (Rust 60 + Frontend 96 unit test만)
+- integration test 부재 (Rust 83 + Frontend 96 unit test만)
 - 최소 1개 E2E: Chat → 승격 → Subtask → Approved → Dev → Review → Verdict
 - 우선순위: 워크플로우 안정화 후
 
-### RT 동기 실행 → 비동기 전환
-- RT에서 `run()` 동기 사용 — progress 가시성 없음
-- tokio async 전환 시 함께 처리
-- 우선순위: P1 (tokio async phase)
+### ~~RT 동기 실행 → 비동기 전환~~ — ✅ 완료 (세션 7)
+- tokio async 전환 완료 (execute_round, run_participant, spawn_blocking)
+- 다음 단계: RT progress 가시성 강화 (deliberative mode 실시간 진행 표시)
 
 ### Tool Steps Gemini 호환
 - Gemini CLI 버전에 따라 `tool_use` 이벤트 미지원 가능 (tool_result만)

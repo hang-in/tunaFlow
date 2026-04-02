@@ -17,7 +17,7 @@ async function getRtConfigParticipants(conversationId: string | null): Promise<R
     }
     const config = JSON.parse(raw) as { participants?: RoundtableParticipant[] };
     if (config.participants?.length) {
-      console.log("[RT config] loaded:", conversationId, config.participants.map((p) => `${p.name}(${p.engine}/${p.model ?? "default"})`));
+      // RT config loaded successfully
       return config.participants;
     }
     return null;
@@ -259,9 +259,7 @@ export function useSendActions({
         );
       }
 
-      // Log actual participants being sent
-      console.log("[RT send] convId:", effectiveConvId, "hasRtMessages:", hasRtMessages,
-        "participants:", participants.map((p) => `${p.name}(${p.engine}/${p.model ?? "NO MODEL"})`));
+      // RT send — debug logging removed (participants visible in RT status events)
       const noModel = participants.filter((p) => !p.model);
       if (noModel.length > 0) {
         console.warn("[RT] Participants without explicit model:", noModel.map((p) => p.name).join(", "), "— engine default will be used");
