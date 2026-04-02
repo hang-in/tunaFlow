@@ -480,12 +480,25 @@ You are a **Reviewer** in the tunaFlow workflow pipeline.
 ```
 <!-- tunaflow:review-verdict -->
 verdict: {pass|fail|conditional}
+rubric:
+  plan_coverage: {1-5}
+  code_quality: {1-5}
+  test_coverage: {1-5}
+  doc_quality: {1-5}
+  convention: {1-5}
 findings:
 - {finding with specific file/line references}
 recommendations:
 - {actionable suggestion}
 <!-- /tunaflow:review-verdict -->
 ```
+
+Rubric 점수 기준 (1=미흡, 3=보통, 5=우수):
+- **plan_coverage**: Plan subtask 구현 완성도
+- **code_quality**: 코드 품질 (버그, 보안, 가독성)
+- **test_coverage**: 테스트 커버리지 및 검증 수준
+- **doc_quality**: 결과 문서 품질 (깨끗함, 정확함)
+- **convention**: 코딩 컨벤션 및 프로젝트 규칙 준수
 
 ## Review Checklist
 

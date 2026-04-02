@@ -53,6 +53,27 @@ export function ReviewVerdictCard({
         Reviewer Verdict: {verdictLabels[verdict.verdict]}
       </div>
 
+      {/* Rubric scores */}
+      {verdict.rubric && (
+        <div className="flex items-center gap-3 text-[9px]">
+          {[
+            { label: "Plan", score: verdict.rubric.planCoverage },
+            { label: "Code", score: verdict.rubric.codeQuality },
+            { label: "Test", score: verdict.rubric.testCoverage },
+            { label: "Doc", score: verdict.rubric.docQuality },
+            { label: "Conv", score: verdict.rubric.convention },
+          ].map(({ label, score }) => (
+            <span key={label} className="flex items-center gap-0.5">
+              <span className="text-muted-foreground/50">{label}</span>
+              <span className={cn(
+                "font-medium",
+                score >= 4 ? "text-status-approved" : score >= 3 ? "text-foreground" : "text-status-rejected"
+              )}>{score}/5</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Findings */}
       {verdict.findings.length > 0 && (
         <div>

@@ -84,7 +84,7 @@ pub fn workflow_tools() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "submit_review_verdict".into(),
-            description: "리뷰 결과를 제출합니다. verdict, findings, recommendations를 포함하세요.".into(),
+            description: "리뷰 결과를 제출합니다. verdict, rubric 점수, findings, recommendations를 포함하세요.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -92,6 +92,33 @@ pub fn workflow_tools() -> Vec<ToolDefinition> {
                         "type": "string",
                         "enum": ["pass", "fail", "conditional"],
                         "description": "리뷰 판정"
+                    },
+                    "rubric": {
+                        "type": "object",
+                        "description": "항목별 5점 척도 평가 (1=미흡, 3=보통, 5=우수)",
+                        "properties": {
+                            "plan_coverage": {
+                                "type": "integer", "minimum": 1, "maximum": 5,
+                                "description": "Plan subtask 구현 완성도"
+                            },
+                            "code_quality": {
+                                "type": "integer", "minimum": 1, "maximum": 5,
+                                "description": "코드 품질 (버그, 보안, 가독성)"
+                            },
+                            "test_coverage": {
+                                "type": "integer", "minimum": 1, "maximum": 5,
+                                "description": "테스트 커버리지 및 검증 수준"
+                            },
+                            "doc_quality": {
+                                "type": "integer", "minimum": 1, "maximum": 5,
+                                "description": "결과 문서 품질 (깨끗함, 정확함)"
+                            },
+                            "convention": {
+                                "type": "integer", "minimum": 1, "maximum": 5,
+                                "description": "코딩 컨벤션 및 프로젝트 규칙 준수"
+                            }
+                        },
+                        "required": ["plan_coverage", "code_quality", "test_coverage", "doc_quality", "convention"]
                     },
                     "findings": {
                         "type": "array",
@@ -112,7 +139,7 @@ pub fn workflow_tools() -> Vec<ToolDefinition> {
                         "description": "권장 사항"
                     }
                 },
-                "required": ["verdict", "findings"]
+                "required": ["verdict", "rubric", "findings"]
             }),
         },
     ]

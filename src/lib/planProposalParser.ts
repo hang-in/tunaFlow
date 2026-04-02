@@ -243,8 +243,17 @@ export function hasImplComplete(content: string): boolean {
 
 export type ReviewVerdict = "pass" | "fail" | "conditional";
 
+export interface ReviewRubric {
+  planCoverage: number;
+  codeQuality: number;
+  testCoverage: number;
+  docQuality: number;
+  convention: number;
+}
+
 export interface ParsedReviewVerdict {
   verdict: ReviewVerdict;
+  rubric?: ReviewRubric;
   findings: string[];
   recommendations: string[];
   raw: string;
@@ -283,5 +292,22 @@ export function extractReviewVerdict(content: string): ParsedReviewVerdict | nul
     }
   }
 
-  return { verdict, findings, recommendations, raw };
+  // Parse rubric scores
+  let rubric: ReviewRubric | undefined;
+  const planCov = raw.match(/plan_coverage:\s*(\d)/);
+  const codeQual = raw.match(/code_quality:\s*(\d)/);
+  const testCov = raw.match(/test_coverage:\s*(\d)/);
+  const docQual = raw.match(/doc_quality:\s*(\d)/);
+  const conv = raw.match(/convention:\s*(\d)/);
+  if (planCov && codeQual && testCov && docQual && conv) {
+    rubric = {
+      planCoverage: parseInt(planCov[1]),
+      codeQuality: parseInt(codeQual[1]),
+      testCoverage: parseInt(testCov[1]),
+      docQuality: parseInt(docQual[1]),
+      convention: parseInt(conv[1]),
+    };
+  }
+
+  return { verdict, rubric, findings, recommendations, raw };
 }
