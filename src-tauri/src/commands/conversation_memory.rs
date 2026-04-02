@@ -262,6 +262,90 @@ fn parse_topics(raw: &str) -> Vec<MemoryTopic> {
     }]
 }
 
+/// Pre-pass pruning for compression: reduce token count before LLM summarization.
+///
+/// L1: Collapse 3+ consecutive blank lines → 1 blank line
+/// L2: Code blocks → keep signature (first 3 lines) + `[... N lines pruned]`
+///
+/// Does NOT remove inline code or short code snippets (< 5 lines).
+fn prune_for_summary(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let mut in_code_block = false;
+    let mut code_lines: Vec<&str> = Vec::new();
+    let mut consecutive_blank = 0;
+
+    for line in content.lines() {
+        // Code fence detection
+        if line.trim_start().starts_with("```") {
+            if in_code_block {
+                // Closing fence: emit pruned code block
+                let total = code_lines.len();
+                if total <= 5 {
+                    // Short block: keep as-is
+                    for cl in &code_lines {
+                        result.push_str(cl);
+                        result.push('\n');
+                    }
+                } else {
+                    // Keep first 3 lines (signature), prune rest
+                    for cl in &code_lines[..3] {
+                        result.push_str(cl);
+                        result.push('\n');
+                    }
+                    result.push_str(&format!("[... {} lines pruned]\n", total - 3));
+                }
+                result.push_str("```\n");
+                code_lines.clear();
+                in_code_block = false;
+                consecutive_blank = 0;
+            } else {
+                // Opening fence
+                in_code_block = true;
+                result.push_str(line);
+                result.push('\n');
+                consecutive_blank = 0;
+            }
+            continue;
+        }
+
+        if in_code_block {
+            code_lines.push(line);
+            continue;
+        }
+
+        // L1: Collapse consecutive blank lines
+        if line.trim().is_empty() {
+            consecutive_blank += 1;
+            if consecutive_blank <= 1 {
+                result.push('\n');
+            }
+            continue;
+        }
+        consecutive_blank = 0;
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    // Handle unclosed code block
+    if in_code_block && !code_lines.is_empty() {
+        let total = code_lines.len();
+        if total <= 5 {
+            for cl in &code_lines {
+                result.push_str(cl);
+                result.push('\n');
+            }
+        } else {
+            for cl in &code_lines[..3] {
+                result.push_str(cl);
+                result.push('\n');
+            }
+            result.push_str(&format!("[... {} lines pruned]\n", total - 3));
+        }
+    }
+
+    result
+}
+
 /// Build transcript from older messages for compression.
 fn build_transcript(conn: &Connection, conversation_id: &str) -> Result<(String, i64), AppError> {
     let total: i64 = conn
@@ -306,10 +390,12 @@ fn build_transcript(conn: &Connection, conversation_id: &str) -> Result<(String,
             ("assistant", None, Some(e)) if !e.is_empty() => format!("{} ({})", role, e),
             _ => role.clone(),
         };
-        let content_preview = if content.len() > 1500 {
+        // Pre-pass: prune code blocks and collapse blank lines before truncation
+        let pruned = prune_for_summary(content);
+        let content_preview = if pruned.len() > 1500 {
             format!(
                 "{}…",
-                &content[..content
+                &pruned[..pruned
                     .char_indices()
                     .take_while(|&(i, _)| i <= 1500)
                     .last()
@@ -531,6 +617,44 @@ mod tests {
         }];
         let out = format_topics_as_section(&topics);
         assert_eq!(out, "A simple summary.");
+    }
+
+    #[test]
+    fn prune_collapses_blank_lines() {
+        let input = "line1\n\n\n\n\nline2\n\n\nline3";
+        let result = prune_for_summary(input);
+        assert_eq!(result, "line1\n\nline2\n\nline3\n");
+    }
+
+    #[test]
+    fn prune_short_code_block_kept() {
+        let input = "text\n```rust\nfn main() {\n    println!(\"hi\");\n}\n```\nmore";
+        let result = prune_for_summary(input);
+        assert!(result.contains("fn main()"));
+        assert!(result.contains("println!"));
+        assert!(!result.contains("pruned"));
+    }
+
+    #[test]
+    fn prune_long_code_block_truncated() {
+        let mut input = String::from("before\n```rust\nfn big() {\n");
+        for i in 0..20 {
+            input.push_str(&format!("    let x{} = {};\n", i, i));
+        }
+        input.push_str("}\n```\nafter");
+        let result = prune_for_summary(&input);
+        // Should keep first 3 lines of code + pruned marker
+        assert!(result.contains("fn big()"));
+        assert!(result.contains("[... "));
+        assert!(result.contains(" lines pruned]"));
+        assert!(result.contains("after"));
+    }
+
+    #[test]
+    fn prune_no_code_passthrough() {
+        let input = "just plain text\nwith some lines\nno code blocks";
+        let result = prune_for_summary(input);
+        assert_eq!(result, "just plain text\nwith some lines\nno code blocks\n");
     }
 
     #[test]
