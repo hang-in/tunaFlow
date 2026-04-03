@@ -515,5 +515,6 @@ pub fn adopt_branch(
         engine: last_engine,
         model: last_model,
         persona: None,
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }

@@ -61,6 +61,15 @@ pub struct Message {
     pub engine: Option<String>,
     pub model: Option<String>,
     pub persona: Option<String>,
+    /// From trace_log JOIN — absent for user messages
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 
 /// DATA_MODEL.md §1.10 Memo

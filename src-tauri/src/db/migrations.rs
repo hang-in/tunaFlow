@@ -91,6 +91,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 22 {
         apply_v22(conn)?;
     }
+    if current < 23 {
+        apply_v23(conn)?;
+    }
     Ok(())
 }
 
@@ -461,6 +464,14 @@ fn apply_v22(conn: &Connection) -> Result<(), AppError> {
         CREATE INDEX IF NOT EXISTS idx_conv_chunks_conv ON conversation_chunks(conversation_id);
     ")?;
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (22, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// v23: Add message_id to trace_log for direct message↔trace linkage.
+fn apply_v23(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "trace_log", "message_id", "TEXT")?;
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_trace_log_message_id ON trace_log(message_id)", [])?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (23, ?1)", [now_epoch()])?;
     Ok(())
 }
 

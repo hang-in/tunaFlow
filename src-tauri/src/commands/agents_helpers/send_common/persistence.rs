@@ -139,7 +139,7 @@ pub fn finalize_engine_run(
             insert_trace_log_with_context(conn, conversation_id, out.input_tokens, out.output_tokens, out.cost_usd, now,
                 &SpanInfo { trace_id: &new_trace_id(), span_id: new_span_id(), parent_span_id: None,
                     operation: "agent.stream", engine: engine_key, duration_ms: duration_ms as i64, status: "ok" },
-                ctx_meta);
+                ctx_meta, Some(msg_id));
             let _ = super::super::super::jobs::complete_job(conn, job_id, "done", None);
             let _ = app.emit("agent:completed", serde_json::json!({
                 "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key,
@@ -237,7 +237,7 @@ pub fn persist_assistant_message(
         status: if run.status == "done" { "ok" } else { "error" },
     };
     if let Some(meta) = ctx_meta {
-        insert_trace_log_with_context(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span, meta);
+        insert_trace_log_with_context(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span, meta, Some(&msg_id));
     } else {
         insert_trace_log(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span);
     }
@@ -253,6 +253,7 @@ pub fn persist_assistant_message(
         engine: Some(engine.into()),
         model: model.clone(),
         persona: None,
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }
 
@@ -305,7 +306,7 @@ pub fn persist_assistant_message_with_id(
         status: if run.status == "done" { "ok" } else { "error" },
     };
     if let Some(meta) = ctx_meta {
-        insert_trace_log_with_context(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span, meta);
+        insert_trace_log_with_context(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span, meta, Some(msg_id));
     } else {
         insert_trace_log(conn, conversation_id, run.in_tokens, run.out_tokens, run.cost_usd, now, &span);
     }
@@ -321,5 +322,6 @@ pub fn persist_assistant_message_with_id(
         engine: Some(engine.into()),
         model: model.clone(),
         persona: None,
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }

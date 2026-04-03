@@ -48,6 +48,10 @@ fn map_row_light(row: &rusqlite::Row) -> rusqlite::Result<Message> {
         engine: row.get(7)?,
         model: row.get(8)?,
         persona: row.get(9)?,
+        duration_ms: row.get(10)?,
+        input_tokens: row.get(11)?,
+        output_tokens: row.get(12)?,
+        cost_usd: row.get(13)?,
     })
 }
 
@@ -58,10 +62,13 @@ pub fn list_messages(
 ) -> Result<Vec<Message>, AppError> {
     let conn = state.read.lock().map_err(|_| AppError::Lock)?;
     let mut stmt = conn.prepare(
-        "SELECT id, conversation_id, role, content, timestamp, status,
-                (progress_content IS NOT NULL) as has_progress,
-                engine, model, persona
-         FROM messages WHERE conversation_id = ?1 ORDER BY timestamp ASC",
+        "SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, m.status,
+                (m.progress_content IS NOT NULL) as has_progress,
+                m.engine, m.model, m.persona,
+                t.duration_ms, t.input_tokens, t.output_tokens, t.cost_usd
+         FROM messages m
+         LEFT JOIN trace_log t ON t.message_id = m.id
+         WHERE m.conversation_id = ?1 ORDER BY m.timestamp ASC",
     )?;
     let rows = stmt
         .query_map([&conversation_id], map_row_light)?
@@ -93,6 +100,7 @@ pub fn create_user_message(
         engine: None,
         model: None,
         persona: None,
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }
 
@@ -130,6 +138,7 @@ pub fn append_assistant_message(
         engine: input.engine,
         model: input.model,
         persona: None,
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }
 

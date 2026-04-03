@@ -32,6 +32,7 @@ pub fn persist_header(
         engine: Some("system".into()),
         model: None,
         persona: None,
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }
 
@@ -104,6 +105,7 @@ pub fn persist_single(
         engine: Some(r.engine.clone()),
         model: r.model.clone(),
         persona: Some(r.name.clone()),
+        duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
 }
 
