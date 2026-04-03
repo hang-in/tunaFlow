@@ -30,8 +30,8 @@ function vizMarkers(text: string): string {
     // Remove full blocks (verdict, impl-plan — rendered separately in PlanCard)
     .replace(/<!-- ?tunaflow:review-verdict ?-->[\s\S]*?<!-- ?\/?tunaflow:review-verdict ?-->/g, "")
     .replace(/<!-- ?tunaflow:impl-plan ?-->[\s\S]*?<!-- ?\/?tunaflow:impl-plan ?-->/g, "")
-    // Remove all remaining single markers (impl-complete, subtask-done, plan-proposal, etc.)
-    .replace(/<!-- ?(?:tunaflow:[a-z_-]+(?::\d+)?|subtask-done:\d+|impl-complete) ?-->/g, "")
+    // Remove all remaining single markers including closing tags (<!-- /tunaflow:* -->)
+    .replace(/<!-- ?\/?(?:tunaflow:[a-z_-]+(?::\d+)?|subtask-done:\d+|impl-complete) ?-->/g, "")
     // Clean up leftover blank lines from removed markers
     .replace(/\n{3,}/g, "\n\n");
 }
