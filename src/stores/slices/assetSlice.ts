@@ -90,6 +90,18 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
     const lastId = await getSetting<string | null>("lastProfileId", null);
     const selectedId = lastId && profiles.some((p) => p.id === lastId) ? lastId : profiles[0]?.id ?? null;
     const convMap = await getSetting<Record<string, ConversationEngineState>>("convEngineMap", {});
+    // Backfill: if any conversation has a profile but no model, fill from profile default
+    let updated = false;
+    for (const [convId, state] of Object.entries(convMap)) {
+      if (state.profileId && !state.model) {
+        const profile = profiles.find((p) => p.id === state.profileId);
+        if (profile?.model) {
+          convMap[convId] = { ...state, model: profile.model };
+          updated = true;
+        }
+      }
+    }
+    if (updated) setSetting("convEngineMap", convMap);
     set({ agentProfiles: profiles, selectedProfileId: selectedId, _convEngineMap: convMap });
   },
 

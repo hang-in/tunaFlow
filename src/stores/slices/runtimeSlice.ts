@@ -163,13 +163,28 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         });
       },
     );
+    // Throttle chunk updates to ~5 per second (200ms) to reduce re-renders during streaming
+    let pendingChunk: { messageId: string; text: string } | null = null;
+    let chunkTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushChunk = () => {
+      if (pendingChunk) { replaceOrUpdate(pendingChunk.messageId, pendingChunk.text); pendingChunk = null; }
+      chunkTimer = null;
+    };
     const unlistenChunk = config.hasChunkEvent
       ? await listen<{ messageId: string; text: string }>(
-          `${eventPrefix}:chunk`, (e) => replaceOrUpdate(e.payload.messageId, e.payload.text),
+          `${eventPrefix}:chunk`, (e) => {
+            pendingChunk = e.payload;
+            if (!chunkTimer) chunkTimer = setTimeout(flushChunk, 200);
+          },
         )
       : () => {};
 
-    const cleanup = () => { unlistenProgress(); unlistenChunk(); unlistenDone(); unlistenErr(); };
+    const cleanup = () => {
+      // Flush any pending throttled chunk before cleanup
+      if (chunkTimer) { clearTimeout(chunkTimer); chunkTimer = null; }
+      flushChunk();
+      unlistenProgress(); unlistenChunk(); unlistenDone(); unlistenErr();
+    };
 
     const unlistenDone = await listen<{ messageId: string; conversationId: string }>("agent:completed", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;

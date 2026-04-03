@@ -39,8 +39,9 @@ function vizMarkers(text: string): string {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
 
-function MarkdownBody({ content, className, conversationId }: { content: string; className?: string; conversationId?: string }) {
-  const processed = useMemo(() => vizMarkers(content), [content]);
+function MarkdownBody({ content, className, conversationId, isStreaming }: { content: string; className?: string; conversationId?: string; isStreaming?: boolean }) {
+  // Skip expensive marker processing during streaming — apply only on final render
+  const processed = useMemo(() => isStreaming ? content : vizMarkers(content), [content, isStreaming]);
   const segments = useMemo(
     () => (hasPlanProposal(processed) ? splitPlanProposals(processed) : null),
     [processed],
@@ -149,7 +150,7 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
           ) : isStreaming && !message.content ? (
             <TypingIndicator />
           ) : isStreaming ? (
-            <MarkdownBody content={message.content} conversationId={message.conversationId} />
+            <MarkdownBody content={message.content} conversationId={message.conversationId} isStreaming />
           ) : (
             <MarkdownBody content={message.content} conversationId={message.conversationId} className={cn(isCompact && "line-clamp-3")} />
           )}
