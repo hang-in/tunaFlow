@@ -447,6 +447,12 @@ pub fn assemble_prompt(
 /// Scoring: skills≥3 (+2), skills>0 (+1), cross_session (+1), explicit persona (+1),
 /// branch (+1), active plan (+1), short prompt (-1/-2).
 /// Full ≥ 3, Lite ≤ -1, Standard otherwise.
+/// Words that signal the user is asking about past context (retrieval needed).
+const HISTORY_SIGNAL_WORDS: &[&str] = &[
+    "처음", "이전", "그때", "정리", "요약", "기억", "논의", "결정", "히스토리",
+    "first", "earlier", "previous", "history", "summarize", "remember", "decided",
+];
+
 fn determine_context_mode(data: &ContextData) -> (ContextMode, &'static str) {
     match data.context_mode_override.as_deref() {
         Some("full") => (ContextMode::Full, "user-override"),
@@ -467,6 +473,20 @@ fn determine_context_mode(data: &ContextData) -> (ContextMode, &'static str) {
             if data.prompt.len() < 50 { score -= 1; }
             if data.prompt.len() < 20 { score -= 1; }
 
+            // Long conversations need retrieval — never drop to Lite
+            let msg_count = data.current_messages.len();
+            if msg_count >= 20 && score < 0 {
+                score = 0; // Floor at Standard for long conversations
+                eprintln!("[auto_mode] floor: {} msgs, preventing Lite", msg_count);
+            }
+
+            // History signal words → boost to ensure retrieval is included
+            let prompt_lower = data.prompt.to_lowercase();
+            if HISTORY_SIGNAL_WORDS.iter().any(|w| prompt_lower.contains(w)) {
+                score = score.max(1); // At least Standard
+                eprintln!("[auto_mode] history signal detected in prompt");
+            }
+
             let (mode, reason) = if score >= 3 {
                 (ContextMode::Full, "auto:full(skills/cross/plan)")
             } else if score <= -1 {
@@ -474,7 +494,7 @@ fn determine_context_mode(data: &ContextData) -> (ContextMode, &'static str) {
             } else {
                 (ContextMode::Standard, "auto:standard(baseline)")
             };
-            eprintln!("[auto_mode] score={} → {:?} reason={}", score, mode, reason);
+            eprintln!("[auto_mode] score={} msgs={} → {:?} reason={}", score, msg_count, mode, reason);
             (mode, reason)
         }
     }
