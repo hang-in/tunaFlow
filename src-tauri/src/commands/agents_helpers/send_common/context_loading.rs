@@ -156,7 +156,26 @@ pub fn load_context_data(
         plan_lookup_conv.as_deref().unwrap_or(conversation_id)
     } else { conversation_id };
     let plan_conv_id = resolve_plan_conversation_id(conn, effective_conv_id);
-    let plan_section = build_plan_section(conn, &plan_conv_id);
+    let mut plan_section = build_plan_section(conn, &plan_conv_id);
+
+    // Append completed plan titles so the agent knows what was already done
+    let done_plans: Vec<String> = conn.prepare(
+        "SELECT title FROM plans WHERE conversation_id = ?1 AND status = 'done' ORDER BY updated_at DESC LIMIT 10"
+    ).ok().map(|mut stmt| {
+        stmt.query_map([plan_lookup_conv.as_deref().unwrap_or(conversation_id)], |row| row.get::<_, String>(0))
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+    }).unwrap_or_default();
+    if !done_plans.is_empty() {
+        let suffix = format!(
+            "\n\n### Completed Plans\n{}",
+            done_plans.iter().map(|t| format!("- ✅ {}", t)).collect::<Vec<_>>().join("\n")
+        );
+        plan_section = Some(match plan_section {
+            Some(s) => format!("{}{}", s, suffix),
+            None => format!("## Plans{}", suffix),
+        });
+    }
 
     // Load plan documents from filesystem (plan, result, review)
     let plan_document: Option<String> = if has_active_plan {
