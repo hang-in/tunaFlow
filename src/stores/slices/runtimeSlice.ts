@@ -202,26 +202,32 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         invoke("save_progress_content", { messageId: e.payload.messageId, content: serializeSteps(steps) }).catch(() => {});
         tsStore.clear(e.payload.messageId);
       }
-      // Always reload from DB — if user navigated away, store the result for when they return
-      const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-      if (isStillActive()) {
-        set({ messages });
-      } else {
-        // Stash loaded messages so selectConversation can pick them up
-        set((state) => ({ _staleConversations: new Set([...(state._staleConversations ?? []), selectedConversationId]) }));
-      }
+      // Always reload from DB, apply atomically inside set to avoid race conditions
+      const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
+      set((state) => {
+        if (state.selectedConversationId === selectedConversationId) {
+          return { messages: freshMessages };
+        }
+        // User navigated away — mark stale
+        const stale = new Set(state._staleConversations);
+        stale.add(selectedConversationId);
+        return { _staleConversations: stale };
+      });
       get()._endRun(selectedConversationId);
     });
 
     const unlistenErr = await listen<{ messageId: string; conversationId: string; error: string }>("agent:error", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;
       cleanup();
-      const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-      if (isStillActive()) {
-        set({ error: e.payload.error, messages });
-      } else {
-        set((state) => ({ _staleConversations: new Set([...(state._staleConversations ?? []), selectedConversationId]) }));
-      }
+      const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
+      set((state) => {
+        if (state.selectedConversationId === selectedConversationId) {
+          return { error: e.payload.error, messages: freshMessages };
+        }
+        const stale = new Set(state._staleConversations);
+        stale.add(selectedConversationId);
+        return { _staleConversations: stale };
+      });
       get()._endRun(selectedConversationId);
     });
 
