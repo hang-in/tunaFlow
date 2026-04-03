@@ -395,6 +395,8 @@ pub fn search_with_options(project_path: &str, query: &str, opts: SearchOptions)
         "--json".to_string(),
     ];
 
+    // Skip freshness check — indexing is managed by start_rawq_index + fs watcher
+    args.push("--no-reindex".to_string());
     if opts.rerank {
         args.push("--rerank".to_string());
     }
