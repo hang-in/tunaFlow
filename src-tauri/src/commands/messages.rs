@@ -68,7 +68,11 @@ pub fn list_messages(
                 m.engine, m.model, m.persona,
                 t.duration_ms, t.input_tokens, t.output_tokens, t.cost_usd
          FROM messages m
-         LEFT JOIN trace_log t ON t.message_id = m.id
+         LEFT JOIN (
+           SELECT message_id, duration_ms, input_tokens, output_tokens, cost_usd
+           FROM trace_log WHERE message_id IS NOT NULL
+           GROUP BY message_id
+         ) t ON t.message_id = m.id
          WHERE m.conversation_id = ?1 ORDER BY m.timestamp ASC",
     );
     match result {
