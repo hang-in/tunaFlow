@@ -28,6 +28,11 @@ export function ChatPanel() {
   const scrollToMessageId = useChatStore((s) => s.scrollToMessageId);
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  // Ref to avoid recreating itemContent callback on every messages change
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const branchesRef = useRef(branches);
+  branchesRef.current = branches;
   const [view, setView] = useState<"stream" | "roundtable">("stream");
   const [rtDialogCheckpoint, setRtDialogCheckpoint] = useState<string | null>(null);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
@@ -74,12 +79,14 @@ export function ChatPanel() {
     []
   );
 
-  // Render a single message item
+  // Render a single message item — uses refs for messages/branches to keep callback stable
   const renderMessage = useCallback(
     (index: number) => {
-      const msg = messages[index];
+      const msgs = messagesRef.current;
+      const brs = branchesRef.current;
+      const msg = msgs[index];
       if (!msg) return null;
-      const prev = index > 0 ? messages[index - 1] : null;
+      const prev = index > 0 ? msgs[index - 1] : null;
       const grouped =
         !!prev &&
         prev.role === msg.role &&
@@ -87,7 +94,7 @@ export function ChatPanel() {
         prev.persona === msg.persona &&
         msg.status !== "streaming";
       const msgBranches = !activeBranchId
-        ? branches.filter((b) => b.checkpointId === msg.id)
+        ? brs.filter((b) => b.checkpointId === msg.id)
         : [];
       return (
         <div
@@ -118,16 +125,8 @@ export function ChatPanel() {
         </div>
       );
     },
-    [
-      messages,
-      branches,
-      activeBranchId,
-      highlightedMsgId,
-      createMemo,
-      sendFollowup,
-      deleteMessagePair,
-      openThread,
-    ]
+    // Stable deps — messages/branches accessed via refs, not direct deps
+    [activeBranchId, highlightedMsgId, createMemo, sendFollowup, deleteMessagePair, openThread]
   );
 
   if (!selectedConversationId) {
