@@ -5,9 +5,56 @@ use crate::agents::{claude, codex, gemini, openai_compat, opencode};
 use crate::db::{models::Message, DbState};
 use crate::errors::AppError;
 use crate::CancelRegistry;
+use crate::commands::agents_helpers::send_common::build_normalized_prompt_with_budget;
 
 use super::prompt::{build_round_prompt_with_identity, PromptSources};
 use super::persist::persist_single;
+
+/// Budget settings for local models (ollama, opencode) — smaller context window.
+const LOCAL_MODE: &str = "lite";
+const LOCAL_BUDGET_CAP: usize = 15_000;
+
+/// Build a lightweight ContextPack section for an RT participant.
+/// Commercial engines get auto mode, local engines get lite mode with reduced budget.
+fn build_rt_context_pack(
+    state: &DbState,
+    conversation_id: &str,
+    topic: &str,
+    engine_key: &str,
+    project_path: Option<&str>,
+) -> Option<String> {
+    let conn = match state.read.lock() {
+        Ok(c) => c,
+        Err(_) => return None,
+    };
+
+    let is_local = matches!(engine_key, "ollama" | "opencode");
+    let mode = if is_local { Some(LOCAL_MODE) } else { None };  // None = auto
+    let cap = if is_local { Some(LOCAL_BUDGET_CAP) } else { None };
+
+    let (enriched, _system, _meta) = build_normalized_prompt_with_budget(
+        &conn,
+        conversation_id,
+        topic,
+        project_path,
+        &[],   // no active skills for RT
+        &[],   // no cross-session
+        None,  // no persona fragment (identity is handled separately)
+        mode,
+        cap,
+    );
+
+    // Extract only the context sections (everything before the user prompt)
+    // The enriched prompt has format: [context sections]\n\n---\n\n[user prompt]
+    // We want just the context sections to prepend to the RT prompt
+    if let Some(pos) = enriched.rfind("\n\n---\n\n") {
+        let context = enriched[..pos].trim();
+        if !context.is_empty() {
+            return Some(format!("## Project Context\n\n{}", context));
+        }
+    }
+    None
+}
 
 /// Real-time participant execution status — emitted at actual subprocess lifecycle points.
 #[derive(Clone, Serialize)]
@@ -240,14 +287,18 @@ async fn execute_sequential(
             round: round_num, status: "running".into(), blind: p.blind,
         });
 
-        // Build prompt with participant identity
+        // Build prompt with participant identity + ContextPack
         let identity = participant_identity(p);
-        let prompt = if p.blind {
+        let context_pack = build_rt_context_pack(state, conversation_id, topic, engine_key, project_path);
+        let mut prompt = if p.blind {
             eprintln!("[rt] blind verifier: {} — no transcript", p.name);
             build_round_prompt_with_identity(topic, &[], &[], Some(&identity))
         } else {
             build_round_prompt_with_identity(topic, transcript, &round_responses, Some(&identity))
         };
+        if let Some(ctx) = context_pack {
+            prompt = format!("{}\n\n---\n\n{}", ctx, prompt);
+        }
         let r = run_participant(p, prompt, sources_json, project_path.map(|s| s.to_string())).await;
 
         let _ = app.emit("roundtable:participant_status", RtParticipantStatus {
@@ -316,14 +367,19 @@ async fn execute_parallel(
     for p in participants {
         let p_clone = p.clone();
         let identity = participant_identity(p);
+        let engine_key = p.engine.as_deref().unwrap_or("claude");
+        let context_pack = build_rt_context_pack(state, conversation_id, &topic_owned, engine_key, project_path);
         let tr = transcript_owned.clone();
         let tp = topic_owned.clone();
-        let pr = if p.blind {
+        let mut pr = if p.blind {
             eprintln!("[rt] blind verifier: {} — no transcript (deliberative)", p.name);
             build_round_prompt_with_identity(&tp, &[], &[], Some(&identity))
         } else {
             build_round_prompt_with_identity(&tp, &tr, &[], Some(&identity))
         };
+        if let Some(ctx) = context_pack {
+            pr = format!("{}\n\n---\n\n{}", ctx, pr);
+        }
         let sj = sources_json.clone();
         let pp = project_path.map(|s| s.to_string());
         let tx = tx.clone();

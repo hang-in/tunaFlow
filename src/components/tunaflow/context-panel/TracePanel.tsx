@@ -84,7 +84,9 @@ function contextModeAbbrev(mode: string): string {
 }
 
 function formatElapsed(startedAt: number): string {
-  const elapsed = Math.floor(Date.now() / 1000) - startedAt;
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs < 0) return "0s";
+  const elapsed = Math.floor(elapsedMs / 1000);
   if (elapsed < 60) return `${elapsed}s`;
   return `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
 }

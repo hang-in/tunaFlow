@@ -64,7 +64,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         const persona = profile.personaId ? DEFAULT_PERSONAS.find((p) => p.id === profile.personaId) : null;
         useChatStore.setState({
           personaFragment: persona?.promptFragment ?? null,
-          personaLabel: persona ? `${profile.label} · ${persona.name}` : profile.label,
+          personaLabel: persona ? (profile.label === persona.name ? profile.label : `${profile.label} · ${persona.name}`) : profile.label,
         });
         const store = useChatStore.getState();
         const currentSkills = new Set(store.activeSkills);
@@ -117,7 +117,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     const persona = profile.personaId ? DEFAULT_PERSONAS.find((p) => p.id === profile.personaId) : null;
     useChatStore.setState({
       personaFragment: persona?.promptFragment ?? null,
-      personaLabel: persona ? `${profile.label} · ${persona.name}` : profile.label,
+      personaLabel: persona ? (profile.label === persona.name ? profile.label : `${profile.label} · ${persona.name}`) : profile.label,
     });
   };
 
