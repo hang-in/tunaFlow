@@ -52,10 +52,13 @@ interface HarnessSummaryProps {
 
 export function HarnessSummary({ conversationId, activeStage, onStageClick }: HarnessSummaryProps) {
   const { branches, artifacts } = useChatStore();
+  const runningThreadIds = useChatStore((s) => s.runningThreadIds);
   const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
 
+  // Reload plan data when conversation changes or agent run completes
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -74,7 +77,12 @@ export function HarnessSummary({ conversationId, activeStage, onStageClick }: Ha
       if (!cancelled) { setActivePlan(null); setSubtasks([]); setLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [conversationId]);
+  }, [conversationId, tick]);
+
+  // Trigger reload when running threads change (agent start/complete)
+  useEffect(() => {
+    setTick((t) => t + 1);
+  }, [runningThreadIds.length]);
 
   if (loading) return null;
 
