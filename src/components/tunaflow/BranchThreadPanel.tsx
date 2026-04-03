@@ -50,9 +50,14 @@ export function BranchThreadPanel() {
 
   const isImplBranch = linkedPlan?.implementationBranchId === threadBranchId;
 
+  // Scroll to bottom only when new messages are added (not on content updates)
+  const prevCountRef = useRef(threadMessages.length);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [threadMessages]);
+    if (threadMessages.length > prevCountRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    }
+    prevCountRef.current = threadMessages.length;
+  }, [threadMessages.length]);
 
   if (!threadBranchId) return null;
 

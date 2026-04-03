@@ -173,7 +173,7 @@ pub fn list_plans_by_conversation(
 ) -> Result<Vec<Plan>, AppError> {
     let conn = state.read.lock().map_err(|_| AppError::Lock)?;
     let sql = format!(
-        "SELECT {} FROM plans WHERE conversation_id = ?1 ORDER BY created_at DESC",
+        "SELECT {} FROM plans WHERE conversation_id = ?1 ORDER BY created_at ASC",
         PLAN_COLS
     );
     let mut stmt = conn.prepare(&sql)?;
