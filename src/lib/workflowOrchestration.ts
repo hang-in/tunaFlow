@@ -106,9 +106,21 @@ async function createAndLinkBranch(
   label: string,
   mode: "chat" | "roundtable" = "chat",
 ): Promise<CreateBranchResult> {
+  // Add round number for review branches (2nd review → "Review RT: ... (2차)")
+  let finalLabel = label;
+  if (branchType === "review") {
+    const events = await planApi.listPlanEvents(plan.id);
+    const reviewCount = events.filter(
+      (e) => e.eventType === "review_requested" || e.eventType === "impl_completed"
+    ).length;
+    if (reviewCount > 1) {
+      finalLabel = `${label} (${reviewCount}차)`;
+    }
+  }
+
   const input = {
     conversationId: plan.conversationId,
-    label,
+    label: finalLabel,
     mode,
     parentBranchId: plan.branchId ?? undefined,
   };
