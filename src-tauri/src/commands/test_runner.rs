@@ -5,6 +5,12 @@ use std::time::Instant;
 
 use crate::errors::AppError;
 
+/// Strip ANSI escape codes (colors, bold, etc.) from terminal output.
+fn strip_ansi(s: &str) -> String {
+    let re = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+    re.replace_all(s, "").to_string()
+}
+
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TestRunResult {
@@ -101,15 +107,22 @@ fn execute_tests(path: &Path, runner: &str) -> Result<(String, bool), AppError> 
     };
 
     let output = output.map_err(|e| AppError::NotFound(format!("Failed to execute {}: {}", runner, e)))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout));
+    let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
     let combined = if stderr.is_empty() {
         stdout
     } else {
         format!("{}\n{}", stdout, stderr)
     };
 
-    Ok((combined, output.status.success()))
+    // "No test files found" is not a failure — project simply has no tests
+    let success = if !output.status.success() && combined.contains("No test files found") {
+        true
+    } else {
+        output.status.success()
+    };
+
+    Ok((combined, success))
 }
 
 fn parse_test_counts(output: &str, runner: &str) -> (i32, i32, i32) {
