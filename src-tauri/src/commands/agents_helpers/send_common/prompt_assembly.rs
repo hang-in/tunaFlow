@@ -81,7 +81,7 @@ pub fn assemble_prompt(
         ContextMode::Lite => ModeProfile {
             context_cap: 4_000,
             retrieval_cap: 2_000,
-            compressed_cap: 2_000,
+            compressed_cap: 3_000,
             cross_session_cap: 2_000,
             retrieval_min_remaining: 3_000,
             compressed_min_remaining: 1_500,
@@ -101,7 +101,7 @@ pub fn assemble_prompt(
         ContextMode::Full => ModeProfile {
             context_cap: 8_000,
             retrieval_cap: 6_000,
-            compressed_cap: 4_000,
+            compressed_cap: 6_000,
             cross_session_cap: 6_000,
             retrieval_min_remaining: 2_000,
             compressed_min_remaining: 1_500,

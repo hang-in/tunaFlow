@@ -17,7 +17,7 @@ pub const MAX_FINDINGS_SECTION: usize = 3_000;
 pub const MAX_ARTIFACTS_SECTION: usize = 2_000;
 /// Dedicated caps for memory layers (don't reuse MAX_CONTEXT_SECTION)
 pub const MAX_RETRIEVAL_SECTION: usize = 4_000;      // past conversation chunks — focused, not large
-pub const MAX_COMPRESSED_MEMORY_SECTION: usize = 3_000; // summary of older messages — concise
+pub const MAX_COMPRESSED_MEMORY_SECTION: usize = 5_000; // topic-based summaries — detailed enough to preserve decisions
 
 // ─── Execution defaults ──────────────────────────────────────────────────────
 

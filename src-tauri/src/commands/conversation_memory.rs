@@ -23,23 +23,26 @@ Analyze the following conversation and produce a JSON array of topic-based summa
 Each element must have these fields:
 - \"topic\": short topic label (2-5 words, e.g. \"DB schema design\", \"FTS5 retrieval\")
 - \"phase\": one of \"exploration\", \"implementation\", \"review\", \"debugging\", \"planning\", \"discussion\"
-- \"summary\": structured summary for this topic (under 500 characters)
+- \"summary\": detailed structured summary for this topic (400-800 characters per topic)
 
-The summary for each topic should cover:
-- What was discussed/decided
-- Key findings or outcomes
-- Any unresolved issues
+The summary for each topic MUST cover:
+- What was discussed/decided (specific decisions, not vague references)
+- Key findings, results, or code changes (file paths, function names, values)
+- Important context that would be lost (architecture decisions, rejected alternatives, constraints)
+- Any unresolved issues or next steps
 
 Rules:
 - Output ONLY the JSON array, no markdown fences, no explanation.
-- Identify 1-5 distinct topics. If the conversation has one focus, output a single-element array.
-- Be concise but preserve specifics (names, numbers, file paths, agent names).
+- Identify 2-7 distinct topics. More topics = better granularity for long conversations.
+- Preserve specifics: file paths, function names, numbers, agent names, error messages.
 - Include participant information (agent names/engines) in at least the first topic's summary.
-- Total output should be under 2000 characters.
+- Each topic summary should be 400-800 characters. Short summaries lose critical context.
+- Total output should be under 5000 characters.
 - Write in the same language the conversation uses.
+- For architecture/design decisions, include the reasoning (WHY, not just WHAT).
 
 Example output:
-[{\"topic\":\"DB migration v21\",\"phase\":\"implementation\",\"summary\":\"Added topic/phase/provenance columns to conversation_memory. Session_links table created for auto-discovery. Migration tested.\"}]
+[{\"topic\":\"DB migration v21\",\"phase\":\"implementation\",\"summary\":\"Added topic/phase/provenance columns to conversation_memory table. Session_links table created with (conversation_id, linked_conv_id, score, method) for FTS5-based auto session discovery. Migration tested with cargo test. Decision: used single v21 migration combining all schema changes rather than separate v21/v22. Reason: atomic rollback if any part fails.\"}]
 
 ---
 

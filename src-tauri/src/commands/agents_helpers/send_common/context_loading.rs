@@ -241,10 +241,19 @@ pub fn load_context_data(
                 .unwrap_or_default()
         }).unwrap_or_default();
         let mut fts_chunks = retrieve_relevant_chunks_with_overlap(conn, pk, conversation_id, prompt, &recent_ids, 10, None);
+        eprintln!("[retrieval] FTS5: {} chunks for query=\"{}\"", fts_chunks.len(), &prompt[..prompt.len().min(60)]);
+        for (i, c) in fts_chunks.iter().enumerate() {
+            let preview: String = c.messages.first().map(|(_, t, _, _)| t[..t.len().min(80)].to_string()).unwrap_or_default();
+            eprintln!("[retrieval]   fts[{}] kind={} score={:.3} conv={} text=\"{}\"", i, c.kind, c.score, &c.conversation_id[..8], preview);
+        }
 
         // Boost with vector search results (best-effort, skip if rawq unavailable)
         if let Ok(query_emb) = crate::agents::rawq::embed_text(prompt, true) {
             let vec_results = crate::commands::vector_search::search_similar(conn, &query_emb, pk, conversation_id, 5);
+            eprintln!("[retrieval] Vector: {} chunks (threshold 0.3)", vec_results.len());
+            for (i, vc) in vec_results.iter().enumerate() {
+                eprintln!("[retrieval]   vec[{}] score={:.3} conv={} text=\"{}\"", i, vc.score, &vc.conversation_id[..vc.conversation_id.len().min(8)], &vc.text_preview[..vc.text_preview.len().min(80)]);
+            }
             // RRF merge: add vector-only results that aren't already in FTS results
             let fts_conv_ids: std::collections::HashSet<String> = fts_chunks.iter().map(|c| c.conversation_id.clone()).collect();
             for vc in vec_results {
@@ -258,7 +267,10 @@ pub fn load_context_data(
                     });
                 }
             }
+        } else {
+            eprintln!("[retrieval] Vector: skipped (rawq embed unavailable)");
         }
+        eprintln!("[retrieval] Total: {} chunks after merge", fts_chunks.len());
         fts_chunks
     } else {
         Vec::new()
