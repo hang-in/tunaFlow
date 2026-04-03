@@ -103,8 +103,6 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
         invoke<Artifact[]>("list_artifacts", { conversationId: id }),
       ]);
       set({ messages, branches, memos, artifacts, error: null });
-      // Fire-and-forget: ensure vector index exists for this conversation
-      invoke("index_conversation_chunks", { conversationId: id }).catch(() => {});
     } catch (e) {
       set({ error: String(e) });
     }
