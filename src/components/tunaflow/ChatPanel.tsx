@@ -67,9 +67,10 @@ export function ChatPanel() {
     useChatStore.setState({ scrollToMessageId: null });
   }, [scrollToMessageId, messages]);
 
-  // Follow output: auto-scroll to bottom when at bottom and new messages arrive
+  // Follow output: auto-scroll to bottom only when already at bottom
+  // Returns "auto" instead of "smooth" to avoid animation-triggered re-renders
   const followOutput = useCallback(
-    (isAtBottom: boolean) => (isAtBottom ? "smooth" : false) as "smooth" | false,
+    (isAtBottom: boolean) => (isAtBottom ? "auto" : false) as "auto" | false,
     []
   );
 

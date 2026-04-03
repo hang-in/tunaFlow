@@ -127,6 +127,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     get()._startRun(selectedConversationId);
     const now = Date.now();
     set((state) => ({
+      error: null, // Clear previous error banner on new send
       messages: [
         ...state.messages,
         { id: `temp-user-${now}`, conversationId: selectedConversationId, role: "user", content: prompt, timestamp: now, status: "done" },
@@ -188,7 +189,11 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const unlistenErr = await listen<{ messageId: string; conversationId: string; error: string }>("agent:error", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;
       cleanup();
-      set({ error: e.payload.error });
+      // Clear streaming placeholders immediately, then reload from DB
+      set((state) => ({
+        error: e.payload.error,
+        messages: state.messages.filter((m) => !m.id.startsWith("temp-thinking-")),
+      }));
       const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
       set({ messages });
       get()._endRun(selectedConversationId);
