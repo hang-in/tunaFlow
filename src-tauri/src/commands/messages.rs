@@ -61,7 +61,8 @@ pub fn list_messages(
     state: State<DbState>,
 ) -> Result<Vec<Message>, AppError> {
     let conn = state.read.lock().map_err(|_| AppError::Lock)?;
-    let mut stmt = conn.prepare(
+    // Try JOIN with trace_log.message_id (v23+), fallback to plain query if column missing
+    let result = conn.prepare(
         "SELECT m.id, m.conversation_id, m.role, m.content, m.timestamp, m.status,
                 (m.progress_content IS NOT NULL) as has_progress,
                 m.engine, m.model, m.persona,
@@ -69,11 +70,34 @@ pub fn list_messages(
          FROM messages m
          LEFT JOIN trace_log t ON t.message_id = m.id
          WHERE m.conversation_id = ?1 ORDER BY m.timestamp ASC",
-    )?;
-    let rows = stmt
-        .query_map([&conversation_id], map_row_light)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    );
+    match result {
+        Ok(mut stmt) => {
+            let rows = stmt.query_map([&conversation_id], map_row_light)?
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        }
+        Err(_) => {
+            // Fallback: no trace JOIN (pre-v23 schema)
+            let mut stmt = conn.prepare(
+                "SELECT id, conversation_id, role, content, timestamp, status,
+                        (progress_content IS NOT NULL) as has_progress,
+                        engine, model, persona
+                 FROM messages WHERE conversation_id = ?1 ORDER BY timestamp ASC",
+            )?;
+            let rows = stmt.query_map([&conversation_id], |row| {
+                let has_progress: bool = row.get(6)?;
+                Ok(Message {
+                    id: row.get(0)?, conversation_id: row.get(1)?, role: row.get(2)?,
+                    content: row.get(3)?, timestamp: row.get(4)?, status: row.get(5)?,
+                    progress_content: if has_progress { Some("…".into()) } else { None },
+                    engine: row.get(7)?, model: row.get(8)?, persona: row.get(9)?,
+                    duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
+                })
+            })?.collect::<Result<Vec<_>, _>>()?;
+            Ok(rows)
+        }
+    }
 }
 
 #[tauri::command]
