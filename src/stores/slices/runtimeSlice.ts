@@ -192,7 +192,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       unlistenProgress(); unlistenChunk(); unlistenDone(); unlistenErr();
     };
 
-    const unlistenDone = await listen<{ messageId: string; conversationId: string }>("agent:completed", async (e) => {
+    const unlistenDone = await listen<{ messageId: string; conversationId: string; durationMs?: number; inputTokens?: number; outputTokens?: number; costUsd?: number }>("agent:completed", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;
       cleanup();
       // Save tool steps to progressContent for lazy-load display
@@ -204,11 +204,15 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       }
       // Always reload from DB, apply atomically inside set to avoid race conditions
       const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
+      // Merge runtime metadata (duration, tokens) into the completed message
+      const { messageId, durationMs, inputTokens, outputTokens, costUsd } = e.payload;
+      const enriched = freshMessages.map((m) =>
+        m.id === messageId ? { ...m, durationMs, inputTokens, outputTokens, costUsd } : m
+      );
       set((state) => {
         if (state.selectedConversationId === selectedConversationId) {
-          return { messages: freshMessages };
+          return { messages: enriched };
         }
-        // User navigated away — mark stale
         const stale = new Set(state._staleConversations);
         stale.add(selectedConversationId);
         return { _staleConversations: stale };

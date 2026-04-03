@@ -33,6 +33,12 @@ export function MessageMeta({ message, isCompact = false, threadBranches, onOpen
       <span className={cn("text-sidebar-foreground/50 font-mono", isCompact ? "text-[10px]" : "text-[11px]")}>
         {formatTimestamp(message.timestamp)}
       </span>
+      {!isUser && message.durationMs != null && message.durationMs > 0 && (
+        <span className="text-sidebar-foreground/35 font-mono text-[9px]">
+          {message.durationMs < 1000 ? `${message.durationMs}ms` : `${(message.durationMs / 1000).toFixed(1)}s`}
+          {message.outputTokens ? ` · ${message.outputTokens}tok` : ""}
+        </span>
+      )}
       {/* Branch badges inline in header */}
       {threadBranches && threadBranches.length > 0 && !isCompact && threadBranches.map((branch) => (
         <button

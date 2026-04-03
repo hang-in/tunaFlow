@@ -142,7 +142,9 @@ pub fn finalize_engine_run(
                 ctx_meta);
             let _ = super::super::super::jobs::complete_job(conn, job_id, "done", None);
             let _ = app.emit("agent:completed", serde_json::json!({
-                "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key
+                "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key,
+                "durationMs": duration_ms as i64, "inputTokens": out.input_tokens,
+                "outputTokens": out.output_tokens, "costUsd": out.cost_usd
             }));
         }
         Err(ref e) => {

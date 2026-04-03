@@ -40,6 +40,11 @@ export interface Message {
   engine?: string;
   model?: string;
   persona?: string;
+  /** Runtime-only: set from agent:completed event, not persisted to DB */
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
 }
 
 export interface Branch {
