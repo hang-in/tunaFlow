@@ -48,12 +48,28 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   const restoringRef = useRef(false);
 
   // Apply profile on initial load or when selectedProfileId changes
-  // BUT skip if we're restoring per-conversation state (to prevent model override)
+  // Skip if restoring per-conversation state (prevents model override race)
   useEffect(() => {
     if (restoringRef.current) { restoringRef.current = false; return; }
     if (selectedProfileId && profiles.length > 0) {
       const profile = profiles.find((p) => p.id === selectedProfileId);
-      if (profile) applyProfile(profile);
+      if (profile) {
+        setEngine(profile.engine as Engine);
+        // Only set model from profile if no model is currently selected
+        // (preserves per-conversation model from restore useEffect)
+        if (profile.model && !selectedModel) setSelectedModel(profile.model);
+        // Persona + skills always apply
+        const persona = profile.personaId ? DEFAULT_PERSONAS.find((p) => p.id === profile.personaId) : null;
+        useChatStore.setState({
+          personaFragment: persona?.promptFragment ?? null,
+          personaLabel: persona ? `${profile.label} · ${persona.name}` : profile.label,
+        });
+        const store = useChatStore.getState();
+        const currentSkills = new Set(store.activeSkills);
+        for (const skill of profile.defaultSkills) {
+          if (!currentSkills.has(skill)) toggleSkill(skill);
+        }
+      }
     }
   }, [selectedProfileId, profiles]);
 
@@ -66,8 +82,10 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     if (saved) {
       setEngine(saved.engine as Engine);
       if (saved.model) setSelectedModel(saved.model);
+      // Always set restoring flag — even if profileId matches, profile useEffect
+      // may fire later (async profiles load) and override the restored model
+      restoringRef.current = true;
       if (saved.profileId !== useChatStore.getState().selectedProfileId) {
-        restoringRef.current = true; // Prevent profile useEffect from overriding model
         selectProfile(saved.profileId);
       }
     } else {
@@ -86,6 +104,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
 
   const applyProfile = (profile: AgentProfile) => {
     setEngine(profile.engine as Engine);
+    // Only set model if profile has one AND current selectedModel is empty or from different engine
     if (profile.model) setSelectedModel(profile.model);
     // Apply default skills
     const store = useChatStore.getState();
