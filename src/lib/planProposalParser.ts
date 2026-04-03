@@ -291,16 +291,29 @@ const REVIEW_OPEN = "<!-- tunaflow:review-verdict -->";
 const REVIEW_CLOSE = "<!-- /tunaflow:review-verdict -->";
 
 export function hasReviewVerdict(content: string): boolean {
-  return content.includes(REVIEW_OPEN);
+  // Primary: marker-based detection
+  if (content.includes(REVIEW_OPEN)) return true;
+  // Fallback: detect "verdict: pass/fail/conditional" without markers
+  return /\bverdict:\s*(pass|fail|conditional)\b/i.test(content);
 }
 
 export function extractReviewVerdict(content: string): ParsedReviewVerdict | null {
+  let raw: string;
+
   const openIdx = content.indexOf(REVIEW_OPEN);
-  if (openIdx === -1) return null;
-  const bodyStart = openIdx + REVIEW_OPEN.length;
-  const closeIdx = content.indexOf(REVIEW_CLOSE, bodyStart);
-  if (closeIdx === -1) return null;
-  const raw = content.slice(bodyStart, closeIdx).trim();
+  if (openIdx !== -1) {
+    // Primary: extract from markers
+    const bodyStart = openIdx + REVIEW_OPEN.length;
+    const closeIdx = content.indexOf(REVIEW_CLOSE, bodyStart);
+    raw = closeIdx !== -1
+      ? content.slice(bodyStart, closeIdx).trim()
+      : content.slice(bodyStart).trim(); // unclosed marker — use rest of content
+  } else {
+    // Fallback: no markers — extract from "verdict:" keyword to end of content
+    const verdictIdx = content.search(/\bverdict:\s*(pass|fail|conditional)\b/i);
+    if (verdictIdx === -1) return null;
+    raw = content.slice(verdictIdx).trim();
+  }
 
   let verdict: ReviewVerdict = "conditional";
   const verdictMatch = raw.match(/^verdict:\s*(pass|fail|conditional)/im);
