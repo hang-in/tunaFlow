@@ -64,6 +64,40 @@ export function RoundtableView({ messages, conversationId, onBranch, onBranchRT,
   const rtMode = firstSources?.mode ?? "sequential";
 
   if (rounds.length === 0) {
+    if (isRunning && originalTopic) {
+      // Show topic + loading state while waiting for first participant response
+      return (
+        <div className="px-5 py-4 max-w-3xl mx-auto w-full">
+          <div className="mb-5 pb-3 border-b border-border/30 space-y-2">
+            <div className="rounded-md bg-accent/30 p-2.5">
+              <p className="text-[9px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-0.5">Topic</p>
+              <p className="text-[13px] text-foreground/90 leading-relaxed">{originalTopic}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground/50 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Waiting for participants...</span>
+          </div>
+          {pStatuses.size > 0 && (
+            <div className="mt-2 mb-4 rounded-md border border-border/30 bg-card/40 px-3 py-2 space-y-1">
+              <p className="text-[9px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-1">Participant Status</p>
+              {Array.from(pStatuses.values()).map((ps) => {
+                const knownEngine = normalizeEngine(ps.engine);
+                const dotColor = knownEngine ? AGENT_DOT_COLORS[knownEngine] : "bg-muted-foreground/40";
+                return (
+                  <div key={ps.name} className="flex items-center gap-2 text-[10px]">
+                    <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", dotColor)} />
+                    <span className="font-medium text-foreground/70 min-w-[60px]">{ps.name}</span>
+                    <span className="text-muted-foreground/40">R{ps.round}</span>
+                    <span className="flex items-center gap-1 text-primary/60"><Loader2 className="w-2.5 h-2.5 animate-spin" />running</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground/50 text-sm">
         No roundtable messages yet
