@@ -202,10 +202,13 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         invoke("save_progress_content", { messageId: e.payload.messageId, content: serializeSteps(steps) }).catch(() => {});
         tsStore.clear(e.payload.messageId);
       }
-      // Only reload messages into UI if user is still viewing this conversation
+      // Always reload from DB — if user navigated away, store the result for when they return
+      const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
       if (isStillActive()) {
-        const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
         set({ messages });
+      } else {
+        // Stash loaded messages so selectConversation can pick them up
+        set((state) => ({ _staleConversations: new Set([...(state._staleConversations ?? []), selectedConversationId]) }));
       }
       get()._endRun(selectedConversationId);
     });
@@ -213,14 +216,11 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const unlistenErr = await listen<{ messageId: string; conversationId: string; error: string }>("agent:error", async (e) => {
       if (e.payload.conversationId !== selectedConversationId) return;
       cleanup();
+      const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
       if (isStillActive()) {
-        // Clear streaming placeholders immediately, then reload from DB
-        set((state) => ({
-          error: e.payload.error,
-          messages: state.messages.filter((m) => !m.id.startsWith("temp-thinking-")),
-        }));
-        const messages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-        set({ messages });
+        set({ error: e.payload.error, messages });
+      } else {
+        set((state) => ({ _staleConversations: new Set([...(state._staleConversations ?? []), selectedConversationId]) }));
       }
       get()._endRun(selectedConversationId);
     });

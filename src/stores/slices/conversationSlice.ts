@@ -97,7 +97,15 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
         invoke<Memo[]>("list_memos_by_conversation", { conversationId: id }),
         invoke<Artifact[]>("list_artifacts", { conversationId: id }),
       ]);
-      set({ messages, branches, memos, artifacts, error: null });
+      // Clear stale mark if it was set (agent completed while user was away)
+      const stale = get()._staleConversations;
+      if (stale?.has(id)) {
+        const next = new Set(stale);
+        next.delete(id);
+        set({ messages, branches, memos, artifacts, error: null, _staleConversations: next });
+      } else {
+        set({ messages, branches, memos, artifacts, error: null });
+      }
     } catch (e) {
       set({ error: String(e) });
     }

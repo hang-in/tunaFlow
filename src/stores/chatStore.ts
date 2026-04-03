@@ -11,6 +11,7 @@ import { createEngineModelSlice } from "./slices/engineModelSlice";
 export type { ChatState };
 
 export const useChatStore = create<ChatState>((set, get) => ({
+  _staleConversations: new Set<string>(),
   ...createProjectSlice(set, get),
   ...createConversationSlice(set, get),
   ...createBranchSlice(set, get),

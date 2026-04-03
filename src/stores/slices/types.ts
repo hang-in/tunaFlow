@@ -94,6 +94,8 @@ export interface ChatState {
   rawqStatus: RawqStatus | null;
   projectLoading: string | null;
   engineModels: EngineModel[];
+  /** Conversations that completed while user was viewing a different conversation — need reload on return */
+  _staleConversations: Set<string>;
   /** Pending handoff source set by UI actions (artifact forward, plan forward, etc.) */
   handoffSource: { type: string; content: string } | null;
   /** Message ID to scroll to and highlight (set by memo click, cleared after scroll) */
