@@ -3,6 +3,8 @@
 //! Provides callers_of, tests_for, impact, and detect_changes queries.
 //! Falls back gracefully if the binary is not installed.
 
+#![allow(dead_code)] // query/impact/detect_changes are used by ContextPack and tool-request handlers
+
 use serde::Deserialize;
 use std::process::Command;
 

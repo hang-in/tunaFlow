@@ -1,5 +1,9 @@
 # FRONTEND_ARCHITECTURE.md — 프론트엔드 아키텍처 문서
 
+> **status: archived** — 이 문서는 세션 1 시점(2026-03-25)의 3패널 레이아웃을 기준으로 작성됨.
+> 현재 코드는 5-tab CenterPanel, slice 기반 store, ProjectStartup 등 크게 달라졌으므로 참고용으로만 사용.
+> 현행 아키텍처는 CLAUDE.md §4, §7 참조.
+>
 > **최종 갱신**: 2025-03-25 (코드 기준 검증)
 
 ---

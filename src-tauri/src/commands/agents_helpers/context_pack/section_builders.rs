@@ -15,6 +15,7 @@ const THREAD_PARENT_RECENT: i64 = 3;
 const RT_PARENT_RECENT: i64 = 2;
 
 /// Words to skip when building chops search query.
+#[allow(dead_code)]
 const CHOPS_SKIP_WORDS: &[&str] = &[
     "the", "this", "that", "with", "from", "have", "been",
     "will", "would", "could", "should", "about", "into",
@@ -146,6 +147,7 @@ pub fn build_crg_section(project_path: &str) -> Option<String> {
 /// Calls `context_hub::search()` with keywords extracted from the prompt.
 /// Returns None if context-hub is unavailable or no results found.
 /// Graceful degradation: never blocks or errors — just skips.
+#[allow(dead_code)]
 pub fn build_chops_section(prompt: &str) -> Option<String> {
     // Extract meaningful keywords for search (reuse same logic as rawq)
     let keywords: Vec<&str> = prompt

@@ -248,152 +248,93 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
   },
 
   sendThreadRoundtable: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => {
-    const { threadBranchConvId } = get();
-    if (!threadBranchConvId) return;
-    if (get().runningThreadIds.includes(threadBranchConvId)) {
-      get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () => get().sendThreadRoundtable(prompt, participants, mode));
-      return;
-    }
-    get()._startRun(threadBranchConvId);
-    const now = Date.now();
-    set((state) => ({
-      threadMessages: [
-        ...state.threadMessages,
-        { id: `temp-user-${now}`, conversationId: threadBranchConvId, role: "user", content: prompt, timestamp: now, status: "done" },
-        { id: `temp-thinking-${now}`, conversationId: threadBranchConvId, role: "assistant", content: "", progressContent: "Roundtable starting...", timestamp: now, status: "streaming", engine: "system" },
-      ],
-    }));
-
-    const { listen } = await import("@tauri-apps/api/event");
-    set({ rtParticipantStatuses: new Map(), rtStatusConversationId: threadBranchConvId });
-    let placeholderCleared = false;
-
-    const ulPS = await listen<{ conversationId: string; name: string; engine: string; model?: string; round: number; status: string }>(
-      "roundtable:participant_status", (e) => {
-        if (e.payload.conversationId !== threadBranchConvId) return;
-        const { name, engine, model, round, status } = e.payload;
-        set((state) => {
-          const next = new Map(state.rtParticipantStatuses);
-          next.set(name, { name, engine, model: model ?? null, round, status: status as RtParticipantStatus["status"], updatedAt: Date.now() });
-          return { rtParticipantStatuses: next };
-        });
-      },
-    );
-    const ulRT = await listen<Message>("roundtable:progress", (event) => {
-      const msg = event.payload;
-      if (msg.conversationId !== threadBranchConvId) return;
-      if (msg.role === "user") return;
-      set((state) => {
-        // Deduplicate: skip if message ID already exists (e.g. after DB reload from navigation)
-        if (state.threadMessages.some((m) => m.id === msg.id)) return state;
-        if (!placeholderCleared) {
-          placeholderCleared = true;
-          return { threadMessages: [...state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")), msg] };
-        }
-        return { threadMessages: [...state.threadMessages, msg] };
-      });
-    });
-    const cleanup = () => { ulPS(); ulRT(); ulD(); ulE(); };
-    const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
-      if (e.payload.conversationId !== threadBranchConvId) return;
-      cleanup();
-      // Always reload from DB to get authoritative state
-      if (get().threadBranchConvId === threadBranchConvId) {
-        const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
-        set({ threadMessages });
-      }
-      setTimeout(() => set({ rtParticipantStatuses: new Map(), rtStatusConversationId: null }), 2000);
-      get()._endRun(threadBranchConvId);
-    });
-    const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
-      if (e.payload.conversationId !== threadBranchConvId) return;
-      cleanup();
-      if (get().threadBranchConvId === threadBranchConvId) {
-        set({ error: e.payload.error });
-        const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
-        set({ threadMessages, rtParticipantStatuses: new Map(), rtStatusConversationId: null });
-      }
-      get()._endRun(threadBranchConvId);
-    });
-
-    try {
-      await invoke<{ messageId: string }>("start_roundtable_run", { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
-    } catch (e) {
-      cleanup(); set({ error: String(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null }); get()._endRun(threadBranchConvId);
-    }
+    await runThreadRoundtable(set, get, "start_roundtable_run", prompt, participants, mode);
   },
 
   sendThreadRoundtableFollowup: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => {
-    const { threadBranchConvId } = get();
-    if (!threadBranchConvId) return;
-    if (get().runningThreadIds.includes(threadBranchConvId)) {
-      get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () => get().sendThreadRoundtableFollowup(prompt, participants, mode));
-      return;
-    }
-    get()._startRun(threadBranchConvId);
-    const now = Date.now();
-    set((state) => ({
-      threadMessages: [
-        ...state.threadMessages,
-        { id: `temp-user-${now}`, conversationId: threadBranchConvId, role: "user", content: prompt, timestamp: now, status: "done" },
-        { id: `temp-thinking-${now}`, conversationId: threadBranchConvId, role: "assistant", content: "", progressContent: "Roundtable starting...", timestamp: now, status: "streaming", engine: "system" },
-      ],
-    }));
-
-    const { listen } = await import("@tauri-apps/api/event");
-    set({ rtParticipantStatuses: new Map(), rtStatusConversationId: threadBranchConvId });
-    let placeholderCleared = false;
-
-    const ulPS = await listen<{ conversationId: string; name: string; engine: string; model?: string; round: number; status: string }>(
-      "roundtable:participant_status", (e) => {
-        if (e.payload.conversationId !== threadBranchConvId) return;
-        const { name, engine, model, round, status } = e.payload;
-        set((state) => {
-          const next = new Map(state.rtParticipantStatuses);
-          next.set(name, { name, engine, model: model ?? null, round, status: status as RtParticipantStatus["status"], updatedAt: Date.now() });
-          return { rtParticipantStatuses: next };
-        });
-      },
-    );
-    const ulRT = await listen<Message>("roundtable:progress", (event) => {
-      const msg = event.payload;
-      if (msg.conversationId !== threadBranchConvId) return;
-      if (msg.role === "user") return;
-      set((state) => {
-        if (state.threadMessages.some((m) => m.id === msg.id)) return state;
-        if (!placeholderCleared) {
-          placeholderCleared = true;
-          return { threadMessages: [...state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")), msg] };
-        }
-        return { threadMessages: [...state.threadMessages, msg] };
-      });
-    });
-    const cleanup = () => { ulPS(); ulRT(); ulD(); ulE(); };
-    const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
-      if (e.payload.conversationId !== threadBranchConvId) return;
-      cleanup();
-      if (get().threadBranchConvId === threadBranchConvId) {
-        const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
-        set({ threadMessages });
-      }
-      setTimeout(() => set({ rtParticipantStatuses: new Map(), rtStatusConversationId: null }), 2000);
-      get()._endRun(threadBranchConvId);
-    });
-    const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
-      if (e.payload.conversationId !== threadBranchConvId) return;
-      cleanup();
-      if (get().threadBranchConvId === threadBranchConvId) {
-        set({ error: e.payload.error });
-        const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
-        set({ threadMessages, rtParticipantStatuses: new Map(), rtStatusConversationId: null });
-      }
-      get()._endRun(threadBranchConvId);
-    });
-
-    try {
-      await invoke<{ messageId: string }>("start_roundtable_followup", { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
-    } catch (e) {
-      cleanup(); set({ error: String(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null }); get()._endRun(threadBranchConvId);
-    }
+    await runThreadRoundtable(set, get, "start_roundtable_followup", prompt, participants, mode);
   },
 });
+
+// ─── Thread RT helper (shared by run + followup) ────────────────────────────
+
+async function runThreadRoundtable(
+  set: SetState, get: GetState, command: string,
+  prompt: string, participants: RoundtableParticipant[], mode?: RtMode,
+) {
+  const { threadBranchConvId } = get();
+  if (!threadBranchConvId) return;
+  if (get().runningThreadIds.includes(threadBranchConvId)) {
+    get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () =>
+      command === "start_roundtable_run"
+        ? get().sendThreadRoundtable(prompt, participants, mode)
+        : get().sendThreadRoundtableFollowup(prompt, participants, mode),
+    );
+    return;
+  }
+  get()._startRun(threadBranchConvId);
+  const now = Date.now();
+  set((state) => ({
+    threadMessages: [
+      ...state.threadMessages,
+      { id: `temp-user-${now}`, conversationId: threadBranchConvId, role: "user", content: prompt, timestamp: now, status: "done" },
+      { id: `temp-thinking-${now}`, conversationId: threadBranchConvId, role: "assistant", content: "", progressContent: "Roundtable starting...", timestamp: now, status: "streaming", engine: "system" },
+    ],
+  }));
+
+  const { listen } = await import("@tauri-apps/api/event");
+  set({ rtParticipantStatuses: new Map(), rtStatusConversationId: threadBranchConvId });
+  let placeholderCleared = false;
+
+  const ulPS = await listen<{ conversationId: string; name: string; engine: string; model?: string; round: number; status: string }>(
+    "roundtable:participant_status", (e) => {
+      if (e.payload.conversationId !== threadBranchConvId) return;
+      const { name, engine, model, round, status } = e.payload;
+      set((state) => {
+        const next = new Map(state.rtParticipantStatuses);
+        next.set(name, { name, engine, model: model ?? null, round, status: status as RtParticipantStatus["status"], updatedAt: Date.now() });
+        return { rtParticipantStatuses: next };
+      });
+    },
+  );
+  const ulRT = await listen<Message>("roundtable:progress", (event) => {
+    const msg = event.payload;
+    if (msg.conversationId !== threadBranchConvId) return;
+    if (msg.role === "user") return;
+    set((state) => {
+      if (state.threadMessages.some((m) => m.id === msg.id)) return state;
+      if (!placeholderCleared) {
+        placeholderCleared = true;
+        return { threadMessages: [...state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")), msg] };
+      }
+      return { threadMessages: [...state.threadMessages, msg] };
+    });
+  });
+  const cleanup = () => { ulPS(); ulRT(); ulD(); ulE(); };
+  const ulD = await listen<{ conversationId: string }>("agent:completed", async (e) => {
+    if (e.payload.conversationId !== threadBranchConvId) return;
+    cleanup();
+    if (get().threadBranchConvId === threadBranchConvId) {
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
+      set({ threadMessages });
+    }
+    setTimeout(() => set({ rtParticipantStatuses: new Map(), rtStatusConversationId: null }), 2000);
+    get()._endRun(threadBranchConvId);
+  });
+  const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
+    if (e.payload.conversationId !== threadBranchConvId) return;
+    cleanup();
+    if (get().threadBranchConvId === threadBranchConvId) {
+      set({ error: e.payload.error });
+      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId });
+      set({ threadMessages, rtParticipantStatuses: new Map(), rtStatusConversationId: null });
+    }
+    get()._endRun(threadBranchConvId);
+  });
+
+  try {
+    await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
+  } catch (e) {
+    cleanup(); set({ error: String(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null }); get()._endRun(threadBranchConvId);
+  }
+}

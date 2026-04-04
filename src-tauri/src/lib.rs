@@ -61,11 +61,11 @@ pub fn run() {
             let cleaned = write_conn.execute(
                 "UPDATE messages SET status = 'error', content = CASE WHEN content = '' THEN '(이전 세션에서 중단됨)' ELSE content END WHERE status = 'streaming'",
                 [],
-            ).unwrap_or(0);
+            ).unwrap_or_else(|e| { eprintln!("[startup] stale message cleanup failed: {e}"); 0 });
             let jobs = write_conn.execute(
                 "UPDATE agent_jobs SET status = 'failed', error = 'app restart' WHERE status = 'running'",
                 [],
-            ).unwrap_or(0);
+            ).unwrap_or_else(|e| { eprintln!("[startup] stale job cleanup failed: {e}"); 0 });
             if cleaned > 0 || jobs > 0 {
                 eprintln!("[startup] Cleaned {} stale streaming messages, {} stale jobs", cleaned, jobs);
             }
@@ -79,8 +79,7 @@ pub fn run() {
             app.manage(commands::projects::RawqIndexing(std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()))));
 
             // Center window on primary monitor if no saved window state
-            {
-                let window = app.get_webview_window("main").expect("main window");
+            if let Some(window) = app.get_webview_window("main") {
                 // window-state plugin restores position before setup runs.
                 // If position is (0,0) or negative, assume no saved state → center on primary monitor.
                 let needs_center = match window.outer_position() {
@@ -257,5 +256,8 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running tunaFlow")
+        .unwrap_or_else(|e| {
+            eprintln!("tunaFlow failed to start: {e}");
+            std::process::exit(1);
+        })
 }

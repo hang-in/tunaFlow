@@ -1,5 +1,8 @@
 # tunaFlow 현재 상태 리뷰
 
+> **status: archived** — 세션 1 직전(2026-03-26) 시점의 스냅샷. 이후 10 세션의 대규모 변경으로 다수의 내용이 더 이상 유효하지 않음.
+> 현행 상태는 CLAUDE.md §5, implementationStatus.md 참조.
+
 - 작성자: OpenAI Codex
 - 작성 시각: 2026-03-26 08:24 KST
 - 대상 프로젝트: `D:\privateProject\tunaFlow`

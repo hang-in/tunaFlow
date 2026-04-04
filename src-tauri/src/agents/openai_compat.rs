@@ -134,9 +134,9 @@ where
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response.text().await.unwrap_or_default();
-        // If tools aren't supported, retry without tools
-        if status.as_u16() == 400 && error_text.contains("tools") {
-            eprintln!("[openai_compat] Model {} does not support tools, retrying without", model);
+        // If tools aren't supported, retry without tools (one-shot, no further retry)
+        if status.as_u16() == 400 && error_text.to_lowercase().contains("tool") {
+            eprintln!("[openai_compat] Model {} does not support tools, retrying without (once)", model);
             return stream_run_no_tools(input, on_progress, on_chunk).await;
         }
         return Err(AppError::Agent(format!(

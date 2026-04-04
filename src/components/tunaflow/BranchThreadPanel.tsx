@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Check, GitBranch, Users, Trash2, ChevronsLeft, ChevronsRight, ChevronRight, AlertTriangle } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -39,8 +39,6 @@ export function BranchThreadPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [rtDialogCheckpoint, setRtDialogCheckpoint] = useState<string | null>(null);
   const [linkedPlan, setLinkedPlan] = useState<Plan | null>(null);
-  const [revisionMode, setRevisionMode] = useState<"idle" | "select" | "busy">("idle");
-  const [revisionEngine, setRevisionEngine] = useState("claude");
 
   // Detect if this branch is linked to a plan (implementation branch)
   useEffect(() => {
@@ -70,23 +68,22 @@ export function BranchThreadPanel() {
   const isReadOnly = threadBranch?.status === "adopted" || threadBranch?.status === "archived";
 
   // Build full navigation chain: [Main, ...ancestors, current, ...descendants]
-  const fullChain: { id: string | null; label: string; isRT?: boolean }[] = [];
-  let currentIdx = 0;
-  {
+  const { fullChain, currentIdx, windowStart, visibleChain, hasLeftOverflow, hasRightOverflow } = useMemo(() => {
+    const chain: { id: string | null; label: string; isRT?: boolean }[] = [];
     // Walk up: ancestors
-    let current = threadBranch;
-    while (current?.parentBranchId) {
-      const parent = branches.find((b) => b.id === current!.parentBranchId);
+    let cur = threadBranch;
+    while (cur?.parentBranchId) {
+      const parent = branches.find((b) => b.id === cur!.parentBranchId);
       if (!parent) break;
-      fullChain.unshift({ id: parent.id, label: parent.customLabel ?? parent.label, isRT: parent.mode === "roundtable" });
-      current = parent;
+      chain.unshift({ id: parent.id, label: parent.customLabel ?? parent.label, isRT: parent.mode === "roundtable" });
+      cur = parent;
     }
     // Root conversation
     const conv = selectedConversationId ? conversations.find((c) => c.id === selectedConversationId) : null;
-    fullChain.unshift({ id: null, label: conv?.customLabel ?? conv?.label ?? "Main" });
+    chain.unshift({ id: null, label: conv?.customLabel ?? conv?.label ?? "Main" });
     // Current
-    fullChain.push({ id: threadBranchId, label: threadBranchLabel ?? threadBranchId, isRT });
-    currentIdx = fullChain.length - 1;
+    chain.push({ id: threadBranchId, label: threadBranchLabel ?? threadBranchId, isRT });
+    const idx = chain.length - 1;
     // Walk down: descendants (follow most recent child at each level)
     let descendantId: string | null = threadBranchId;
     while (descendantId) {
@@ -95,16 +92,21 @@ export function BranchThreadPanel() {
         .sort((a, b) => b.createdAt - a.createdAt);
       if (children.length === 0) break;
       const child = children[0];
-      fullChain.push({ id: child.id, label: child.customLabel ?? child.label, isRT: child.mode === "roundtable" });
+      chain.push({ id: child.id, label: child.customLabel ?? child.label, isRT: child.mode === "roundtable" });
       descendantId = child.id;
     }
-  }
-  // Visible window: 2 before + current + 2 after
-  const windowStart = Math.max(0, currentIdx - 2);
-  const windowEnd = Math.min(fullChain.length - 1, currentIdx + 2);
-  const visibleChain = fullChain.slice(windowStart, windowEnd + 1);
-  const hasLeftOverflow = windowStart > 0;
-  const hasRightOverflow = windowEnd < fullChain.length - 1;
+    // Visible window: 2 before + current + 2 after
+    const wStart = Math.max(0, idx - 2);
+    const wEnd = Math.min(chain.length - 1, idx + 2);
+    return {
+      fullChain: chain,
+      currentIdx: idx,
+      windowStart: wStart,
+      visibleChain: chain.slice(wStart, wEnd + 1),
+      hasLeftOverflow: wStart > 0,
+      hasRightOverflow: wEnd < chain.length - 1,
+    };
+  }, [threadBranchId, threadBranchLabel, isRT, branches, selectedConversationId, conversations]);
 
   const handleAdopt = async () => {
     if (!selectedConversationId) return;
@@ -226,39 +228,12 @@ export function BranchThreadPanel() {
         {/* Actions */}
         <div className="flex items-center gap-0.5 shrink-0">
           {/* Plan revision request — shown only for implementation branches */}
-          {isImplBranch && !isReadOnly && linkedPlan && revisionMode === "idle" && (
-            <button
-              onClick={() => setRevisionMode("select")}
-              title="계획 수정 요청 — Architect에게 전달"
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-amber-600/60 hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
-            >
-              <AlertTriangle className="w-2.5 h-2.5" />계획 수정
-            </button>
-          )}
-          {isImplBranch && revisionMode === "select" && linkedPlan && (
-            <div className="flex items-center gap-1">
-              <select value={revisionEngine} onChange={(e) => setRevisionEngine(e.target.value)} className="text-[9px] bg-input border border-border rounded px-1 py-0.5 outline-none">
-                {["claude", "codex", "gemini", "opencode", "ollama"].map((e) => <option key={e} value={e}>{e}</option>)}
-              </select>
-              <button
-                onClick={async () => {
-                  setRevisionMode("busy");
-                  try {
-                    const msgs = threadMessages.length > 0 ? threadMessages : await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId! });
-                    const { sendWithEngine } = useChatStore.getState();
-                    await requestPlanRevision(linkedPlan!, msgs, revisionEngine, async (eng, prompt, sys) => {
-                      await sendWithEngine(eng, prompt, undefined, sys);
-                    });
-                  } catch (e) { console.error("[revision]", e); }
-                  setRevisionMode("idle");
-                }}
-                className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
-              >전송</button>
-              <button onClick={() => setRevisionMode("idle")} className="text-[9px] text-muted-foreground hover:text-foreground">취소</button>
-            </div>
-          )}
-          {isImplBranch && revisionMode === "busy" && (
-            <span className="text-[9px] text-amber-600/50">전송 중...</span>
+          {isImplBranch && !isReadOnly && linkedPlan && (
+            <PlanRevisionActions
+              plan={linkedPlan}
+              threadMessages={threadMessages}
+              threadBranchConvId={threadBranchConvId}
+            />
           )}
           {/* Subtask discussion: [완료] button — archives branch + minor++ */}
           {isSubtaskDiscussion && !isReadOnly && (
@@ -407,6 +382,50 @@ export function BranchThreadPanel() {
         checkpointId={rtDialogCheckpoint}
       />
     </div>
+  );
+}
+
+// ─── Plan Revision Actions ─────────────────────────────────────────────────
+
+function PlanRevisionActions({ plan, threadMessages, threadBranchConvId }: {
+  plan: Plan; threadMessages: Message[]; threadBranchConvId: string | null;
+}) {
+  const [mode, setMode] = useState<"idle" | "select" | "busy">("idle");
+  const [engine, setEngine] = useState("claude");
+
+  if (mode === "busy") return <span className="text-[9px] text-amber-600/50">전송 중...</span>;
+
+  if (mode === "select") return (
+    <div className="flex items-center gap-1">
+      <select value={engine} onChange={(e) => setEngine(e.target.value)} className="text-[9px] bg-input border border-border rounded px-1 py-0.5 outline-none">
+        {["claude", "codex", "gemini", "opencode", "ollama"].map((e) => <option key={e} value={e}>{e}</option>)}
+      </select>
+      <button
+        onClick={async () => {
+          setMode("busy");
+          try {
+            const msgs = threadMessages.length > 0 ? threadMessages : await invoke<Message[]>("list_messages", { conversationId: threadBranchConvId! });
+            const { sendWithEngine } = useChatStore.getState();
+            await requestPlanRevision(plan, msgs, engine, async (eng, prompt, sys) => {
+              await sendWithEngine(eng, prompt, undefined, sys);
+            });
+          } catch (e) { console.error("[revision]", e); }
+          setMode("idle");
+        }}
+        className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
+      >전송</button>
+      <button onClick={() => setMode("idle")} className="text-[9px] text-muted-foreground hover:text-foreground">취소</button>
+    </div>
+  );
+
+  return (
+    <button
+      onClick={() => setMode("select")}
+      title="계획 수정 요청 — Architect에게 전달"
+      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-amber-600/60 hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
+    >
+      <AlertTriangle className="w-2.5 h-2.5" />계획 수정
+    </button>
   );
 }
 

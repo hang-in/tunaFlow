@@ -111,7 +111,7 @@ Chat → Plan 승격 → Approval(승인/검토/보류) → Implementation Branc
 │ ├─ Agents — claude, codex, gemini, opencode, ollama + SDKs  │
 │ ├─ Context — ContextPack, compression, vector search        │
 │ ├─ Workflow — Plan/Approval/Review/Verdict pipeline         │
-│ └─ DB — SQLite WAL, dual read/write, v22 schema            │
+│ └─ DB — SQLite WAL, dual read/write, v25 schema            │
 ├──────────────────────────────────────────────────────────────┤
 │ CLI Agents / Sidecars                                       │
 │ ├─ claude (Anthropic) — CLI + SDK                           │
@@ -188,7 +188,7 @@ cd src-tauri && cargo test --lib  # Rust unit tests (84개)
 
 ---
 
-## DB 스키마 (v22)
+## DB 스키마 (v25)
 
 | 테이블 | 용도 |
 |--------|------|
@@ -229,7 +229,7 @@ tunaFlow/
 │   │   │   ├── session_discovery.rs    # FTS5+Vector 세션 발견
 │   │   │   ├── vector_search.rs        # 벡터 임베딩/검색
 │   │   │   └── ...
-│   │   ├── db/               # SQLite schema, migrations (v1-v22), models
+│   │   ├── db/               # SQLite schema, migrations (v1-v25), models
 │   │   ├── errors.rs         # AppError enum
 │   │   └── guardrail.rs      # Context budget limits
 │   ├── binaries/             # rawq sidecar (gitignored)
@@ -271,7 +271,8 @@ tunaFlow/
 | 5 | 오케스트레이션 워크플로우 파이프라인 Phase A-E 전체 완료 |
 | 6 | zod 스키마, Ollama 엔진, Tool Steps 가시화, silent error 표면화 |
 | 7 | 장기기억 4단계, Vector DB, virtuoso, cmdk, tokio async, 실사용 검증 50+ 버그 수정 |
-| 8 | 이벤트 격리 (동시 실행 안전), async command 전환, identity 모델명 포함, SQLite PRAGMA 최적화 |
+| 8-9 | 이벤트 격리, RT 전면 수정, 스트리밍 race condition 해결, Virtuoso re-render, duration/token 표시 |
+| 10 | 스킬 4-layer + 레지스트리, CRG 통합, 마커 기반 도구 호출, 워크플로우 에이전트 고도화, DB v25 |
 
 ---
 

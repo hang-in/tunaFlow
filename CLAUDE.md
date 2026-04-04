@@ -1,6 +1,6 @@
 # tunaFlow — Claude Code Handoff Document
 
-> 최종 갱신: 2026-04-02 (세션 7 반영)
+> 최종 갱신: 2026-04-04 (세션 10 반영)
 > SSOT: `docs/reference/dataModelRevised.md` (도메인 모델), `docs/reference/implementationStatus.md` (구현 현황)
 
 ---
@@ -229,7 +229,7 @@ tunaFlow/
 - **워크플로우 스킬 자동 주입**: phase→스킬 매핑 (appStore), effectiveSkills = 수동 ∪ phase 자동, Settings UI
 - **마커 strip**: syncResultReport에서 tunaflow 마커 제거, Reviewer 템플릿 모순 해소
 - **chops ContextPack 자동 주입**: context-hub search를 프롬프트 키워드로 호출 → Standard+ 모드 자동 삽입
-- Rust 79 tests, Frontend 96 tests. DB v22.
+- Rust 79→84 tests (세션 8-9에서 증가), Frontend 96 tests. DB v22→v25 (세션 10에서 v25).
 
 ### ✅ 해결됨 (세션 8-9: 이벤트 격리 + RT 전면 수정 + 스트리밍 안정화)
 - **이벤트 격리**: ChunkPayload에 conversationId 추가, 5엔진 10 emit 지점 + frontend 리스너 필터링
@@ -334,7 +334,7 @@ tunaFlow/
 
 ---
 
-## 8. DB 스키마 (v22)
+## 8. DB 스키마 (v25)
 
 | 테이블 | 핵심 필드 |
 |---|---|

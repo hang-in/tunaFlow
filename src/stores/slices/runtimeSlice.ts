@@ -83,7 +83,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     setTimeout(() => {
       const projectKey = get().selectedProjectKey;
       if (projectKey) {
-        invoke("get_project", { key: projectKey }).then((p: any) => {
+        invoke<{ path?: string }>("get_project", { key: projectKey }).then((p) => {
           if (p?.path) invoke("start_rawq_index", { projectPath: p.path }).catch((e) => console.error("[bg] rawq_index failed:", e));
         }).catch((e) => console.error("[bg] get_project failed:", e));
       }

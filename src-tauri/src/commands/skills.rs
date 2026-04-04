@@ -199,6 +199,7 @@ const IGNORED_FILES: &[&str] = &[
 ];
 
 /// Project-local skill paths to probe inside a project directory (ported from chops).
+#[allow(dead_code)]
 const PROJECT_PROBES: &[(&str, &str)] = &[
     (".claude/skills", "claude"),
     (".cursor/skills", "cursor"),
@@ -211,6 +212,7 @@ const PROJECT_PROBES: &[(&str, &str)] = &[
 ];
 
 /// Scan project-local skill directories.
+#[allow(dead_code)]
 fn project_local_skill_paths(project_path: &str) -> Vec<(String, String)> {
     let root = std::path::Path::new(project_path);
     PROJECT_PROBES

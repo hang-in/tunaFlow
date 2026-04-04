@@ -1,6 +1,6 @@
 # tunaFlow 구현 현황
 
-최종 갱신: 2026-03-30 세션 2 (코드베이스 기준)
+최종 갱신: 2026-04-04 세션 10 (코드베이스 기준)
 SSOT: `docs/reference/dataModelRevised.md`
 
 ---
@@ -20,7 +20,7 @@ SSOT: `docs/reference/dataModelRevised.md`
 | Memo CRUD | done | list/create/delete + branch_brief |
 | Artifact CRUD | done | list/create/update_status/delete + subtask link + provenance |
 | Skill 로딩 | done | ~/.tunaflow/skills/ 스캔 + vendor 그룹핑 + 검색/필터 |
-| DB migrations v1-v17 | done | v13 hidden, v14 branch fix, v15 FTS5, v16 usage_status, v17 conversation_memory |
+| DB migrations v1-v25 | done | v13 hidden, v14 branch fix, v15 FTS5, v16 usage_status, v17 conversation_memory, v18 plan_events+plan 확장, v19-v20 plan 컬럼, v21 session_links+memory topics, v22 conversation_chunks, v23 trace_log.message_id, v24 subtask depends_on+parallel_group, v25 plans.parent_plan_id |
 
 ### Multi-Agent (4-engine parity)
 
@@ -166,9 +166,9 @@ SSOT: `docs/reference/dataModelRevised.md`
 
 | 영역 | 테스트 수 | 도구 |
 |---|---|---|
-| Rust unit | 53 | cargo test --lib |
-| Frontend smoke/integration | 55 | vitest + jsdom |
-| **Total** | **108** | |
+| Rust unit | 84 | cargo test --lib |
+| Frontend smoke/integration | 96 | vitest + jsdom |
+| **Total** | **180** | |
 
 ---
 
@@ -193,19 +193,28 @@ SSOT: `docs/reference/dataModelRevised.md`
 | v15 | messages_fts FTS5 + triggers |
 | v16 | usage_status (trace_log + conversations) |
 | v17 | conversation_memory |
+| v18 | plan_events + plans 6개 컬럼 확장 |
+| v19 | plans.version_major/minor |
+| v20 | plans.revision |
+| v21 | session_links + conversation_memory topic/provenance/model_used |
+| v22 | conversation_chunks (벡터 임베딩 BLOB) |
+| v23 | trace_log.message_id |
+| v24 | plan_subtasks.depends_on + parallel_group |
+| v25 | plans.parent_plan_id |
 
 ---
 
 ## 다음 단계 권장
 
-### P0
-- branchSlice sendThreadMessage 팩토리 전환
-- 실질적 테스트 추가 (store 상태 전이, ContextPack 조립 경로)
+### P0 (세션 11)
+- 문서 정합성 유지 자동화 (DB 버전, 테스트 수 등 수동 문서 지표 최소화)
+- 스트리밍 로직 공용 추출 (RuntimeSlice ↔ ThreadSlice 중복)
+- 통합 테스트 추가 (스트리밍, RT, 워크플로우 흐름)
 
 ### P1
-- RoundtableView 분할 (453줄)
-- Compressed memory 품질 검증 (긴 대화 시나리오)
-- Auto mode heuristic 실사용 보정
+- 대형 컴포넌트 분할 (BranchThreadPanel, TracePanel)
+- RT 전용 페르소나 설계
+- ContextPack DB/assembly 파일 분리
 
 ### P2
 - Long-term memory Phase 2: vector/embedding path 재평가
