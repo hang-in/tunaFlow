@@ -29,10 +29,38 @@ export function useSubtaskProgress(plan: Plan) {
       if (cancelled.current) return;
       const scanned = scanCompletedSubtasks(msgs);
       const complete = msgs.some((m) => m.role === "assistant" && hasImplComplete(m.content));
-      if (complete && scanned.size === 0) {
+
+      // Merge: marker scan + DB subtask status
+      // Handles: Developer didn't emit per-subtask markers in earlier rounds,
+      // or Rework round only markers some subtasks
+      const merged = new Set(scanned);
+      let dbSubtasks: PlanSubtask[] = [];
+      try {
+        dbSubtasks = await planApi.listSubtasks(plan.id);
+        for (const st of dbSubtasks) {
+          if (st.status === "done") merged.add(st.idx);
+        }
+      } catch { /* use marker scan only */ }
+
+      // Sync marker-detected completions back to DB (fire-and-forget)
+      for (const num of scanned) {
+        const st = dbSubtasks.find((s) => s.idx === num);
+        if (st && st.status !== "done") {
+          planApi.updateSubtaskStatus(st.id, "done").catch(() => {});
+        }
+      }
+
+      if (complete && merged.size === 0) {
+        // impl-complete with zero markers + zero DB done → treat all as complete
         setCompletedNums(new Set(Array.from({ length: 50 }, (_, i) => i + 1)));
+        // Also mark all DB subtasks as done
+        for (const st of dbSubtasks) {
+          if (st.status !== "done") {
+            planApi.updateSubtaskStatus(st.id, "done").catch(() => {});
+          }
+        }
       } else {
-        setCompletedNums(scanned);
+        setCompletedNums(merged);
       }
       setImplComplete(complete);
 
