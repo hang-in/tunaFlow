@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { ChevronDown, ChevronRight, GitBranch, Check, FileText } from "lucide-react";
+import { ChevronDown, ChevronRight, GitBranch, Check, FileText, Ban, CheckCircle, Play, RotateCcw } from "lucide-react";
 import type { Plan, PlanEvent, PlanPhase, PlanSubtask, PlanStatus, SubtaskStatus, Message } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { getPlanSlug, scanMessagesForMarkers, startReviewRT } from "@/lib/workflowOrchestration";
@@ -15,6 +16,12 @@ import { DraftingActions } from "./DraftingActions";
 import { ApprovalGate } from "./ApprovalGate";
 import { ReviewVerdictCard } from "./ReviewVerdictCard";
 import { MergeBranchButton } from "./MergeBranchButton";
+
+const ctxMenuContent = "min-w-[160px] bg-popover border border-border/40 rounded-lg shadow-xl p-1 z-[100] animate-in fade-in-0 zoom-in-95";
+const ctxMenuItem = "flex items-center gap-2 px-2.5 py-1.5 text-[12px] rounded-md cursor-pointer outline-none transition-colors text-foreground/80 data-[highlighted]:bg-accent data-[highlighted]:text-foreground";
+const ctxMenuDestructive = "flex items-center gap-2 px-2.5 py-1.5 text-[12px] rounded-md cursor-pointer outline-none transition-colors text-destructive/70 data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive";
+const ctxMenuSeparator = "h-px bg-border/30 my-1 mx-1";
+const ctxMenuIcon = "w-3.5 h-3.5 text-muted-foreground/60";
 
 export function PlanCard({
   plan: initialPlan,
@@ -152,7 +159,17 @@ export function PlanCard({
     (PLAN_STATUS_CYCLE.indexOf(plan.status) + 1) % PLAN_STATUS_CYCLE.length
   ];
 
+  const allStatusActions: { status: PlanStatus; label: string; icon: React.ReactNode; destructive?: boolean }[] = [
+    { status: "active", label: "Active로 변경", icon: <Play className={ctxMenuIcon} /> },
+    { status: "done", label: "완료 처리", icon: <CheckCircle className={ctxMenuIcon} /> },
+    { status: "draft", label: "Draft로 되돌리기", icon: <RotateCcw className={ctxMenuIcon} /> },
+    { status: "abandoned", label: "Abandon", icon: <Ban className={ctxMenuIcon} />, destructive: true },
+  ];
+  const statusActions = allStatusActions.filter((a) => a.status !== plan.status);
+
   return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
     <div className="rounded-lg border border-border bg-card transition-colors">
       <div
         className="flex items-start gap-2 p-2.5 cursor-pointer hover:bg-accent/40 rounded-lg transition-colors"
@@ -192,7 +209,7 @@ export function PlanCard({
           title={`Click to → ${nextPlanStatus}`}
           onClick={(e) => { e.stopPropagation(); onStatusChange(plan.id, nextPlanStatus); }}
           className={cn(
-            "shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full border whitespace-nowrap",
+            "shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full border whitespace-nowrap hover:ring-1 hover:ring-primary/30 transition-all",
             statusCfg.cls
           )}
         >
@@ -376,5 +393,28 @@ export function PlanCard({
       )}
       {showDoc && <PlanDocumentModal plan={plan} onClose={() => setShowDoc(false)} />}
     </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className={ctxMenuContent}>
+          <ContextMenu.Item className={ctxMenuItem} onSelect={() => setShowDoc(true)}>
+            <FileText className={ctxMenuIcon} /> 문서 보기
+          </ContextMenu.Item>
+          <ContextMenu.Item className={ctxMenuItem} onSelect={handleToggle}>
+            {expanded ? <ChevronDown className={ctxMenuIcon} /> : <ChevronRight className={ctxMenuIcon} />}
+            {expanded ? "접기" : "펼치기"}
+          </ContextMenu.Item>
+          <ContextMenu.Separator className={ctxMenuSeparator} />
+          {statusActions.map((a) => (
+            <ContextMenu.Item
+              key={a.status}
+              className={a.destructive ? ctxMenuDestructive : ctxMenuItem}
+              onSelect={() => onStatusChange(plan.id, a.status)}
+            >
+              {a.icon} {a.label}
+            </ContextMenu.Item>
+          ))}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
