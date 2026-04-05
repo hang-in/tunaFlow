@@ -93,10 +93,10 @@ export function PlansPanel({ activeStage, onPhaseChanged, onSwitchToChat }: Plan
       )}
 
       {activeStage === "subtask" ? (() => {
-        // Separate: normal subtask review vs doom-loop escalated plans
-        // Doom loop plans have rework phase but were forced into subtask_review
-        const normalPlans = filteredPlans.filter((p) => !p.reviewBranchId);
-        const escalatedPlans = filteredPlans.filter((p) => !!p.reviewBranchId);
+        // Separate: new plans (never implemented) vs plans that went through Dev→Review cycle
+        // Plans with implementationBranchId have been through at least one implementation round
+        const normalPlans = filteredPlans.filter((p) => !p.implementationBranchId);
+        const escalatedPlans = filteredPlans.filter((p) => !!p.implementationBranchId);
         return (
           <>
             {normalPlans.length > 0 && (
