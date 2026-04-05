@@ -66,7 +66,8 @@ export function HarnessSummary({ conversationId, activeStage, onStageClick, refr
     setLoading(true);
     planApi.listPlansByConversation(conversationId).then(async (plans) => {
       if (cancelled) return;
-      const active = plans.find((p) => p.status === "active") ?? plans[0] ?? null;
+      const livePlans = plans.filter((p) => p.status !== "abandoned" && p.status !== "done");
+      const active = livePlans.find((p) => p.status === "active") ?? livePlans[0] ?? null;
       setActivePlan(active);
       if (active) {
         const tasks = await planApi.listSubtasks(active.id);
