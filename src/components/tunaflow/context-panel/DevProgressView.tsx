@@ -156,7 +156,13 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       const recItems = reviewVerdict?.recommendations.map((r) => `• ${r.slice(0, 300)}`) ?? [];
 
       const events = await planApi.listPlanEvents(plan.id);
-      const failEvents = events.filter((e) => e.eventType === "review_failed");
+      // Count failures since last escalation (not total)
+      let lastEscIdx = -1;
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].eventType === "doom_loop_escalated") { lastEscIdx = i; break; }
+      }
+      const sinceReset = lastEscIdx >= 0 ? events.slice(lastEscIdx + 1) : events;
+      const failEvents = sinceReset.filter((e) => e.eventType === "review_failed");
       const failCount = failEvents.length;
       const pressureWarning = failCount >= 2
         ? `\n> ⚠️ 이전 ${failCount}회 Review 실패. ${failCount >= 3 ? "이번이 마지막 기회입니다." : "다음 실패 시 설계 재검토로 에스컬레이션됩니다."}`
