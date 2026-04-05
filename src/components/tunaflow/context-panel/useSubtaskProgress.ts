@@ -36,18 +36,21 @@ export function useSubtaskProgress(plan: Plan) {
       // Merge: marker scan + DB subtask status
       // Handles: Developer didn't emit per-subtask markers in earlier rounds,
       // or Rework round only markers some subtasks
+      // Note: scanned (from markers) uses 1-based numbers (subtask-done:1, subtask-done:2)
+      // DB subtask.idx is 0-based → convert to 1-based for consistency
       const merged = new Set(scanned);
       let dbSubtasks: PlanSubtask[] = [];
       try {
         dbSubtasks = await planApi.listSubtasks(plan.id);
         for (const st of dbSubtasks) {
-          if (st.status === "done") merged.add(st.idx);
+          if (st.status === "done") merged.add(st.idx + 1); // 0-based → 1-based
         }
       } catch { /* use marker scan only */ }
 
       // Sync marker-detected completions back to DB (fire-and-forget)
+      // Markers are 1-based, DB idx is 0-based
       for (const num of scanned) {
-        const st = dbSubtasks.find((s) => s.idx === num);
+        const st = dbSubtasks.find((s) => s.idx === num - 1);
         if (st && st.status !== "done") {
           planApi.updateSubtaskStatus(st.id, "done").catch(() => {});
         }
@@ -57,7 +60,7 @@ export function useSubtaskProgress(plan: Plan) {
         // impl-complete means ALL subtasks are done — fill any gaps
         const allDone = new Set(merged);
         for (const st of dbSubtasks) {
-          allDone.add(st.idx);
+          allDone.add(st.idx + 1); // 0-based → 1-based
           if (st.status !== "done") {
             planApi.updateSubtaskStatus(st.id, "done").catch(() => {});
           }
