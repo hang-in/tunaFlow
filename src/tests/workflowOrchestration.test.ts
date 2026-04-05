@@ -269,17 +269,18 @@ describe("slugifyPlanTitle", () => {
     expect(slugifyPlanTitle("My Plan Title")).toBe("my-plan-title");
   });
 
-  it("strips Korean characters with hash suffix", () => {
-    const slug = slugifyPlanTitle("인증 모듈 리팩토링");
-    expect(slug).toMatch(/^plan-[a-z0-9]{1,4}$/); // "plan-XXXX" format
+  it("strips Korean characters", () => {
+    // Pure Korean → "plan" fallback (collision handled by DB slug, not this function)
+    expect(slugifyPlanTitle("인증 모듈 리팩토링")).toBe("plan");
   });
 
-  it("different Korean titles produce different slugs", () => {
+  it("Korean titles with same ASCII produce same base slug", () => {
+    // DB getPlanSlug(plan) handles uniqueness, slugifyPlanTitle is just the base
     const a = slugifyPlanTitle("분석 UX 종합 개선");
     const b = slugifyPlanTitle("보고서 UX 개선 — 카드 팝업");
-    expect(a).not.toBe(b);
-    expect(a).toMatch(/^ux-/);
-    expect(b).toMatch(/^ux-/);
+    expect(a).toBe("ux");
+    expect(b).toBe("ux");
+    // Uniqueness comes from plan.slug in DB, not this function
   });
 
   it("handles mixed Korean-English", () => {

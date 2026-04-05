@@ -79,8 +79,12 @@ export function PlansPanel({ activeStage, onPhaseChanged, onSwitchToChat }: Plan
   // Filter by active stage
   const stageCfg = activeStage ? STAGE_PHASE_MAP[activeStage] : null;
   const filteredPlans = stageCfg
-    ? plans.filter((p) => stageCfg.phases.includes(p.phase) || (stageCfg.includeAbandoned && p.status === "abandoned"))
-    : plans;
+    ? plans.filter((p) => {
+        // Abandoned plans only show in decision stage (with includeAbandoned flag)
+        if (p.status === "abandoned") return !!stageCfg.includeAbandoned;
+        return stageCfg.phases.includes(p.phase);
+      })
+    : plans.filter((p) => p.status !== "abandoned");
   const emptyMessage = stageCfg?.empty ?? "No plans yet.";
 
   return (
