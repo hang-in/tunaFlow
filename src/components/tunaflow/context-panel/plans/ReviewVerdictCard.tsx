@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 import type { Plan, PlanPhase, PlanStatus } from "@/types";
 import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 import { processReviewVerdict } from "@/lib/workflowOrchestration";
@@ -24,7 +24,7 @@ export function ReviewVerdictCard({
       onPlanUpdate({ phase: "done" as PlanPhase, status: "done" as PlanStatus });
     } catch (e) {
       console.error("[ReviewVerdictCard] approve failed:", e);
-      toast.error("완료 처리 실패: " + (e instanceof Error ? e.message : String(e)));
+      toast.error("완료 처리 실패: " + errorMessage(e));
     }
     setBusy(false);
   };
@@ -36,7 +36,7 @@ export function ReviewVerdictCard({
       onPlanUpdate({ phase: "rework" as PlanPhase });
     } catch (e) {
       console.error("[ReviewVerdictCard] rework failed:", e);
-      toast.error("Rework 처리 실패: " + (e instanceof Error ? e.message : String(e)));
+      toast.error("Rework 처리 실패: " + errorMessage(e));
     }
     setBusy(false);
   };

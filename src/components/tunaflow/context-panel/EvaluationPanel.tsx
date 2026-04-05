@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { FlaskConical, Clock, CheckCircle2, XCircle, RefreshCw, Plus } from "lucide-react";
 import { AgentAvatar } from "../AgentAvatar";
@@ -340,7 +340,7 @@ function ExecuteButton({ run, onDone }: { run: EvalRun; onDone: () => void }) {
                 agentName: agent.label,
                 engine: agent.engine,
                 round,
-                content: `Error: ${String(e)}`,
+                content: `Error: ${errorMessage(e)}`,
                 inputTokens: null, outputTokens: null, costUsd: null,
                 durationMs: Date.now() - t0,
               },

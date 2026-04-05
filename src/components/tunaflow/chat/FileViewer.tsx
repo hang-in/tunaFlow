@@ -2,7 +2,7 @@ import { useState, useEffect, lazy, Suspense } from "react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Copy, Check, FileText } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 
 const SyntaxHighlighter = lazy(() =>
   import("react-syntax-highlighter").then((mod) => ({ default: mod.Prism }))
@@ -34,7 +34,7 @@ export function FileViewer({ filePath, projectPath, lineNumber, onClose }: FileV
     setError(null);
     invoke<FileContent>("read_text_file", { filePath, projectPath })
       .then(setFile)
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   }, [filePath, projectPath]);
 

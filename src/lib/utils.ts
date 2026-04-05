@@ -49,6 +49,18 @@ export function isKnownEngine(s: string | undefined): s is AgentEngine {
   return normalizeEngine(s) !== null;
 }
 
+/**
+ * Extract a human-readable message from a Tauri IPC error.
+ * Handles both structured `{ code, message }` objects and plain strings.
+ */
+export function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "object" && e !== null && "message" in e) {
+    return String((e as { message: unknown }).message);
+  }
+  return String(e);
+}
+
 /** Agent name text color classes */
 export const AGENT_TEXT_COLORS: Record<AgentEngine, string> = {
   claude: "text-agent-claude",

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { errorMessage } from "@/lib/utils";
 import { getSetting } from "@/lib/appStore";
 import { useToolStepsStore } from "@/stores/toolStepsStore";
 import { serializeSteps } from "@/lib/toolSteps";
@@ -274,10 +275,10 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     } catch (e) {
       cleanup();
       set((state) => ({
-        error: String(e),
+        error: errorMessage(e),
         messages: state.messages
           .filter((m) => !m.id.startsWith("temp-thinking-"))
-          .map((m) => m.status === "streaming" ? { ...m, status: "error", content: m.content || String(e) } : m),
+          .map((m) => m.status === "streaming" ? { ...m, status: "error", content: m.content || errorMessage(e) } : m),
       }));
       get()._endRun(selectedConversationId);
     }
@@ -397,6 +398,6 @@ async function runRoundtable(
   try {
     await invoke<{ messageId: string }>(command, { input: { conversationId: selectedConversationId, prompt, participants, mode } });
   } catch (e) {
-    cleanup(); set({ error: String(e) }); get()._endRun(selectedConversationId);
+    cleanup(); set({ error: errorMessage(e) }); get()._endRun(selectedConversationId);
   }
 }

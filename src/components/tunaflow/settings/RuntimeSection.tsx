@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 import { X, Search, FileText, ChevronRight, Copy, Send, Archive, ChevronDown } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { getSetting, setSetting } from "@/lib/appStore";
@@ -198,14 +198,14 @@ function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
     if (!query.trim() || !isAvailable) return;
     setSearching(true); setError(null); setResults([]); setSelectedDoc(null);
     try { setResults(await invoke<HubSearchResult[]>("context_hub_search", { query: query.trim(), sourceFilter: null, limit: 10 })); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorMessage(e)); }
     finally { setSearching(false); }
   };
 
   const handleGet = async (id: string) => {
     setLoadingDoc(true); setError(null);
     try { setSelectedDoc(await invoke<HubDocument>("context_hub_get", { documentId: id })); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorMessage(e)); }
     finally { setLoadingDoc(false); }
   };
 
@@ -220,7 +220,7 @@ function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
     const { selectedConversationId } = useChatStore.getState();
     if (!selectedConversationId) return;
     try { await invoke("create_artifact", { conversationId: selectedConversationId, artifactType: "notes", title: selectedDoc.title || selectedDoc.id, content: selectedDoc.content }); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorMessage(e)); }
   };
 
   return (

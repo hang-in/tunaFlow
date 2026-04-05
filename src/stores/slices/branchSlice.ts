@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorMessage } from "@/lib/utils";
 import type {
   SetState,
   GetState,
@@ -35,7 +36,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       const branches = await invoke<Branch[]>("list_branches", { conversationId });
       set({ branches });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -48,7 +49,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       const branches = await invoke<Branch[]>("list_branches", { conversationId: rootConvId });
       set({ branches });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -82,7 +83,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
         });
       }
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -104,7 +105,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
     try {
       await invoke("rename_branch", { id: branchId, customLabel });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -115,7 +116,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
     try {
       await invoke("link_git_branch", { id: branchId, gitBranch });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -129,7 +130,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       ]);
       set({ messages, branches });
     } catch (e) {
-      const msg = String(e);
+      const msg = errorMessage(e);
       if (msg.includes("empty_branch")) {
         const { ask } = await import("@tauri-apps/plugin-dialog");
         if (await ask("빈 브랜치입니다. 삭제하시겠습니까?", { title: "빈 브랜치", kind: "warning" })) {
@@ -169,7 +170,7 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
         error: null,
       }));
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 

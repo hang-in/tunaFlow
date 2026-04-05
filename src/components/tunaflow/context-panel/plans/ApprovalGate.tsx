@@ -6,6 +6,7 @@ import * as planApi from "@/lib/api/plans";
 import {
   approveAndStartImplementation,
 } from "@/lib/workflowOrchestration";
+import { errorMessage } from "@/lib/utils";
 import { toast } from "sonner";
 
 export function ApprovalGate({
@@ -39,7 +40,7 @@ export function ApprovalGate({
       await sendThreadMessage(prompt, engine, selectedProfile?.model);
     } catch (e) {
       console.error("[ApprovalGate] dev start failed:", e);
-      toast.error("Dev 시작 실패: " + (e instanceof Error ? e.message : String(e)));
+      toast.error("Dev 시작 실패: " + errorMessage(e));
       setMode("idle");
     }
   };
@@ -52,7 +53,7 @@ export function ApprovalGate({
       onPlanUpdate({ phase: "subtask_review" as PlanPhase });
     } catch (e) {
       console.error("[ApprovalGate] revert failed:", e);
-      toast.error("되돌리기 실패: " + (e instanceof Error ? e.message : String(e)));
+      toast.error("되돌리기 실패: " + errorMessage(e));
       setMode("idle");
     }
   };

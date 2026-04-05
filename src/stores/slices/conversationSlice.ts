@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorMessage } from "@/lib/utils";
 import type {
   SetState,
   GetState,
@@ -64,7 +65,7 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
         set({ crossSessionIds: get().crossSessionIds.filter((cid) => cid !== id) });
       }
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -107,7 +108,7 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
         set({ messages, branches, memos, artifacts, error: null });
       }
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -121,7 +122,7 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
     try {
       await invoke("rename_conversation", { id, customLabel });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -133,7 +134,7 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
       const messages = await invoke<Message[]>("list_messages", { conversationId: convId });
       set({ messages });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 });

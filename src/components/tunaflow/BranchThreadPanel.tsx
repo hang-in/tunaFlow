@@ -4,7 +4,7 @@ import { X, Check, GitBranch, Users, Trash2, ChevronsLeft, ChevronsRight, Chevro
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { Message, Plan } from "@/types";
 import { AgentAvatar } from "./AgentAvatar";
-import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp } from "@/lib/utils";
+import { cn, normalizeEngine, AGENT_DOT_COLORS, AGENT_DISPLAY_NAMES, formatTimestamp, errorMessage } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { MessageItem } from "./MessageItem";
 import { NewMessageInput } from "./NewMessageInput";
@@ -444,7 +444,7 @@ function GitLinkBadge({ branchId, gitBranch, isReadOnly }: { branchId: string; g
       setActionMsg(result);
       setTimeout(() => setActionMsg(null), 3000);
     } catch (e) {
-      setActionMsg(String(e));
+      setActionMsg(errorMessage(e));
       setTimeout(() => setActionMsg(null), 4000);
     }
   };

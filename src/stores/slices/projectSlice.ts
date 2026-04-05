@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { errorMessage } from "@/lib/utils";
 import type { SetState, GetState, Project, CreateProjectInput, RawqStatus } from "./types";
 
 export interface ProjectSlice {
@@ -27,7 +28,7 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
       const projects = await invoke<Project[]>("list_projects");
       set({ projects, error: null });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -36,7 +37,7 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
       await invoke<Project>("create_project", { input });
       await get().loadProjects();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -59,7 +60,7 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
         }
       }
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -105,7 +106,7 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
         }
       }
     } catch (e) {
-      set({ error: String(e), projectLoading: null });
+      set({ error: errorMessage(e), projectLoading: null });
       return;
     }
 

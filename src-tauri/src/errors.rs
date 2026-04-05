@@ -1,3 +1,4 @@
+use serde::ser::SerializeStruct;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -22,12 +23,29 @@ pub enum AppError {
     Lock,
 }
 
-// Tauri commands require the error type to implement Serialize
+impl AppError {
+    /// Returns a snake_case code identifier for this error variant.
+    pub fn code(&self) -> &'static str {
+        match self {
+            AppError::Database(_) => "db_error",
+            AppError::NotFound(_) => "not_found",
+            AppError::Io(_) => "io_error",
+            AppError::Json(_) => "json_error",
+            AppError::Agent(_) => "agent_error",
+            AppError::Lock => "lock_error",
+        }
+    }
+}
+
+/// Serializes as `{ "code": "...", "message": "..." }` for structured IPC errors.
 impl Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        let mut s = serializer.serialize_struct("AppError", 2)?;
+        s.serialize_field("code", self.code())?;
+        s.serialize_field("message", &self.to_string())?;
+        s.end()
     }
 }

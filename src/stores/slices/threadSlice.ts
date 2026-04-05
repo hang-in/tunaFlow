@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorMessage } from "@/lib/utils";
 import { ENGINE_CONFIGS } from "@/lib/engineConfig";
 import { useToolStepsStore } from "@/stores/toolStepsStore";
 import { serializeSteps } from "@/lib/toolSteps";
@@ -131,7 +132,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
         }
       }).catch((e) => console.debug("[plan-tab]", e));
     } catch (e) {
-      const msg = String(e);
+      const msg = errorMessage(e);
       // If branch was already deleted, silently reload branches
       if (msg.includes("not found") || msg.includes("Not found")) {
         const convId = get().selectedConversationId;
@@ -262,7 +263,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       await invoke<{ messageId: string }>(config.command, { input });
     } catch (e) {
       cleanup();
-      set((state) => ({ error: String(e), threadMessages: state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")) }));
+      set((state) => ({ error: errorMessage(e), threadMessages: state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")) }));
       get()._endRun(convId);
     }
   },
@@ -360,7 +361,7 @@ async function runThreadRoundtable(
   try {
     await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
   } catch (e) {
-    cleanup(); set({ error: String(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null }); get()._endRun(threadBranchConvId);
+    cleanup(); set({ error: errorMessage(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null }); get()._endRun(threadBranchConvId);
   }
 }
 

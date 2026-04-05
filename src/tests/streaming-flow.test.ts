@@ -389,7 +389,7 @@ describe("Streaming flow — sendWithEngine", () => {
     await get().sendWithEngine("claude", "will throw");
     await vi.advanceTimersByTimeAsync(100);
 
-    expect(get().error).toBe("Error: binary not found");
+    expect(get().error).toBe("binary not found");
     expect(get().runningThreadIds).not.toContain("conv-1");
     // Placeholder should be removed
     expect(get().messages.some((m) => m.id.startsWith("temp-thinking-"))).toBe(false);

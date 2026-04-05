@@ -16,11 +16,11 @@ tunaInsight 멀티 에이전트 분석(시니어 개발자 + QA 역할) + 사용
 
 | 순서 | 항목 | 공수 | 상태 |
 |------|------|------|------|
-| 1 | CSP 활성화 — `tauri.conf.json` CSP `null` → 기본 정책 설정 | small | 미착수 |
-| 2 | 빈 catch 잔존 수 확인 — 세션 6에서 12개 정리 후 잔존 수 확인, 정리 | small | 미착수 |
-| 3 | Non-null assertion → early return — `threadSlice.ts` 8개 + 기타 12개, crash 방지 | small | 미착수 |
-| 4 | CancelRegistry `parking_lot` 전환 — `Mutex` poison 방지 | small | 미착수 |
-| 5 | 한국어 토큰 보정 — CJK 유니코드 블록 감지 + 보정 계수, `estimate_tokens()` 캡슐화 | small | 미착수 |
+| 1 | CSP 활성화 — `tauri.conf.json` CSP `null` → 기본 정책 설정 | small | ✅ 완료 |
+| 2 | 빈 catch 정리 — 35개 → console.debug/warn + 라벨 (28파일) | small | ✅ 완료 |
+| 3 | Non-null assertion 제거 — 프로덕션 11개 → 0개 (convId 별칭, optional chaining) | small | ✅ 완료 |
+| 4 | CancelRegistry `parking_lot` 전환 — 6파일, poison-free Mutex | small | ✅ 완료 |
+| 5 | 한국어 토큰 보정 — `estimate_tokens()` + CJK 6개 유니코드 범위 감지 + 6 tests | small | ✅ 완료 |
 
 ---
 

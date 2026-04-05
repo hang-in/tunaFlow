@@ -6,6 +6,7 @@ import type { Plan, PlanPhase, Message } from "@/types";
 import { syncPlanDocument } from "@/lib/workflowOrchestration";
 import * as planApi from "@/lib/api/plans";
 import { splitPlanProposals, hasPlanProposal } from "@/lib/planProposalParser";
+import { errorMessage } from "@/lib/utils";
 import { toast } from "sonner";
 
 export function MergeBranchButton({
@@ -56,7 +57,7 @@ export function MergeBranchButton({
       }
     } catch (e) {
       console.error("[MergeBranchButton] merge failed:", e);
-      toast.error("Plan 병합 실패: " + (e instanceof Error ? e.message : String(e)));
+      toast.error("Plan 병합 실패: " + errorMessage(e));
     }
     setBusy(false);
   };

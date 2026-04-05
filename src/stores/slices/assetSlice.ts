@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { errorMessage } from "@/lib/utils";
 import { getSetting, setSetting } from "@/lib/appStore";
 import { expandSkillRefs } from "@/lib/skillSets";
 import { mapKeywordsToSkills, matchPromptToSkills } from "@/lib/skillMappings";
@@ -210,7 +211,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
         setSetting(`activeSkills:${pk}`, restored);
       }
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -269,7 +270,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       });
       set({ memos });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -286,7 +287,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       await invoke<Memo>("create_memo", { input });
       await get().loadMemos();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -295,7 +296,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       await invoke("delete_memo", { id });
       await get().loadMemos();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -309,7 +310,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       });
       set({ artifacts });
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -318,7 +319,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       await invoke<Artifact>("create_artifact", { input });
       await get().loadArtifacts();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -328,7 +329,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       await invoke("update_artifact_status", { input });
       await get().loadArtifacts();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 
@@ -337,7 +338,7 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
       await invoke("delete_artifact", { id });
       await get().loadArtifacts();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: errorMessage(e) });
     }
   },
 });

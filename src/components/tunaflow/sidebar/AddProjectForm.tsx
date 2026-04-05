@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderPlus } from "lucide-react";
@@ -33,7 +33,7 @@ export function AddProjectForm({ showAddProject, setShowAddProject, createProjec
       await createProject({ key, name, path: v.normalizedPath, type: "project", source: "configured" });
       setNewProjectPath(""); setNewProjectName(""); setPathError(null); setShowAddProject(false);
       await selectProject(key);
-    } catch (e) { if (String(e).includes("이미")) setPathError(String(e)); }
+    } catch (e) { const msg = errorMessage(e); if (msg.includes("이미")) setPathError(msg); }
     finally { setAddingProject(false); }
   };
 
