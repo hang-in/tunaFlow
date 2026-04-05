@@ -432,8 +432,8 @@ export async function processReviewVerdict(
       );
     }
   } else {
-    // conditional — log event, user decides
-    await planApi.createPlanEvent(plan.id, "review_failed", "reviewer", detail);
+    // conditional — log event, user decides (NOT counted as failure for doom loop)
+    await planApi.createPlanEvent(plan.id, "review_conditional", "reviewer", detail);
   }
 
   // Generate review report document
