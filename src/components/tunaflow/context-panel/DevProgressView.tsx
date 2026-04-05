@@ -81,10 +81,22 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
 
+      // Scope re-review to failed subtasks only
+      const failedIds = reviewVerdict?.failedSubtaskIds ?? [];
+      const isScoped = failedIds.length > 0 && reviewVerdict;
+
       const prevFindingsBlock = reviewVerdict && reviewVerdict.findings.length > 0
         ? [``, `**이전 Review Findings (중점 확인 대상)**:`,
            ...reviewVerdict.findings.map((f, i) => `${i + 1}. ${f.slice(0, 500)}`),
-           ``, `> 위 사항이 해결되었는지 우선 확인하세요. 새로운 문제는 Plan 범위 내에서만 판정하세요.`]
+           ``, `> 위 사항이 해결되었는지 확인하세요.`]
+        : [];
+
+      const taskScope = isScoped
+        ? failedIds.map((id) => `- \`docs/plans/${slug}-task-${String(id).padStart(2, "0")}.md\``)
+        : [`- \`docs/plans/${slug}-task-*.md\``];
+
+      const scopeNote = isScoped
+        ? [``, `**리뷰 범위**: Task ${failedIds.join(", ")}번만 검토하세요. 나머지 subtask는 이전 리뷰에서 pass되었습니다.`]
         : [];
 
       const prompt = [
@@ -93,7 +105,8 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         `**검증 문서**:`,
         `- Plan: \`docs/plans/${slug}.md\``,
         `- 결과: \`docs/plans/${slug}-result.md\``,
-        `- 지시서: \`docs/plans/${slug}-task-*.md\``,
+        ...taskScope,
+        ...scopeNote,
         ...prevFindingsBlock, ``,
         `각 task 파일의 **변경 내용**과 **검증 조건**을 기준으로 구현 결과를 검증하세요.`,
         `Plan에 명시되지 않은 코드 스타일이나 범위 밖 파일의 기존 문제는 fail 사유가 아닙니다.`, ``,
