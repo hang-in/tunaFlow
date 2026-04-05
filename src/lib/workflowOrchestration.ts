@@ -9,15 +9,28 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Branch, Plan, Message, RoundtableParticipant } from "@/types";
 import * as planApi from "./api/plans";
 
-/** Generate ASCII-only slug from plan title for file paths. No Korean/CJK. */
+/** Generate ASCII-only slug from plan title for file paths.
+ *  Korean/CJK titles produce very short slugs (e.g. "분석 UX 개선" → "ux"),
+ *  so we append a hash suffix to prevent collisions between different plans.
+ */
 export function slugifyPlanTitle(title: string): string {
-  const slug = title
+  const base = title
     .replace(/[^a-zA-Z0-9-]/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .toLowerCase()
-    .slice(0, 80);
-  return slug || "plan";
+    .slice(0, 60);
+  // If slug is very short (< 4 chars, common with Korean-only titles),
+  // append a 4-char hash from the full title to prevent collisions
+  if (base.length < 4) {
+    let hash = 0;
+    for (let i = 0; i < title.length; i++) {
+      hash = ((hash << 5) - hash + title.charCodeAt(i)) | 0;
+    }
+    const suffix = Math.abs(hash).toString(36).slice(0, 4);
+    return (base ? `${base}-${suffix}` : `plan-${suffix}`) || "plan";
+  }
+  return base || "plan";
 }
 import { extractImplPlan, hasImplComplete, hasReviewVerdict, extractReviewVerdict } from "./planProposalParser";
 import type { ParsedImplPlan, ParsedReviewVerdict } from "./planProposalParser";

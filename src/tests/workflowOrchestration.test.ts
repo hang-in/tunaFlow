@@ -269,21 +269,31 @@ describe("slugifyPlanTitle", () => {
     expect(slugifyPlanTitle("My Plan Title")).toBe("my-plan-title");
   });
 
-  it("strips Korean characters", () => {
-    expect(slugifyPlanTitle("인증 모듈 리팩토링")).toBe("plan"); // All non-ASCII → empty → "plan" fallback
+  it("strips Korean characters with hash suffix", () => {
+    const slug = slugifyPlanTitle("인증 모듈 리팩토링");
+    expect(slug).toMatch(/^plan-[a-z0-9]{1,4}$/); // "plan-XXXX" format
+  });
+
+  it("different Korean titles produce different slugs", () => {
+    const a = slugifyPlanTitle("분석 UX 종합 개선");
+    const b = slugifyPlanTitle("보고서 UX 개선 — 카드 팝업");
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^ux-/);
+    expect(b).toMatch(/^ux-/);
   });
 
   it("handles mixed Korean-English", () => {
     expect(slugifyPlanTitle("Auth 모듈 Refactoring")).toBe("auth-refactoring");
   });
 
-  it("truncates to 80 chars", () => {
+  it("truncates long slugs", () => {
     const long = "a".repeat(100);
-    expect(slugifyPlanTitle(long).length).toBeLessThanOrEqual(80);
+    expect(slugifyPlanTitle(long).length).toBeLessThanOrEqual(60);
   });
 
-  it("returns 'plan' for empty input", () => {
-    expect(slugifyPlanTitle("")).toBe("plan");
+  it("returns plan-hash for empty input", () => {
+    const slug = slugifyPlanTitle("");
+    expect(slug).toMatch(/^plan/);
   });
 });
 
