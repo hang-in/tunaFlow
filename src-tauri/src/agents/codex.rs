@@ -1,103 +1,19 @@
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 
 use crate::agents::claude::{RunInput, RunOutput};
 use crate::errors::AppError;
 
-/// Resolve the codex binary/script path.
-///
-/// On Windows, prefer the node script directly (avoids `.cmd` wrapper issues).
-/// Returns `(command, script_arg)`:
-///   - Windows with node_modules: ("node", Some("path/to/codex.js"))
-///   - Otherwise: ("codex" or resolved path, None)
+/// Resolve the codex binary/script path via shared resolve module.
 fn resolve_codex() -> (String, Option<String>) {
-    #[cfg(target_os = "windows")]
-    {
-        // Prefer direct node invocation (tunadish pattern)
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let entry = PathBuf::from(&appdata)
-                .join("npm")
-                .join("node_modules")
-                .join("@openai")
-                .join("codex")
-                .join("bin")
-                .join("codex.js");
-            if entry.exists() {
-                let node = which_or("node", "node");
-                return (node, Some(entry.to_string_lossy().to_string()));
-            }
-        }
-        // Fallback to .cmd via cmd /C
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let candidate = PathBuf::from(&appdata).join("npm").join("codex.cmd");
-            if candidate.exists() {
-                return (candidate.to_string_lossy().to_string(), None);
-            }
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        // fnm/nvm: check node version manager paths first
-        if let Ok(home) = std::env::var("HOME") {
-            let fnm_base = PathBuf::from(&home).join(".local/share/fnm/node-versions");
-            if fnm_base.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&fnm_base) {
-                    let mut versions: Vec<PathBuf> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.path().join("installation/bin/codex"))
-                        .filter(|p| p.exists())
-                        .collect();
-                    versions.sort();
-                    if let Some(candidate) = versions.last() {
-                        return (candidate.to_string_lossy().to_string(), None);
-                    }
-                }
-            }
-            let nvm_base = PathBuf::from(&home).join(".nvm/versions/node");
-            if nvm_base.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-                    let mut versions: Vec<PathBuf> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.path().join("bin/codex"))
-                        .filter(|p| p.exists())
-                        .collect();
-                    versions.sort();
-                    if let Some(candidate) = versions.last() {
-                        return (candidate.to_string_lossy().to_string(), None);
-                    }
-                }
-            }
-        }
-        // Standard paths
-        for prefix in &["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"] {
-            let candidate = PathBuf::from(prefix).join("codex");
-            if candidate.exists() {
-                return (candidate.to_string_lossy().to_string(), None);
-            }
-        }
-    }
-
-    ("codex".to_string(), None)
-}
-
-#[cfg(target_os = "windows")]
-fn which_or(name: &str, fallback: &str) -> String {
-    std::env::var("PATH")
-        .ok()
-        .and_then(|path| {
-            path.split(';').find_map(|dir| {
-                let candidate = PathBuf::from(dir).join(format!("{}.exe", name));
-                if candidate.exists() {
-                    Some(candidate.to_string_lossy().to_string())
-                } else {
-                    None
-                }
-            })
-        })
-        .unwrap_or_else(|| fallback.to_string())
+    use super::resolve::{NpmCliConfig, resolve_npm_cli};
+    let resolved = resolve_npm_cli(&NpmCliConfig {
+        bin_name: "codex",
+        npm_package: "@openai/codex",
+        npm_entry: "bin/codex.js",
+    });
+    (resolved.command, resolved.script_arg)
 }
 
 use super::claude::resolve_cwd;

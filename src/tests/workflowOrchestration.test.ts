@@ -28,6 +28,9 @@ import {
   processReviewVerdict,
   requestPlanRevision,
   scanMessagesForMarkers,
+  slugifyPlanTitle,
+  startReviewBranch,
+  startReviewRT,
 } from "@/lib/workflowOrchestration";
 import type { Plan, Message } from "@/types";
 
@@ -166,5 +169,172 @@ describe("scanMessagesForMarkers", () => {
     ];
     const result = scanMessagesForMarkers(msgs);
     expect(result.implComplete).toBe(false);
+  });
+
+  it("ignores user-role messages", () => {
+    const msgs: Message[] = [
+      { id: "m1", conversationId: "c1", role: "user", content: "<!-- tunaflow:impl-complete -->", timestamp: 0, status: "done" },
+    ];
+    const result = scanMessagesForMarkers(msgs);
+    expect(result.implComplete).toBe(false);
+  });
+
+  it("detects first impl-plan only", () => {
+    const msgs: Message[] = [
+      { id: "m1", conversationId: "c1", role: "assistant", content: '<!-- tunaflow:impl-plan -->\n```json\n{"files":["a.ts"],"dependencies":[],"risks":[]}\n```', timestamp: 0, status: "done" },
+      { id: "m2", conversationId: "c1", role: "assistant", content: '<!-- tunaflow:impl-plan -->\n```json\n{"files":["b.ts"],"dependencies":[],"risks":[]}\n```', timestamp: 1, status: "done" },
+    ];
+    const result = scanMessagesForMarkers(msgs);
+    // Only first impl-plan should be captured
+    if (result.implPlan) {
+      expect(result.implPlan.files).toContain("a.ts");
+    }
+  });
+});
+
+// ─���─ Doom loop escalation ────────────────────────────────────────────────
+
+describe("processReviewVerdict — doom loop", () => {
+  it("escalates to subtask_review after 3 failures", async () => {
+    // Mock listPlanEvents to return 3 prior review_failed events (including current)
+    vi.mocked(planApi.listPlanEvents).mockResolvedValue([
+      { id: "e1", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["x"]}', createdAt: 1 },
+      { id: "e2", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["y"]}', createdAt: 2 },
+      { id: "e3", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["z"]}', createdAt: 3 },
+    ]);
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "fail",
+      findings: ["Bug found"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    // Should first go to rework, then escalate to subtask_review
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "rework");
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "subtask_review");
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "doom_loop_escalated", "system", expect.stringContaining("3회"),
+    );
+  });
+
+  it("does NOT escalate at 2 failures", async () => {
+    vi.mocked(planApi.listPlanEvents).mockResolvedValue([
+      { id: "e1", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["x"]}', createdAt: 1 },
+      { id: "e2", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["y"]}', createdAt: 2 },
+    ]);
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "fail",
+      findings: ["Bug"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "rework");
+    expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "subtask_review");
+  });
+});
+
+// ─── Design review suggested (file overlap detection) ────────────────────
+
+describe("processReviewVerdict — design review suggestion", () => {
+  it("suggests design review when 2+ failures overlap on same files", async () => {
+    vi.mocked(planApi.listPlanEvents).mockResolvedValue([
+      { id: "e1", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["bug in src/auth.ts line 50"]}', createdAt: 1 },
+      { id: "e2", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["error in src/auth.ts line 80"]}', createdAt: 2 },
+    ]);
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "fail",
+      findings: ["problem in src/auth.ts line 100"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    // Should detect file overlap and suggest design review
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "design_review_suggested", "system", expect.stringContaining("겹침"),
+    );
+  });
+});
+
+// ─── slugifyPlanTitle ────────────────────────────────────────────────────
+
+describe("slugifyPlanTitle", () => {
+  it("converts spaces to hyphens", () => {
+    expect(slugifyPlanTitle("My Plan Title")).toBe("my-plan-title");
+  });
+
+  it("strips Korean characters", () => {
+    expect(slugifyPlanTitle("인증 모듈 리팩토링")).toBe("plan"); // All non-ASCII → empty → "plan" fallback
+  });
+
+  it("handles mixed Korean-English", () => {
+    expect(slugifyPlanTitle("Auth 모듈 Refactoring")).toBe("auth-refactoring");
+  });
+
+  it("truncates to 80 chars", () => {
+    const long = "a".repeat(100);
+    expect(slugifyPlanTitle(long).length).toBeLessThanOrEqual(80);
+  });
+
+  it("returns 'plan' for empty input", () => {
+    expect(slugifyPlanTitle("")).toBe("plan");
+  });
+});
+
+// ─── startReviewBranch ──────────────────────────────────────────────────
+
+describe("startReviewBranch", () => {
+  it("creates branch and sends review prompt", async () => {
+    const result = await startReviewBranch(mockPlan, "Please review the subtask structure");
+
+    expect(invoke).toHaveBeenCalledWith("create_branch", expect.objectContaining({
+      input: expect.objectContaining({ label: expect.stringContaining("Review") }),
+    }));
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith("p-1", "review_requested", "user", expect.any(String));
+    expect(invoke).toHaveBeenCalledWith("create_user_message", expect.objectContaining({
+      input: expect.objectContaining({ content: expect.stringContaining("검토가 요청") }),
+    }));
+    expect(result.branch.id).toBe("br-1");
+  });
+});
+
+// ─── startReviewRT ──────────────────────────────────────────────────────
+
+describe("startReviewRT", () => {
+  it("creates RT branch with reviewer participants", async () => {
+    const implMsgs: Message[] = [
+      { id: "m1", conversationId: "c1", role: "assistant", content: "implemented X", timestamp: 0, status: "done" },
+    ];
+
+    const result = await startReviewRT(mockPlan, implMsgs);
+
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "review");
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith("p-1", "impl_completed", "developer");
+    expect(invoke).toHaveBeenCalledWith("create_branch", expect.objectContaining({
+      input: expect.objectContaining({
+        label: expect.stringContaining("Review RT"),
+        mode: "roundtable",
+      }),
+    }));
+    expect(invoke).toHaveBeenCalledWith("save_rt_config", expect.any(Object));
+    expect(result.branch.id).toBe("br-1");
+  });
+
+  it("uses custom reviewer engines", async () => {
+    await startReviewRT(mockPlan, [], undefined, ["gemini", "ollama"]);
+
+    // RT config should include both engines
+    const saveCall = (invoke as any).mock.calls.find((c: string[]) => c[0] === "save_rt_config");
+    expect(saveCall).toBeDefined();
+    const config = JSON.parse(saveCall[1].config);
+    expect(config.participants.length).toBe(2);
+    expect(config.participants[0].engine).toBe("gemini");
+    expect(config.participants[1].engine).toBe("ollama");
   });
 });

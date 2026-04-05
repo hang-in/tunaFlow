@@ -273,9 +273,17 @@ tunaFlow/
 - **코드 리뷰 버그 수정**: background catch → console.error, failCount === 2 → >= 2
 - Rust 84 tests, Frontend 96 tests. DB v25.
 
+### ✅ 해결됨 (세션 12: 테스트 보강 + 리팩토링 + 버그 수정)
+- **테스트 보강 (180→305)**: P0 스트리밍 흐름 22개, ContextPack 조립 26개, RT 프롬프트 27개 + P1 워크플로우 11개, 장기기억/검색 32개 + resolve 7개
+- **CLI resolve 6중 복제 통합**: `agents/resolve.rs` 공용 모듈, codex 70→7줄, gemini 73→7줄, opencode 48→25줄 (총 ~190줄 삭제)
+- **TracePanel 분할**: `TraceSpanCard.tsx` 추출 (TracePanel 656→400줄, 유틸리티+카드 분리)
+- **EngineSelector ollama 크래시 수정**: ENGINE_LIST에 ollama 누락 → 추가 + fallback 방어
+- **실사용 검증 시나리오**: `docs/how-to/validation-scenario-session12.md` (5개 시나리오)
+- Rust 174 tests, Frontend 131 tests. DB v25.
+
 ### 기타 알려진 이슈
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
-- Rust 84 unit test + Frontend 96 test이나, integration test 부재
+- Rust 174 + Frontend 131 = 305 unit test, integration test 부재
 - 긴 multi-agent 대화 (24+ 메시지) 실사용 검증 미완
 - Tool steps: Gemini CLI 버전에 따라 `tool_use` 이벤트 미지원 가능
 - RT INTENT 표시 오류 (이전 데이터 오염, 새 RT에서 재현 확인 필요)
@@ -389,6 +397,8 @@ tunaFlow/
 | 7 | 2026-04-02~03 | 장기기억 4단계, Vector DB, virtuoso/cmdk, tokio async, rawq 고도화, 워크플로우 스킬/doom loop/가독성, 코드 리팩토링 Tier1, 실사용 검증 50+ 버그 수정 (model race/Virtuoso/marker/FTS5/rawq/Mutex/stagger) |
 | 8-9 | 2026-04-03~04 | 이벤트 격리, RT 전면 수정 (async panic/라운드번호/ContextPack 주입+캐싱/participant status), 스트리밍 race condition 근본 해결, Virtuoso re-render, 메시지 duration/token 표시, trace_log JOIN (v23), SQLite PRAGMA, ollama 엔진 전면 추가 |
 | 10 | 2026-04-04 | Trace Phase 1 (tok/s + context %), 스킬 A/B/C/D + 멀티툴 스캔 + 레지스트리 + 스킬팩, 임베딩 지연 최적화, B안 (subtask 타겟 rework), code-review-graph 통합, Architect/Developer/Reviewer 고도화 (PLATFORM_TIER0 + 역할 템플릿), 전역 profileId 제거, 마커 기반 멀티턴 도구 호출 (docs/rawq/graph/plans), 후속 플랜 인프라 (v25), context-hub chub 수정, 코드 리뷰 버그 수정 (DB v25, Rust 84 tests, Frontend 96 tests) |
+| 11 | 2026-04-04 | 전수조사→문서 정합성 복구, expect 패닉 제거, 스트리밍 중복 150줄 제거, useMemo, 경고 0, 테스트 백로그 문서화 |
+| 12 | 2026-04-05 | 테스트 보강 180→305 (P0 스트리밍/ContextPack/RT + P1 워크플로우/장기기억), CLI resolve 6중 복제→공용 모듈 (~190줄 삭제), TracePanel 분할 (656→400줄), EngineSelector ollama 크래시 수정 |
 
 ---
 
@@ -454,10 +464,17 @@ tunaFlow/
 - Architect/Developer/Reviewer 역할 템플릿 전면 갱신
 - 전역 selectedProfileId 제거, 후속 플랜 인프라 (v25), context-hub chub 수정
 
+### ✅ 완료: 테스트 보강 + 리팩토링 (세션 12)
+- 테스트 180→305 (P0 3개 + P1 2개 + resolve 모듈)
+- CLI resolve 6중 복제 → `agents/resolve.rs` 공용 모듈 (~190줄 삭제)
+- TracePanel 656→400줄 (TraceSpanCard 추출)
+- EngineSelector ollama 크래시 수정
+- 실사용 검증 시나리오 5개 작성 (`docs/how-to/validation-scenario-session12.md`)
+
 ### 다음 세션 첫 작업
-1. **실사용 검증** — 세션 10 기능을 tunaInsight에서 테스트 (마커 도구 호출, 스킬팩, 후속 플랜, CRG)
+1. **실사용 검증** — `docs/how-to/validation-scenario-session12.md` 기준 (사용자 직접 진행)
 2. **온보딩 메타에이전트** — 프로젝트 최초 진입 시 분석 + 추천 (아이디어 단계)
-3. **리팩토링** — `docs/ideas/codeReviewRefactoringIdea.md` 기준
+3. **추가 리팩토링** — DevProgressView, SkillsPanel, CenterPanel 분할 (세션 12 후반 진행 중)
 
 ### P1: RT 재검증
 - RT INTENT 표시 오류 재현 확인 (새 RT에서)

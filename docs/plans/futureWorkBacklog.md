@@ -104,12 +104,12 @@
 
 ---
 
-## 테스트 보강 (세션 11 전수조사 기반)
+## 테스트 보강 (세션 11 전수조사 기반, 세션 12 대폭 확장)
 
-> 현재 Rust 84 + Frontend 96 = 180 unit test. integration/E2E 0.
-> 아래 항목은 통합 테스트 추가 세션에서 순서대로 진행.
+> 현재 Rust 174 + Frontend 131 = 305 unit test. integration/E2E 0.
+> P0/P1 완료. P2 UI 회귀 테스트 잔여.
 
-### P0: 스트리밍/이벤트 흐름 테스트
+### ~~P0: 스트리밍/이벤트 흐름 테스트~~ — ✅ 완료 (세션 12, +22 tests)
 - **대상**: `src/stores/slices/runtimeSlice.ts`, `src/stores/slices/threadSlice.ts`
 - **선행 작업**: Tauri `invoke`/`listen` mock 인프라 구축 (vitest)
 - **케이스**:
@@ -120,7 +120,7 @@
   - pendingChunk null 처리 (flushChunk race condition 방어 검증)
 - **이유**: 가장 회귀 위험이 큰 실행 경로. 세션 8-9에서 race condition 수정 이력 있음.
 
-### P0: ContextPack 조립 테스트 (Rust)
+### ~~P0: ContextPack 조립 테스트 (Rust)~~ — ✅ 완료 (세션 12, +26 tests)
 - **대상**: `src-tauri/src/commands/agents_helpers/send_common/prompt_assembly.rs`
 - **기존**: 4개 unit test 존재 → 확장
 - **케이스**:
@@ -133,7 +133,7 @@
   - participants meta 섹션 (multi-agent context)
 - **이유**: tunaFlow 핵심 가치. mock 불필요 (pure function).
 
-### P0: RT 프롬프트 조립 테스트 (Rust)
+### ~~P0: RT 프롬프트 조립 테스트 (Rust)~~ — ✅ 완료 (세션 12, +27 tests)
 - **대상**: `src-tauri/src/commands/roundtable_helpers/` (executor.rs, prompt.rs)
 - **케이스**:
   - blind participant가 이전 transcript 없이 prompt를 받는지
@@ -142,7 +142,7 @@
   - completion-order 수집 (deliberative mode)
 - **이유**: 세션 8-9에서 RT 전면 수정, 회귀 가능성 높음. pure function 부분만 unit test.
 
-### P1: 워크플로우 오케스트레이션 테스트 (Frontend)
+### ~~P1: 워크플로우 오케스트레이션 테스트 (Frontend)~~ — ✅ 완료 (세션 12, +11 tests)
 - **대상**: `src/lib/workflowOrchestration.ts`
 - **기존**: 170줄 테스트 존재 → 확장
 - **케이스**:
@@ -154,7 +154,7 @@
   - result report 생성 (rework 후 마지막 메시지만 사용)
 - **이유**: 기능은 크지만 현재 보호막이 약함.
 
-### P1: 장기기억/검색 테스트 (Rust)
+### ~~P1: 장기기억/검색 테스트 (Rust)~~ — ✅ 완료 (세션 12, +32 tests)
 - **대상**: `conversation_memory.rs`, `session_discovery.rs`, `vector_search.rs`
 - **케이스**:
   - compressed memory 생성 조건 (12+ 메시지 threshold)
@@ -176,21 +176,21 @@
 
 ---
 
-## 리팩토링 (통합 테스트 추가 후 착수)
+## 리팩토링
 
-> 세션 11 전수조사에서 식별. 테스트 커버리지 확보 후 진행해야 회귀 안전.
+> 세션 12에서 테스트 커버리지 확보 (305 tests) 후 진행 시작.
 
-### 대형 컴포넌트 추가 분할
-- **TracePanel.tsx** (656줄): 필터링 로직 → hook 추출, step tree → 별도 컴포넌트
-- **DevProgressView.tsx** (519줄): 서브태스크 할당 UI → 별도 컴포넌트
-- **SkillsPanel.tsx** (516줄): 토글/세트/워크플로우 설정 각각 분리
-- **CenterPanel.tsx** (408줄): 탭 콘텐츠 lazy mount 분리
-- **선행 조건**: 각 컴포넌트의 진입 경로 전수 확인 + 스트리밍 테스트 통과
+### ~~CLI 바이너리 해석 6중 복제 통합~~ — ✅ 완료 (세션 12)
+- `agents/resolve.rs` 공용 모듈: `NpmCliConfig` + `resolve_npm_cli()` + `first_existing()` + `build_command()`
+- codex 70→7줄, gemini 73→7줄, opencode 48→25줄 (총 ~190줄 삭제)
+- rawq/context_hub는 특수 로직 유지 (sidecar, dual binary name)
+
+### ~~TracePanel 분할~~ — ✅ 완료 (세션 12)
+- `TraceSpanCard.tsx` 추출 (스팬 카드 + 포매팅 유틸리티 + ContextUsageBar)
+- TracePanel 656→400줄
+
+### 대형 컴포넌트 추가 분할 (세션 12 후반 진행 중)
+- **DevProgressView.tsx** (519줄): `useSubtaskProgress` hook 추출 + ReworkNoticePanel 분리
+- **SkillsPanel.tsx** (516줄): `useSkillFiltering` hook 추출 + SkillVendorGroup 분리
+- **CenterPanel.tsx** (408줄): MemoPopover 추출 + useTabNavigation hook 분리
 - 참고: 세션 11에서 BranchThreadPanel은 PlanRevisionActions 추출 + useMemo 완료
-
-### CLI 바이너리 해석 6중 복제 통합
-- **대상**: claude.rs, codex.rs, gemini.rs, opencode.rs, rawq.rs, context_hub.rs의 resolve_*() 함수
-- **현황**: ~600줄 중복, 각각 미묘하게 다른 fallback 전략 (fnm/nvm, sidecar, PATH 등)
-- **방안**: `agents/resolve.rs` 공용 모듈 추출, `ResolveConfig` 구조체로 엔진별 차이 파라미터화
-- **위험**: 각 엔진의 edge case가 달라 regression 가능성 → 통합 테스트 필수
-- **선행 조건**: 최소 각 엔진별 resolve 성공/실패 unit test 1-2개

@@ -395,4 +395,79 @@ mod tests {
         assert!(result.len() <= 110); // 100 + "…" overhead
         assert!(result.ends_with('…'));
     }
+
+    // ─── is_workflow_prompt ──────────────────────────────────────────────
+
+    #[test]
+    fn workflow_prompt_emoji_headers() {
+        assert!(is_workflow_prompt("### 🔧 구현 시작\n..."));
+        assert!(is_workflow_prompt("### 📋 Plan 요약\n..."));
+        assert!(is_workflow_prompt("### 🔍 검색 결과\n..."));
+        assert!(is_workflow_prompt("### 🔄 Rework 지시\n..."));
+    }
+
+    #[test]
+    fn workflow_prompt_legacy_ascii() {
+        assert!(is_workflow_prompt("┌─ Implementation Report ─┐\n..."));
+    }
+
+    #[test]
+    fn workflow_prompt_html_markers() {
+        assert!(is_workflow_prompt("verdict <!-- tunaflow:review-verdict --> content"));
+        assert!(is_workflow_prompt("plan <!-- tunaflow:impl-plan --> json"));
+        assert!(is_workflow_prompt("done <!-- tunaflow:impl-complete -->"));
+    }
+
+    #[test]
+    fn workflow_prompt_normal_text_false() {
+        assert!(!is_workflow_prompt("How do I implement authentication?"));
+        assert!(!is_workflow_prompt("The database schema needs updating"));
+        assert!(!is_workflow_prompt(""));
+    }
+
+    // ─── embedding roundtrip edge cases ──────────────────────────────────
+
+    #[test]
+    fn embedding_blob_zeros() {
+        let zeros: Vec<f32> = vec![0.0; EMBED_DIM];
+        let blob = embedding_to_blob(&zeros);
+        let recovered = blob_to_embedding(&blob).unwrap();
+        assert!(recovered.iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn embedding_blob_negative_values() {
+        let negatives: Vec<f32> = (0..EMBED_DIM).map(|i| -(i as f32) * 0.1).collect();
+        let blob = embedding_to_blob(&negatives);
+        let recovered = blob_to_embedding(&blob).unwrap();
+        for i in 0..EMBED_DIM {
+            assert!((negatives[i] - recovered[i]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn blob_empty_returns_none() {
+        assert!(blob_to_embedding(&[]).is_none());
+    }
+
+    // ─── truncate_str edge cases ─────────────────────────────────────────
+
+    #[test]
+    fn truncate_empty_string() {
+        assert_eq!(truncate_str("", 100), "");
+    }
+
+    #[test]
+    fn truncate_exact_limit() {
+        let s = "hello"; // 5 chars
+        assert_eq!(truncate_str(s, 5), "hello");
+    }
+
+    #[test]
+    fn truncate_multibyte_utf8() {
+        let s = "한글테스트문자열이것은긴문자열입니다"; // Korean chars, multi-byte
+        let result = truncate_str(s, 10);
+        // Should not panic or corrupt UTF-8
+        assert!(result.is_char_boundary(result.len().saturating_sub(3)) || result.ends_with('…'));
+    }
 }

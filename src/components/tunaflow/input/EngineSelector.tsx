@@ -2,13 +2,14 @@ import { useRef, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 
-type Engine = "claude" | "codex" | "gemini" | "opencode";
+type Engine = "claude" | "codex" | "gemini" | "opencode" | "ollama";
 
 const ENGINE_LIST: { id: Engine; label: string; color: string }[] = [
   { id: "claude", label: "Claude", color: "text-agent-claude" },
   { id: "codex", label: "Codex", color: "text-agent-codex" },
   { id: "gemini", label: "Gemini", color: "text-agent-gemini" },
   { id: "opencode", label: "OpenCode", color: "text-agent-opencode" },
+  { id: "ollama", label: "Ollama", color: "text-agent-ollama" },
 ];
 
 interface EngineSelectorProps {
@@ -35,7 +36,8 @@ export function EngineSelector({ engine, setEngine }: EngineSelectorProps) {
     return () => document.removeEventListener("mousedown", handle);
   }, [showDropdown]);
 
-  const selectedEngine = ENGINE_LIST.find((e) => e.id === engine)!;
+  const selectedEngine = ENGINE_LIST.find((e) => e.id === engine)
+    ?? { id: engine as Engine, label: engine, color: "text-muted-foreground" };
 
   return (
     <div className="relative" ref={dropdownRef}>

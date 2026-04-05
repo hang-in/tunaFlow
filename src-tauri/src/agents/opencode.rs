@@ -8,57 +8,40 @@ use crate::errors::AppError;
 
 use super::claude::resolve_cwd;
 
-/// Resolve the opencode binary path.
-///
-/// Tauri subprocesses may not inherit the full shell PATH.
-/// Search order:
-/// 1. %APPDATA%\npm\opencode.cmd  (Windows npm global install default)
-/// 2. %USERPROFILE%\.npm-global\bin\opencode.cmd
-/// 3. /usr/local/bin/opencode, /usr/bin/opencode, /opt/homebrew/bin/opencode (Unix)
-/// 4. Bare "opencode" — OS PATH fallback
+/// Resolve the opencode binary path via shared resolve utilities.
 fn resolve_opencode_path() -> PathBuf {
+    use super::resolve::first_existing;
+
     #[cfg(target_os = "windows")]
     {
+        let mut candidates = Vec::new();
         if let Ok(appdata) = std::env::var("APPDATA") {
-            let candidate = PathBuf::from(&appdata).join("npm").join("opencode.cmd");
-            if candidate.exists() {
-                return candidate;
-            }
+            candidates.push(PathBuf::from(&appdata).join("npm").join("opencode.cmd"));
         }
         if let Ok(home) = std::env::var("USERPROFILE") {
-            let candidate = PathBuf::from(&home)
-                .join(".npm-global")
-                .join("bin")
-                .join("opencode.cmd");
-            if candidate.exists() {
-                return candidate;
-            }
+            candidates.push(PathBuf::from(&home).join(".npm-global").join("bin").join("opencode.cmd"));
+        }
+        if let Some(found) = first_existing(&candidates) {
+            return found;
         }
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Check ~/.opencode/bin first (official installer default)
+        let mut candidates = Vec::new();
         if let Ok(home) = std::env::var("HOME") {
-            let candidate = PathBuf::from(&home).join(".opencode").join("bin").join("opencode");
-            if candidate.exists() {
-                return candidate;
-            }
+            candidates.push(PathBuf::from(&home).join(".opencode").join("bin").join("opencode"));
         }
-        for prefix in &["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"] {
-            let candidate = PathBuf::from(prefix).join("opencode");
-            if candidate.exists() {
-                return candidate;
-            }
-        }
+        candidates.extend([
+            PathBuf::from("/usr/local/bin/opencode"),
+            PathBuf::from("/usr/bin/opencode"),
+            PathBuf::from("/opt/homebrew/bin/opencode"),
+        ]);
         if let Ok(home) = std::env::var("HOME") {
-            let candidate = PathBuf::from(&home)
-                .join(".npm-global")
-                .join("bin")
-                .join("opencode");
-            if candidate.exists() {
-                return candidate;
-            }
+            candidates.push(PathBuf::from(&home).join(".npm-global").join("bin").join("opencode"));
+        }
+        if let Some(found) = first_existing(&candidates) {
+            return found;
         }
     }
 
@@ -76,21 +59,9 @@ fn resolve_opencode_path() -> PathBuf {
 /// - non-zero exit   → Err with stderr (or stdout) detail
 /// - zero exit, stdout empty, stderr has content → Err (soft error)
 /// - zero exit, stdout empty, no stderr → Ok("") — caller decides how to display
-/// On Windows, `.cmd` files must be invoked via `cmd.exe /C` — direct spawn fails.
-#[cfg(target_os = "windows")]
+/// Build command with Windows .cmd handling via shared resolve module.
 fn build_command(bin: &std::path::PathBuf) -> Command {
-    if bin.extension().and_then(|e| e.to_str()) == Some("cmd") {
-        let mut c = Command::new("cmd");
-        c.arg("/C").arg(bin);
-        c
-    } else {
-        Command::new(bin)
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn build_command(bin: &std::path::PathBuf) -> Command {
-    Command::new(bin)
+    super::resolve::build_command(bin)
 }
 
 pub fn run(input: RunInput) -> Result<RunOutput, AppError> {

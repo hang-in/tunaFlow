@@ -687,4 +687,115 @@ mod tests {
         assert!(out.contains("Created tables."));
         assert!(out.contains("Discussed endpoints."));
     }
+
+    // ─── parse_topics edge cases ─────────────────────────────────────────
+
+    #[test]
+    fn parse_topics_with_extra_text_before_json() {
+        let raw = "Here are the topics:\n[{\"topic\":\"auth\",\"summary\":\"JWT discussion\"}]";
+        let topics = parse_topics(raw);
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].topic, "auth");
+    }
+
+    #[test]
+    fn parse_topics_optional_phase() {
+        let raw = r#"[{"topic":"test","summary":"All tests pass."}]"#;
+        let topics = parse_topics(raw);
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].phase, None);
+    }
+
+    #[test]
+    fn parse_topics_whitespace_padded() {
+        let raw = "  \n  [{\"topic\":\"x\",\"summary\":\"y\"}]  \n  ";
+        let topics = parse_topics(raw);
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].topic, "x");
+    }
+
+    #[test]
+    fn parse_topics_malformed_json_object() {
+        // JSON object instead of array → fallback
+        let raw = r#"{"topic":"single","summary":"oops"}"#;
+        let topics = parse_topics(raw);
+        assert_eq!(topics.len(), 1);
+        assert_eq!(topics[0].topic, "general");
+    }
+
+    // ─── prune_for_summary edge cases ────────────────────────────────────
+
+    #[test]
+    fn prune_unclosed_code_block_short() {
+        let input = "text\n```rust\nfn x() {}";
+        let result = prune_for_summary(input);
+        assert!(result.contains("fn x()"));
+        assert!(!result.contains("pruned"));
+    }
+
+    #[test]
+    fn prune_unclosed_code_block_long() {
+        let mut input = String::from("```\nline1\n");
+        for i in 0..10 {
+            input.push_str(&format!("line{}\n", i + 2));
+        }
+        // No closing ``` — unclosed block
+        let result = prune_for_summary(&input);
+        assert!(result.contains("[... "));
+        assert!(result.contains("lines pruned]"));
+    }
+
+    #[test]
+    fn prune_exactly_five_line_code_block_kept() {
+        let input = "```\n1\n2\n3\n4\n5\n```\nafter";
+        let result = prune_for_summary(input);
+        assert!(!result.contains("pruned"));
+        assert!(result.contains("5"));
+    }
+
+    #[test]
+    fn prune_six_line_code_block_truncated() {
+        let input = "```\n1\n2\n3\n4\n5\n6\n```\nafter";
+        let result = prune_for_summary(input);
+        assert!(result.contains("[... 3 lines pruned]")); // 6 lines - 3 kept = 3
+    }
+
+    #[test]
+    fn prune_empty_input() {
+        let result = prune_for_summary("");
+        assert!(result.is_empty());
+    }
+
+    // ─── format_topics_as_section edge cases ─────────────────────────────
+
+    #[test]
+    fn format_empty_topics() {
+        let topics: Vec<MemoryTopic> = vec![];
+        let out = format_topics_as_section(&topics);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn format_single_topic_with_phase_returns_summary_only() {
+        // Single topic: format_topics_as_section returns only the summary (no headers)
+        let topics = vec![MemoryTopic {
+            topic: "Auth".to_string(),
+            phase: Some("review".to_string()),
+            summary: "Reviewed auth flow.".to_string(),
+        }];
+        let out = format_topics_as_section(&topics);
+        assert_eq!(out, "Reviewed auth flow.");
+    }
+
+    #[test]
+    fn format_multiple_topics_includes_phase_headers() {
+        // Multiple topics: each gets a ### header with phase
+        let topics = vec![
+            MemoryTopic { topic: "Auth".to_string(), phase: Some("review".to_string()), summary: "Reviewed.".to_string() },
+            MemoryTopic { topic: "DB".to_string(), phase: None, summary: "Migrated.".to_string() },
+        ];
+        let out = format_topics_as_section(&topics);
+        assert!(out.contains("### Auth (review)"));
+        assert!(out.contains("### DB\n"));
+    }
 }

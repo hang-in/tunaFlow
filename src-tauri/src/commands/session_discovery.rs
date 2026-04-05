@@ -398,4 +398,74 @@ mod tests {
         assert!(q.contains("스키마"));
         assert!(!q.contains("및")); // stopword
     }
+
+    // ─── FTS5 operator sanitization ──────────────────────────────────────
+
+    #[test]
+    fn build_query_strips_operators() {
+        let q = build_discovery_query("what's the \"best\" approach? (using rust)");
+        assert!(!q.contains('"'));
+        assert!(!q.contains('?'));
+        assert!(!q.contains('('));
+        assert!(!q.contains(')'));
+        assert!(!q.contains('\''));
+    }
+
+    #[test]
+    fn build_query_joins_with_or() {
+        let q = build_discovery_query("database schema migration");
+        assert!(q.contains(" OR "));
+        assert!(q.contains("database"));
+        assert!(q.contains("schema"));
+        assert!(q.contains("migration"));
+    }
+
+    // ─── Word length filtering ───────────────────────────────────────────
+
+    #[test]
+    fn build_query_filters_single_char_words() {
+        let q = build_discovery_query("a b c database");
+        assert!(q.contains("database"));
+        // single-char words should be filtered
+        assert!(!q.contains(" a "));
+    }
+
+    #[test]
+    fn build_query_max_12_words() {
+        let input = (0..20).map(|i| format!("word{}", i)).collect::<Vec<_>>().join(" ");
+        let q = build_discovery_query(&input);
+        let word_count = q.split(" OR ").count();
+        assert!(word_count <= 12, "should cap at 12 words, got {}", word_count);
+    }
+
+    // ─── Korean stopwords ────────────────────────────────────────────────
+
+    #[test]
+    fn build_query_filters_korean_stopwords() {
+        let q = build_discovery_query("이것은 또 더 좋은 방법");
+        assert!(!q.contains("또"));
+        assert!(!q.contains("더"));
+        assert!(q.contains("좋은") || q.contains("방법"));
+    }
+
+    // ─── Fallback behavior ───────────────────────────────────────────────
+
+    #[test]
+    fn build_query_single_word() {
+        let q = build_discovery_query("authentication");
+        assert_eq!(q, "authentication");
+    }
+
+    #[test]
+    fn build_query_short_input() {
+        let q = build_discovery_query("hi");
+        assert_eq!(q, "hi");
+    }
+
+    #[test]
+    fn build_query_only_short_words() {
+        // All words < 2 chars → empty after filter, fallback checks ≥ 3 chars
+        let q = build_discovery_query("a b c");
+        assert!(q.is_empty());
+    }
 }

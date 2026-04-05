@@ -155,4 +155,125 @@ mod tests {
         assert!(json.contains("\"priorRoundRefs\":[\"Agent1\"]"));
         assert!(json.contains("\"currentRoundRefs\":[]"));
     }
+
+    // ─── Identity injection ─────────────────────────────────────────────
+
+    #[test]
+    fn identity_prepended_before_topic() {
+        let identity = "## Your Identity\n\nYou are Agent-X.";
+        let result = build_round_prompt_with_identity("discuss Y", &[], &[], Some(identity));
+        assert!(result.starts_with("## Your Identity"));
+        assert!(result.contains("discuss Y"));
+        // Identity should come before topic
+        let id_pos = result.find("Your Identity").unwrap();
+        let topic_pos = result.find("discuss Y").unwrap();
+        assert!(id_pos < topic_pos);
+    }
+
+    #[test]
+    fn identity_plus_transcript_plus_current() {
+        let identity = "I am the Reviewer.";
+        let transcript = vec![("Architect".into(), "proposal".into())];
+        let current = vec![("Developer".into(), "implementation".into())];
+        let result = build_round_prompt_with_identity("review this", &transcript, &current, Some(identity));
+        // All three sections present in order: identity → prior → current → topic
+        let id_pos = result.find("Reviewer").unwrap();
+        let prior_pos = result.find("Prior round").unwrap();
+        let current_pos = result.find("This round").unwrap();
+        let topic_pos = result.find("review this").unwrap();
+        assert!(id_pos < prior_pos);
+        assert!(prior_pos < current_pos);
+        assert!(current_pos < topic_pos);
+    }
+
+    // ─── Blind participant ──────────────────────────────────────────────
+
+    #[test]
+    fn blind_participant_sees_no_transcript() {
+        // Blind verifier receives topic only (no transcript, no current_round)
+        let identity = "You are a blind verifier.";
+        let _transcript: Vec<(String, String)> = vec![("A".into(), "response A".into())];
+        let _current: Vec<(String, String)> = vec![("B".into(), "response B".into())];
+        // For blind: pass empty transcript and current
+        let result = build_round_prompt_with_identity("evaluate X", &[], &[], Some(identity));
+        assert!(!result.contains("Prior round"));
+        assert!(!result.contains("This round"));
+        assert!(!result.contains("response A"));
+        assert!(!result.contains("response B"));
+        assert!(result.contains("evaluate X"));
+        assert!(result.contains("blind verifier"));
+    }
+
+    // ─── Sequential: prior + current round semantics ────────────────────
+
+    #[test]
+    fn sequential_first_participant_no_current_round() {
+        let transcript = vec![("P1".into(), "round 1".into())]; // prior round
+        // First participant in round 2 → no current_round yet
+        let result = build_round_prompt("topic", &transcript, &[]);
+        assert!(result.contains("Prior round"));
+        assert!(!result.contains("This round"));
+    }
+
+    #[test]
+    fn sequential_second_participant_sees_current_round() {
+        let transcript = vec![("P1".into(), "round 1".into())];
+        let current = vec![("P2".into(), "round 2 first".into())];
+        let result = build_round_prompt("topic", &transcript, &current);
+        assert!(result.contains("Prior round"));
+        assert!(result.contains("This round"));
+        assert!(result.contains("round 2 first"));
+    }
+
+    // ─── Deliberative: no current-round refs ────────────────────────────
+
+    #[test]
+    fn deliberative_no_current_round() {
+        let transcript = vec![("A".into(), "prev".into())];
+        // In deliberative mode, current_round is always empty
+        let result = build_round_prompt("topic", &transcript, &[]);
+        assert!(result.contains("Prior round"));
+        assert!(!result.contains("This round"));
+    }
+
+    // ─── Truncation in transcript ───────────────────────────────────────
+
+    #[test]
+    fn long_response_truncated_in_prompt() {
+        let long_content = "x".repeat(5000);
+        let transcript = vec![("Verbose".into(), long_content.clone())];
+        let result = build_round_prompt("topic", &transcript, &[]);
+        // Should not contain full 5000-char response
+        assert!(result.len() < long_content.len() + 500);
+        assert!(result.contains("..."));
+    }
+
+    // ─── PromptSources with current_round_refs ──────────────────────────
+
+    #[test]
+    fn prompt_sources_sequential_with_current_refs() {
+        let sources = PromptSources {
+            round: 1,
+            total_rounds: 2,
+            mode: "sequential".into(),
+            prior_round_refs: vec![],
+            current_round_refs: vec!["Agent1".into(), "Agent2".into()],
+        };
+        let json = serde_json::to_string(&sources).unwrap();
+        assert!(json.contains("\"currentRoundRefs\":[\"Agent1\",\"Agent2\"]"));
+    }
+
+    #[test]
+    fn prompt_sources_deliberative_empty_current() {
+        let sources = PromptSources {
+            round: 1,
+            total_rounds: 1,
+            mode: "deliberative".into(),
+            prior_round_refs: vec!["A".into()],
+            current_round_refs: vec![],
+        };
+        let json = serde_json::to_string(&sources).unwrap();
+        assert!(json.contains("\"mode\":\"deliberative\""));
+        assert!(json.contains("\"currentRoundRefs\":[]"));
+    }
 }

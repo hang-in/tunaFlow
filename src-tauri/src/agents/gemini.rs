@@ -1,5 +1,4 @@
 use std::io::{BufRead, BufReader, Read};
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 
@@ -8,101 +7,15 @@ use serde::Deserialize;
 use crate::agents::claude::{RunInput, RunOutput};
 use crate::errors::AppError;
 
-/// Resolve the gemini binary/script path.
-///
-/// On Windows, prefer the node script directly (tunadish pattern).
-/// Returns `(command, script_arg)`:
-///   - Windows with node_modules: ("node", Some("--no-warnings=DEP0040"), Some("path/to/index.js"))
-///   - Otherwise: ("gemini" or resolved path, None, None)
+/// Resolve the gemini binary/script path via shared resolve module.
 fn resolve_gemini() -> (String, Option<String>) {
-    #[cfg(target_os = "windows")]
-    {
-        // Prefer direct node invocation (tunadish pattern)
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let entry = PathBuf::from(&appdata)
-                .join("npm")
-                .join("node_modules")
-                .join("@google")
-                .join("gemini-cli")
-                .join("dist")
-                .join("index.js");
-            if entry.exists() {
-                let node = which_or("node", "node");
-                return (node, Some(entry.to_string_lossy().to_string()));
-            }
-        }
-        // Fallback
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let candidate = PathBuf::from(&appdata).join("npm").join("gemini.cmd");
-            if candidate.exists() {
-                return (candidate.to_string_lossy().to_string(), None);
-            }
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        // fnm/nvm: check node version manager installation paths first
-        if let Ok(home) = std::env::var("HOME") {
-            // fnm: ~/.local/share/fnm/node-versions/*/installation/bin/gemini
-            let fnm_base = PathBuf::from(&home).join(".local/share/fnm/node-versions");
-            if fnm_base.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&fnm_base) {
-                    // Pick the latest version directory
-                    let mut versions: Vec<PathBuf> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.path().join("installation/bin/gemini"))
-                        .filter(|p| p.exists())
-                        .collect();
-                    versions.sort();
-                    if let Some(candidate) = versions.last() {
-                        return (candidate.to_string_lossy().to_string(), None);
-                    }
-                }
-            }
-            // nvm: ~/.nvm/versions/node/*/bin/gemini
-            let nvm_base = PathBuf::from(&home).join(".nvm/versions/node");
-            if nvm_base.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-                    let mut versions: Vec<PathBuf> = entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.path().join("bin/gemini"))
-                        .filter(|p| p.exists())
-                        .collect();
-                    versions.sort();
-                    if let Some(candidate) = versions.last() {
-                        return (candidate.to_string_lossy().to_string(), None);
-                    }
-                }
-            }
-        }
-        // Standard paths
-        for prefix in &["/usr/local/bin", "/usr/bin", "/opt/homebrew/bin"] {
-            let candidate = PathBuf::from(prefix).join("gemini");
-            if candidate.exists() {
-                return (candidate.to_string_lossy().to_string(), None);
-            }
-        }
-    }
-
-    ("gemini".to_string(), None)
-}
-
-#[cfg(target_os = "windows")]
-fn which_or(name: &str, fallback: &str) -> String {
-    std::env::var("PATH")
-        .ok()
-        .and_then(|path| {
-            path.split(';').find_map(|dir| {
-                let candidate = PathBuf::from(dir).join(format!("{}.exe", name));
-                if candidate.exists() {
-                    Some(candidate.to_string_lossy().to_string())
-                } else {
-                    None
-                }
-            })
-        })
-        .unwrap_or_else(|| fallback.to_string())
+    use super::resolve::{NpmCliConfig, resolve_npm_cli};
+    let resolved = resolve_npm_cli(&NpmCliConfig {
+        bin_name: "gemini",
+        npm_package: "@google/gemini-cli",
+        npm_entry: "dist/index.js",
+    });
+    (resolved.command, resolved.script_arg)
 }
 
 use super::claude::resolve_cwd;

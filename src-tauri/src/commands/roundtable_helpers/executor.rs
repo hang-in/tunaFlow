@@ -449,3 +449,159 @@ async fn execute_parallel(
 
     Ok((messages, round_responses))
 }
+
+// ─── Unit tests for pure helper functions ────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_participant(name: &str, engine: Option<&str>, blind: bool, role: Option<&str>) -> RoundtableParticipant {
+        RoundtableParticipant {
+            name: name.into(),
+            model: None,
+            engine: engine.map(|s| s.into()),
+            blind,
+            role: role.map(|s| s.into()),
+            max_tokens: None,
+        }
+    }
+
+    // ─── participant_identity ────────────────────────────────────────────
+
+    #[test]
+    fn identity_basic() {
+        let p = make_participant("Alice", Some("claude"), false, None);
+        let id = participant_identity(&p);
+        assert!(id.contains("Alice"));
+        assert!(id.contains("claude"));
+        assert!(!id.contains("blind verifier"));
+    }
+
+    #[test]
+    fn identity_blind_verifier() {
+        let p = make_participant("Bob", Some("gemini"), true, Some("verifier"));
+        let id = participant_identity(&p);
+        assert!(id.contains("Bob"));
+        assert!(id.contains("blind verifier"));
+        assert!(id.contains("verifier"));
+    }
+
+    #[test]
+    fn identity_with_role() {
+        let p = make_participant("Charlie", Some("codex"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("proposer"));
+    }
+
+    #[test]
+    fn identity_default_engine() {
+        let p = make_participant("Default", None, false, None);
+        let id = participant_identity(&p);
+        assert!(id.contains("claude")); // defaults to claude
+    }
+
+    #[test]
+    fn identity_has_anti_impersonation_rule() {
+        let p = make_participant("X", Some("gemini"), false, None);
+        let id = participant_identity(&p);
+        assert!(id.contains("Do NOT claim to be a different agent"));
+    }
+
+    // ─── effective_max_tokens ────────────────────────────────────────────
+
+    #[test]
+    fn max_tokens_explicit_override() {
+        let mut p = make_participant("A", None, false, Some("proposer"));
+        p.max_tokens = Some(2000);
+        assert_eq!(effective_max_tokens(&p), Some(2000));
+    }
+
+    #[test]
+    fn max_tokens_proposer_default() {
+        let p = make_participant("A", None, false, Some("proposer"));
+        assert_eq!(effective_max_tokens(&p), Some(1200));
+    }
+
+    #[test]
+    fn max_tokens_reviewer_default() {
+        let p = make_participant("A", None, false, Some("reviewer"));
+        assert_eq!(effective_max_tokens(&p), Some(900));
+    }
+
+    #[test]
+    fn max_tokens_critic_alias() {
+        let p = make_participant("A", None, false, Some("critic"));
+        assert_eq!(effective_max_tokens(&p), Some(900));
+    }
+
+    #[test]
+    fn max_tokens_verifier_default() {
+        let p = make_participant("A", None, false, Some("verifier"));
+        assert_eq!(effective_max_tokens(&p), Some(800));
+    }
+
+    #[test]
+    fn max_tokens_synthesizer_default() {
+        let p = make_participant("A", None, false, Some("synthesizer"));
+        assert_eq!(effective_max_tokens(&p), Some(1500));
+    }
+
+    #[test]
+    fn max_tokens_lead_alias() {
+        let p = make_participant("A", None, false, Some("lead"));
+        assert_eq!(effective_max_tokens(&p), Some(1500));
+    }
+
+    #[test]
+    fn max_tokens_no_role_none() {
+        let p = make_participant("A", None, false, None);
+        assert_eq!(effective_max_tokens(&p), None);
+    }
+
+    #[test]
+    fn max_tokens_unknown_role_none() {
+        let p = make_participant("A", None, false, Some("custom-role"));
+        assert_eq!(effective_max_tokens(&p), None);
+    }
+
+    // ─── output_cap_directive ────────────────────────────────────────────
+
+    #[test]
+    fn cap_directive_with_cap() {
+        let d = output_cap_directive(Some(800));
+        assert!(d.contains("800 tokens"));
+        assert!(d.contains("Output limit"));
+    }
+
+    #[test]
+    fn cap_directive_without_cap() {
+        let d = output_cap_directive(None);
+        assert!(d.is_empty());
+    }
+
+    // ─── RtContextCache::get routing ─────────────────────────────────────
+
+    #[test]
+    fn context_cache_routing_local_vs_commercial() {
+        let cache = RtContextCache {
+            auto_context: Some("auto ctx".into()),
+            lite_context: Some("lite ctx".into()),
+        };
+        assert_eq!(cache.get("claude"), Some("auto ctx"));
+        assert_eq!(cache.get("gemini"), Some("auto ctx"));
+        assert_eq!(cache.get("codex"), Some("auto ctx"));
+        assert_eq!(cache.get("ollama"), Some("lite ctx"));
+        assert_eq!(cache.get("opencode"), Some("lite ctx"));
+    }
+
+    #[test]
+    fn context_cache_none_for_missing() {
+        let cache = RtContextCache {
+            auto_context: None,
+            lite_context: None,
+        };
+        assert_eq!(cache.get("claude"), None);
+        assert_eq!(cache.get("ollama"), None);
+    }
+}

@@ -10,4 +10,5 @@ pub mod openai_compat;
 pub mod openai_sdk;
 pub mod opencode;
 pub mod rawq;
+pub mod resolve;
 pub mod tool_handler;
