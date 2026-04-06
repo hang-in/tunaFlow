@@ -255,8 +255,8 @@ export function ChatPanel() {
         )}
       </div>
 
-      {/* Input — fixed at bottom */}
-      <div className="shrink-0">
+      {/* Input — fixed at bottom, width-matched with messages */}
+      <div className="shrink-0 max-w-4xl mx-auto w-full">
         <NewMessageInput onCreateRT={() => setRtDialogCheckpoint("")} />
       </div>
       <CreateRoundtableDialog

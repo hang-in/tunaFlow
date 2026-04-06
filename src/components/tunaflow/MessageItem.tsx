@@ -155,13 +155,13 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
           )}
 
           {/* Body */}
-          <div className={cn("text-foreground leading-relaxed max-w-3xl", isCompact ? "text-xs" : "text-sm")}>
+          <div className={cn("text-foreground leading-relaxed max-w-4xl", isCompact ? "text-xs" : "text-sm")}>
             {isUser && hasMarkdownSignal(message.content) ? (
-              <div className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block max-w-3xl", isCompact && "line-clamp-3")}>
+              <div className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block max-w-4xl", isCompact && "line-clamp-3")}>
                 <MarkdownBody content={message.content} conversationId={message.conversationId} />
               </div>
             ) : isUser ? (
-              <p className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block max-w-3xl", isCompact && "line-clamp-3")}>{message.content}</p>
+              <p className={cn("bg-white/[0.035] rounded-lg px-3 py-2 inline-block max-w-4xl", isCompact && "line-clamp-3")}>{message.content}</p>
             ) : isStreaming && !message.content ? (
               <TypingIndicator />
             ) : isStreaming ? (

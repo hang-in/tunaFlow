@@ -204,7 +204,7 @@ export function AppShell() {
               {/* Drawer — anchored to right edge, slide in from right */}
               <div
                 style={{ width: drawerW, animation: "slide-in-from-right 200ms ease-out" }}
-                className="absolute top-1.5 right-1.5 bottom-1.5 z-50 relative"
+                className="absolute top-1.5 right-1.5 bottom-1.5 z-50"
               >
                 {/* Left edge resize handle — invisible, overlays drawer left edge */}
                 <div
