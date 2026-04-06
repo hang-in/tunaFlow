@@ -356,13 +356,16 @@ export async function processReviewVerdict(
   plan: Plan,
   verdict: ParsedReviewVerdict,
 ): Promise<void> {
-  // Guard: prevent duplicate processing in the same review round
+  // Guard: prevent duplicate auto-processing in the same review round
+  // Only block if the SAME verdict type was already processed (e.g., two "fail" events).
+  // Allow user overrides (e.g., conditional → pass via "완료" button).
+  const verdictEventType = verdict.verdict === "pass" ? "review_passed"
+    : verdict.verdict === "fail" ? "review_failed" : "review_conditional";
   const events = await planApi.listPlanEvents(plan.id);
   const lastReviewStart = [...events].reverse().find((e) => e.eventType === "review_started");
   if (lastReviewStart) {
     const alreadyProcessed = events.some(
-      (e) => (e.eventType === "review_passed" || e.eventType === "review_failed" || e.eventType === "review_conditional")
-        && e.createdAt > lastReviewStart.createdAt,
+      (e) => e.eventType === verdictEventType && e.createdAt > lastReviewStart.createdAt,
     );
     if (alreadyProcessed) {
       console.debug("[verdict] already processed for this review round, skipping");
