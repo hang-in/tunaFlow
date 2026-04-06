@@ -36,7 +36,7 @@ export function PlanCard({
   onSwitchToChat?: () => void;
   defaultExpanded?: boolean;
 }) {
-  const { sendFollowup, setHandoffSource, branches, openThread, loadBranches } = useChatStore();
+  const { sendFollowup, setHandoffSource, branches, openThread, loadBranches, runningThreadIds } = useChatStore();
   const [plan, setPlan] = useState(initialPlan);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [subtasks, setSubtasks] = useState<PlanSubtask[] | null>(null);
@@ -279,7 +279,7 @@ export function PlanCard({
                     <GitBranch className="w-2.5 h-2.5" />Implementation Branch 열기
                   </button>
                 </div>
-                {implComplete && (
+                {implComplete && !runningThreadIds.includes(`branch:${plan.implementationBranchId}`) && (
                   <div className="mt-2 rounded-md border border-status-approved/30 bg-status-approved/5 p-2 text-[10px] text-status-approved flex items-center gap-1.5">
                     <Check className="w-3 h-3" />구현 완료 — Review 단계로 전환 가능
                     <button

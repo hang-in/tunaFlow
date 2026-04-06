@@ -288,9 +288,20 @@ tunaFlow/
 - **UI 수정 20+건**: EngineSelector 크래시, 테스트 반복 실행, subtask 완료 표시, abandoned 필터, 드로어 애니메이션, hover toolbar, workflow stage 칩
 - Rust 179 tests, Frontend 174 tests. DB v26.
 
+### ✅ 해결됨 (세션 13: 워크플로우 안정화 + 코드 품질 감사 + Plan UX)
+- **Review verdict 자동 감지**: autoDetectReviewVerdict (agent:completed → 자동 스캔 + processReviewVerdict)
+- **Reviewer 파일 접근**: PLATFORM_TIER0 "MUST read files" + task 파일 ContextPack 주입 + "MCP 미사용" 명시
+- **Doom loop 안정화**: 카운터 리셋 4곳 (doom_loop_escalated + architect_redesign_requested), conditional→review_conditional 분리, 중복 호출 방지, verdict 타입별 가드
+- **크로스 프로젝트 격리**: isActiveThread() 가드 5곳 (progress/chunk/RT participant/RT progress)
+- **코드 품질 감사 7항목**: CSP, 빈 catch 35개, non-null 11개, parking_lot, CJK 토큰, AppError JSON, 커버리지
+- **Plan UX**: 우클릭 컨텍스트 메뉴, status 배지 확대, All 스테이지 탭
+- **하네스 품질**: Developer 에러 규칙, 승격 프롬프트 Verification/Scope, testOutput Reviewer 배선, Architect 워크플로우 가이드
+- **파서 개선**: plan-proposal 멀티라인 details, DraftingActions details 없어도 검토 버튼 표시
+- **문서**: 코드 품질 감사 결과, artifact + failure learning 아이디어, larksuite/cli 레퍼런스
+- Rust 185 tests, Frontend 175 tests. DB v26 (변경 없음).
+
 ### 기타 알려진 이슈
-- Review 완료 감지가 탭 전환에 의존 (P1, agent:completed 이벤트 기반 자동 감지 필요)
-- single-agent review 경로에서 verdict 자동 처리 미구현 (P1)
+- Claude CLI 동시 실행 충돌 (같은 프로젝트 브랜치+메인, P1 — 다른 엔진으로 우회)
 - window-state: dev 모드 Ctrl+C 종료 시 상태 미저장 (X 버튼으로 닫아야 함)
 - 상세: `docs/reference/knownIssues_2026-04-05.md`
 
@@ -402,6 +413,7 @@ tunaFlow/
 | 10 | 2026-04-04 | Trace Phase 1 (tok/s + context %), 스킬 A/B/C/D + 멀티툴 스캔 + 레지스트리 + 스킬팩, 임베딩 지연 최적화, B안 (subtask 타겟 rework), code-review-graph 통합, Architect/Developer/Reviewer 고도화 (PLATFORM_TIER0 + 역할 템플릿), 전역 profileId 제거, 마커 기반 멀티턴 도구 호출 (docs/rawq/graph/plans), 후속 플랜 인프라 (v25), context-hub chub 수정, 코드 리뷰 버그 수정 (DB v25, Rust 84 tests, Frontend 96 tests) |
 | 11 | 2026-04-04 | 전수조사→문서 정합성 복구, expect 패닉 제거, 스트리밍 중복 150줄 제거, useMemo, 경고 0, 테스트 백로그 문서화 |
 | 12 | 2026-04-05 | 테스트 180→352, CLI resolve 통합, 컴포넌트 분할 3개, **3-role 프롬프트 근본 수정** (Dev↔Review 루프 해결), 에스컬레이션 경로 완성, 스마트 scaffold, microcompact, 커스텀 타이틀바+우클릭 메뉴, DB v26 slug, UI 수정 20+건, 실사용 검증으로 발견한 워크플로우 버그 대량 수정 |
+| 13 | 2026-04-05~06 | Review 자동 감지, doom loop 안정화, 크로스 프로젝트 격리, 코드 품질 감사 7항목 (CSP/catch/non-null/parking_lot/CJK/AppError/coverage), Plan UX (컨텍스트 메뉴/All 탭), 하네스 품질 (에러 규칙/승격 프롬프트/testOutput 배선), 파서 멀티라인 details, artifact+failure learning 설계 |
 
 ---
 
@@ -472,10 +484,16 @@ tunaFlow/
 - 에스컬레이션 경로 완성, 스마트 scaffold, microcompact, 타이틀바, 우클릭 메뉴
 - DB v26 slug, UI 수정 20+건 (실사용 검증 기반)
 
+### ✅ 완료: 워크플로우 안정화 + 코드 품질 감사 + Plan UX (세션 13)
+- Review verdict 자동 감지 (autoDetectReviewVerdict), doom loop 안정화, 크로스 프로젝트 격리
+- 코드 품질 감사 7항목 (CSP/catch/non-null/parking_lot/CJK 토큰/AppError JSON/커버리지)
+- Plan UX (컨텍스트 메뉴/All 탭), 하네스 품질 (에러 규칙/승격 프롬프트/testOutput 배선)
+- 파서 개선, artifact+failure learning 설계
+
 ### 다음 세션 첫 작업
-1. **Review 완료 자동 감지** — agent:completed 이벤트 기반 verdict 스캔 (P1, `docs/reference/knownIssues_2026-04-05.md`)
-2. **실사용 검증 이어가기** — tunaInsight "보고서 UX 개선" Plan이 rework 대기 중
-3. **커스텀 타이틀바 + 우클릭 메뉴 추가 작업** — `docs/ideas/customTitlebarContextMenuIdea.md` 기준
+1. **Failure Learning 시스템 구현** — `docs/ideas/artifactAndFailureLearningIdea.md` 기준
+2. **Artifacts 탭 Plan별 그룹핑** — plan_id 컬럼 추가 + UI
+3. **실사용 검증 이어가기** — seCall, tunapi 워크플로우 풀사이클
 
 ### P1: RT 재검증
 - RT INTENT 표시 오류 재현 확인 (새 RT에서)
