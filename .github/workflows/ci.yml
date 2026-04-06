@@ -29,6 +29,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Create sidecar placeholder
+        run: |
+          mkdir -p src-tauri/binaries
+          touch src-tauri/binaries/rawq-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/rawq-aarch64-apple-darwin
+
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check
