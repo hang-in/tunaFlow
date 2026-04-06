@@ -37,8 +37,13 @@ export function MessageMeta({ message, isCompact = false, threadBranches, onOpen
       </span>
       {!isUser && message.durationMs != null && message.durationMs > 0 && (
         <span className="text-sidebar-foreground/35 font-mono text-[9px]">
-          {message.durationMs < 1000 ? `${message.durationMs}ms` : `${(message.durationMs / 1000).toFixed(1)}s`}
-          {message.outputTokens ? ` · ${message.outputTokens}tok` : ""}
+          {message.durationMs >= 60000
+            ? `${Math.floor(message.durationMs / 60000)}m ${(message.durationMs % 60000 / 1000).toFixed(1)}s`
+            : `${(message.durationMs / 1000).toFixed(1)}s`}
+          {message.inputTokens || message.outputTokens ? " · " : ""}
+          {message.inputTokens ? `${message.inputTokens}in` : ""}
+          {message.inputTokens && message.outputTokens ? "/" : ""}
+          {message.outputTokens ? `${message.outputTokens}out` : ""}
         </span>
       )}
       {/* Branch badges inline in header */}
