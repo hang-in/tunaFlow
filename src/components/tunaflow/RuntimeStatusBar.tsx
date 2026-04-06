@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { Activity, Loader2, Zap } from "lucide-react";
 import { TraceModal } from "./TraceModal";
+import type { Message } from "@/types";
 
 function SkillsBadge() {
   const activeSkills = useChatStore((s) => s.activeSkills);
@@ -68,10 +69,38 @@ export function RuntimeStatusBar() {
   const runningEngines = [...new Set(jobs.filter((j) => j.status === "running").map((j) => j.engine))];
   const runningJobCount = jobs.filter((j) => j.status === "running").length;
 
-  // Poll active jobs
+  // Poll active jobs + auto-recover orphan running states
   useEffect(() => {
     const poll = () => {
-      invoke<AgentJob[]>("list_active_jobs").then(setJobs).catch((e) => console.debug("[jobs]", e));
+      invoke<AgentJob[]>("list_active_jobs").then((fetchedJobs) => {
+        setJobs(fetchedJobs);
+        // Orphan recovery: if no running jobs in DB but store has runningThreadIds,
+        // the agent:completed/error event was missed (e.g., timeout kill during tab switch).
+        // Reload messages to clear stale "streaming" status.
+        const dbRunning = new Set(fetchedJobs.filter((j) => j.status === "running").map((j) => j.conversationId));
+        const storeRunning = useChatStore.getState().runningThreadIds;
+        const orphans = storeRunning.filter((id) => !dbRunning.has(id));
+        if (orphans.length > 0) {
+          console.warn("[orphan-recovery] Clearing stale runningThreadIds:", orphans);
+          for (const id of orphans) {
+            useChatStore.getState()._endRun(id);
+          }
+          // Reload current conversation messages to clear "streaming" status
+          const convId = useChatStore.getState().selectedConversationId;
+          if (convId) {
+            invoke<Message[]>("list_messages", { conversationId: convId }).then((msgs) => {
+              useChatStore.setState({ messages: msgs });
+            }).catch(() => {});
+          }
+          // Reload thread messages if drawer is open
+          const threadConvId = useChatStore.getState().threadBranchConvId;
+          if (threadConvId) {
+            invoke<Message[]>("list_messages", { conversationId: threadConvId }).then((msgs) => {
+              useChatStore.setState({ threadMessages: msgs });
+            }).catch(() => {});
+          }
+        }
+      }).catch((e) => console.debug("[jobs]", e));
     };
     poll();
     const timer = setInterval(poll, 2000);
