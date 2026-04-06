@@ -66,8 +66,11 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       const next = state.runningThreadIds.filter((id) => id !== threadId);
       return { runningThreadIds: next };
     });
-    // Notify completion — skip if error was set (error handler sends its own notification)
-    if (!get().error) {
+    // Notify completion — skip if:
+    // 1. Error was set (error handler sends its own notification)
+    // 2. User is currently viewing this conversation (no need to notify what they can see)
+    const isViewingThis = threadId === get().selectedConversationId && !document.hidden;
+    if (!get().error && !isViewingThis) {
       import("@/stores/notificationStore").then(({ notify }) => {
         notify("completed", "tunaFlow", "에이전트 응답이 완료되었습니다.", threadId);
       }).catch((e) => console.debug("[notify]", e));

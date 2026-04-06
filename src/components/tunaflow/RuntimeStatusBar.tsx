@@ -70,16 +70,36 @@ export function RuntimeStatusBar() {
   const runningJobCount = jobs.filter((j) => j.status === "running").length;
 
   // Poll active jobs + auto-recover orphan running states
+  // Grace period: track when each thread started running to avoid false orphan detection.
+  // Between _startRun and DB job creation there's a gap where the thread appears orphaned.
+  const [runStartTimes] = useState(() => new Map<string, number>());
+  useEffect(() => {
+    // Track start times for new running threads
+    for (const id of runningThreadIds) {
+      if (!runStartTimes.has(id)) runStartTimes.set(id, Date.now());
+    }
+    // Clean up finished threads
+    for (const id of runStartTimes.keys()) {
+      if (!runningThreadIds.includes(id)) runStartTimes.delete(id);
+    }
+  }, [runningThreadIds]);
+
   useEffect(() => {
     const poll = () => {
       invoke<AgentJob[]>("list_active_jobs").then((fetchedJobs) => {
         setJobs(fetchedJobs);
         // Orphan recovery: if no running jobs in DB but store has runningThreadIds,
         // the agent:completed/error event was missed (e.g., timeout kill during tab switch).
-        // Reload messages to clear stale "streaming" status.
+        // Grace period: skip threads that started less than 10s ago (DB job not yet created).
+        const now = Date.now();
+        const GRACE_MS = 10_000;
         const dbRunning = new Set(fetchedJobs.filter((j) => j.status === "running").map((j) => j.conversationId));
         const storeRunning = useChatStore.getState().runningThreadIds;
-        const orphans = storeRunning.filter((id) => !dbRunning.has(id));
+        const orphans = storeRunning.filter((id) => {
+          if (dbRunning.has(id)) return false;
+          const startTime = runStartTimes.get(id) ?? 0;
+          return (now - startTime) > GRACE_MS; // only orphan after grace period
+        });
         if (orphans.length > 0) {
           console.warn("[orphan-recovery] Clearing stale runningThreadIds:", orphans);
           for (const id of orphans) {
