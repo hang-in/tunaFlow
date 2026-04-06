@@ -360,7 +360,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
             <span>통과: {testResult.passed}</span>
             <span>실패: {testResult.failed}</span>
             {testResult.skipped > 0 && <span>건너뜀: {testResult.skipped}</span>}
-            <span>{testResult.durationMs}ms</span>
+            <span>{testResult.durationMs >= 60000 ? `${Math.floor(testResult.durationMs / 60000)}m ${Math.round((testResult.durationMs % 60000) / 1000)}s` : `${Math.round(testResult.durationMs / 1000)}s`}</span>
           </div>
           {!testResult.success && testResult.output && (
             <details className="mt-1">
