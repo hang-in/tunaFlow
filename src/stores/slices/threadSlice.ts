@@ -252,6 +252,8 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
           }
         }).catch((e) => console.warn("[tool-request]", e));
       }
+      // Auto-sync implementation subtasks + detect completion
+      autoSyncImplCompletion(convId, threadMessages);
       // Auto-detect review verdict after tool-request handling
       autoDetectReviewVerdict(convId, threadMessages);
       get()._endRun(convId);
@@ -371,6 +373,76 @@ async function runThreadRoundtable(
     await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
   } catch (e) {
     cleanup(); set({ error: errorMessage(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null }); get()._endRun(threadBranchConvId);
+  }
+}
+
+// ─── Auto-sync implementation completion from completed branch ─────────────
+// Called after agent:completed on implementation branches.
+// Syncs subtask-done markers to DB AND detects impl-complete structurally
+// (all subtasks done) even when the agent doesn't emit the marker.
+
+async function autoSyncImplCompletion(shadowConvId: string, messages: Message[]) {
+  if (!shadowConvId.startsWith("branch:")) return;
+  const branchId = shadowConvId.slice("branch:".length);
+
+  try {
+    const { findPlanByBranch, listSubtasks, updateSubtaskStatus } = await import("@/lib/api/plans");
+    const plan = await findPlanByBranch(branchId);
+    if (!plan || plan.implementationBranchId !== branchId) return;
+    if (plan.phase !== "implementation" && plan.phase !== "rework") return;
+
+    const { scanCompletedSubtasks, hasImplComplete } = await import("@/lib/planProposalParser");
+    const subtasks = await listSubtasks(plan.id);
+    if (subtasks.length === 0) return;
+
+    // 1. Sync marker-detected subtask completions to DB
+    const markerNums = scanCompletedSubtasks(messages);
+    const hasMarker = messages.some((m) => m.role === "assistant" && hasImplComplete(m.content));
+
+    for (const num of markerNums) {
+      const st = subtasks.find((s) => s.idx === num - 1); // markers are 1-based, idx is 0-based
+      if (st && st.status !== "done") {
+        await updateSubtaskStatus(st.id, "done").catch((e) => console.debug("[subtask-sync]", e));
+      }
+    }
+
+    // 2. If impl-complete marker exists, mark all subtasks done
+    if (hasMarker) {
+      for (const st of subtasks) {
+        if (st.status !== "done") {
+          await updateSubtaskStatus(st.id, "done").catch((e) => console.debug("[subtask-sync]", e));
+        }
+      }
+      return; // marker present, no need for structural detection
+    }
+
+    // 3. Structural detection: check if agent's final message indicates completion
+    //    Look for completion signals in the last assistant message
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) return;
+
+    // Check if all subtasks are now done (after marker sync above)
+    const refreshed = await listSubtasks(plan.id);
+    const allDone = refreshed.every((st) => st.status === "done");
+
+    if (!allDone) {
+      // Heuristic: if the message mentions all tasks being complete, mark remaining subtasks done
+      const content = lastAssistant.content.toLowerCase();
+      const completionSignals = [
+        "모든 task", "모든 태스크", "전체 완료", "구현이 완료", "구현 완료",
+        "all tasks", "all subtasks", "implementation complete", "completed all",
+      ];
+      const looksComplete = completionSignals.some((s) => content.includes(s));
+      if (looksComplete) {
+        for (const st of refreshed) {
+          if (st.status !== "done") {
+            await updateSubtaskStatus(st.id, "done").catch((e) => console.debug("[subtask-sync]", e));
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[impl-sync]", e);
   }
 }
 
