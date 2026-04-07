@@ -46,6 +46,7 @@
 
 @theme inline {
   --font-sans: 'Inter', system-ui, sans-serif;
+  --font-prose: 'Pretendard Variable', 'Pretendard', 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -113,7 +114,7 @@
 }
 
 /* prose-chat: optimized for technical agent responses (code + tables + lists) */
-.prose-chat { font-size: 14px; line-height: 1.65; }
+.prose-chat { font-family: var(--font-prose); font-size: 14px; line-height: 1.7; letter-spacing: -0.01em; }
 .prose-chat h2 { margin-top: 1.5em; margin-bottom: 0.5em; }
 .prose-chat h3 { margin-top: 1.25em; margin-bottom: 0.4em; }
 .prose-chat pre { margin-top: 1em; margin-bottom: 1em; }
