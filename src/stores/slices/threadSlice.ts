@@ -240,7 +240,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       const tsStore = useToolStepsStore.getState();
       const steps = tsStore.getSteps(e.payload.messageId);
       if (steps.length > 0) {
-        invoke("save_progress_content", { messageId: e.payload.messageId, content: serializeSteps(steps) }).catch((e) => console.debug("[save-steps]", e));
+        invoke("save_progress_content", { messageId: e.payload.messageId, progressContent: serializeSteps(steps) }).catch((e) => console.debug("[save-steps]", e));
         tsStore.clear(e.payload.messageId);
       }
       const threadMessages = await invoke<Message[]>("list_messages", { conversationId: convId });

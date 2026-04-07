@@ -200,7 +200,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       const tsStore = useToolStepsStore.getState();
       const steps = tsStore.getSteps(e.payload.messageId);
       if (steps.length > 0) {
-        invoke("save_progress_content", { messageId: e.payload.messageId, content: serializeSteps(steps) }).catch((e) => console.debug("[save-steps]", e));
+        invoke("save_progress_content", { messageId: e.payload.messageId, progressContent: serializeSteps(steps) }).catch((e) => console.debug("[save-steps]", e));
         tsStore.clear(e.payload.messageId);
       }
       // Always reload from DB, apply atomically inside set to avoid race conditions
