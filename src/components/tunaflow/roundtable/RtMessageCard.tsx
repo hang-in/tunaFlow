@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cn, AGENT_DOT_COLORS, formatTimestamp, normalizeEngine } from "@/lib/utils";
+import { cn, formatTimestamp, normalizeEngine } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { AgentAvatar } from "../AgentAvatar";
 import { markdownComponents } from "../chat/MarkdownComponents";
@@ -27,37 +27,28 @@ export function RtMessageCard({ message, isLast, onBranch, onBranchRT, onMemo, o
   const name = message.persona ?? message.engine ?? "Agent";
   const engine = message.engine ?? "";
   const knownEngine = normalizeEngine(engine);
-  const dotColor = knownEngine ? AGENT_DOT_COLORS[knownEngine] : "bg-muted-foreground/40";
   const content = message.content;
   const sources = parsePromptSources(message);
 
   return (
-    <div className="relative flex gap-3">
-      {/* Timeline line */}
-      {!isLast && (
-        <div className="absolute left-[11px] top-7 bottom-0 w-px bg-border/30" />
-      )}
-      {/* Avatar */}
-      <div className="relative z-10 shrink-0">
-        <AgentAvatar engine={engine} size="md" />
-      </div>
+    <div className="relative">
       {/* Card */}
       <div
         className={cn(
-          "flex-1 min-w-0 mb-3 rounded-md bg-card/60 border border-border/30 p-3 transition-colors relative overflow-hidden",
+          "min-w-0 mb-2 rounded-md bg-card/60 border border-border/30 p-3 transition-colors relative overflow-hidden",
           hovered && "border-border/50"
         )}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        {/* Header: engine · model · role */}
-        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-          <span className="inline-flex items-center gap-1">
-            <span className={cn("w-1.5 h-1.5 rounded-full", dotColor)} />
-            <span className="text-[10px] font-medium text-foreground/80">{engine || name}</span>
+        {/* Header: avatar inline + engine · model · role (matches MessageMeta pattern) */}
+        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+          <AgentAvatar engine={engine} size="xs" />
+          <span className={cn("text-[13px] font-medium", knownEngine ? `text-agent-${knownEngine}` : "text-foreground/80")}>
+            {name}
           </span>
           {message.model && (
-            <span className="text-[8px] text-foreground/40 font-mono bg-accent/40 px-1 py-0.5 rounded">
+            <span className="text-sidebar-foreground/50 font-mono text-[11px]">
               {message.model}
             </span>
           )}
@@ -71,9 +62,20 @@ export function RtMessageCard({ message, isLast, onBranch, onBranchRT, onMemo, o
               <ShieldCheck className="w-2.5 h-2.5" />blind
             </span>
           )}
-          <span className="text-[9px] text-muted-foreground/40 font-mono">
+          <span className="text-sidebar-foreground/50 font-mono text-[11px]">
             {formatTimestamp(message.timestamp)}
           </span>
+          {message.durationMs != null && message.durationMs > 0 && (
+            <span className="text-sidebar-foreground/35 font-mono text-[9px]">
+              {message.durationMs >= 60000
+                ? `${Math.floor(message.durationMs / 60000)}m ${(message.durationMs % 60000 / 1000).toFixed(1)}s`
+                : `${(message.durationMs / 1000).toFixed(1)}s`}
+              {message.inputTokens || message.outputTokens ? " · " : ""}
+              {message.inputTokens ? `${message.inputTokens}in` : ""}
+              {message.inputTokens && message.outputTokens ? "/" : ""}
+              {message.outputTokens ? `${message.outputTokens}out` : ""}
+            </span>
+          )}
           {sources && <RtReferenceBadge sources={sources} />}
         </div>
 
