@@ -29,6 +29,7 @@
   --agent-codex: oklch(0.58 0.18 240);
   --agent-gemini: oklch(0.68 0.18 55);
   --agent-opencode: oklch(0.62 0.18 145);
+  --agent-ollama: oklch(0.65 0.15 30);
 
   --status-draft: oklch(0.65 0.15 55);
   --status-approved: oklch(0.62 0.18 145);
@@ -98,6 +99,7 @@
   --color-agent-codex: var(--agent-codex);
   --color-agent-gemini: var(--agent-gemini);
   --color-agent-opencode: var(--agent-opencode);
+  --color-agent-ollama: var(--agent-ollama);
   --color-status-draft: var(--status-draft);
   --color-status-approved: var(--status-approved);
   --color-status-rejected: var(--status-rejected);

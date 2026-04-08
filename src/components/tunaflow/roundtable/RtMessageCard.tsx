@@ -42,7 +42,7 @@ export function RtMessageCard({ message, isLast, onBranch, onBranchRT, onMemo, o
         onMouseLeave={() => setHovered(false)}
       >
         {/* Header: avatar inline + engine · model · role (matches MessageMeta pattern) */}
-        <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+        <div className="flex items-baseline gap-1.5 mb-1 flex-wrap">
           <AgentAvatar engine={engine} size="xs" />
           <span className={cn("text-tf-caption font-medium", knownEngine ? `text-agent-${knownEngine}` : "text-prose-base")}>
             {name}

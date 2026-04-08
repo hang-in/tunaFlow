@@ -18,7 +18,7 @@ export function MessageMeta({ message, isCompact = false, threadBranches, onOpen
   const nameColorClass = engine ? AGENT_TEXT_COLORS[engine] : "text-foreground/80";
 
   return (
-    <div className={cn("flex items-center gap-1.5 mb-1", isCompact && "mb-0.5")}>
+    <div className={cn("flex items-baseline gap-1.5 mb-1", isCompact && "mb-0.5")}>
       <AgentAvatar engine={message.engine} isUser={isUser} size="xs" />
       {isUser ? (
         <span className={cn("font-medium text-prose-base", isCompact ? "text-tf-sm" : "text-tf-caption")}>You</span>
