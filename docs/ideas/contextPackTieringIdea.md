@@ -382,6 +382,46 @@ messages:
 
 ---
 
+## RT 토론 검증 결과 (2026-04-08, 세션 16)
+
+3-agent Sequential RT (Claude Sonnet / Codex GPT-5.4 / Gemini 3.1-pro-preview)로 "CLI subprocess 아키텍처 장단점" 토론 실행. RT 중간 스트리밍 정상 동작 확인. 아래는 에이전트 의견 검토.
+
+### 세 에이전트 공통 합의
+
+- CLI subprocess는 tunaFlow의 "구독자를 위한 오케스트레이터" 포지션에 최적화된 선택
+- 장기적으로 프로세스/이벤트/취소 제어 계층이 병목이 될 수 있음
+- API SDK 전환은 불필요, 현재 구조 위에서 개선하는 방향이 맞음
+
+### 에이전트별 검토
+
+**Claude (Sonnet)** — 정확하지만 일부 outdated
+- "RT 중간 스트리밍이 없다"고 지적 → **이미 해결됨** (이 토론 자체가 새 스트리밍으로 동작)
+- "CLI stdout 파싱으로 실시간 진행상황이 어렵다" → **이미 동작 중** (`--output-format stream-json` JSONL)
+- 구조적 트레이드오프 테이블은 깔끔. 나머지 장단점 분석은 정확
+
+**Codex (GPT-5.4)** — 가장 actionable한 제안
+- ✅ "내부 프로토콜을 line-delimited structured event로 엄격하게" → Tiering과 함께 설계 가능
+- ✅ "start, delta, tool_request, error, done 공통 이벤트 모델 강제" → 현재 엔진마다 이벤트 형식 상이. 통합 필요
+- ✅ "CLI adapter와 API adapter를 같은 추상 인터페이스" → 이미 `RunInput/RunOutput` + `run()`/`stream_run()` 패턴이 전 엔진 공통. trait 통합만 하면 됨
+- ✅ "cancellation, timeout, cleanup 1급 개념 승격" → 현재 `CancelRegistry` 존재하나 codex/ollama는 cancel 미지원. 기술 부채
+
+**Gemini (3.1-pro-preview)** — 독창적 관점, 일부 과장
+- ✅ "에이전트가 파일시스템에 직접 안착" → 맞지만 RT보다는 메인 채팅/워크플로우의 장점
+- ⚠️ "비대화형 hang 위험" → **이미 대응 완료** (`--permission-mode bypassPermissions`, idle timeout 600초)
+- ✅ "CLI 내부 상태와 오케스트레이터 컨텍스트 불일치" → 진짜 문제. resume_token으로 부분 대응하나 근본 해결 아님. Tiering과 연결
+- ⚠️ "JSON-RPC 브릿지 계층 필수불가결" → 과장. 현재 JSONL이 사실상 구조화 스트림. Codex의 "공통 이벤트 모델"이 더 현실적
+
+### Actionable 항목 (Tiering과 연계)
+
+| # | 항목 | 출처 | 연계 |
+|---|------|------|------|
+| 1 | **공통 이벤트 모델** (start/delta/tool_request/error/done) | Codex | Tiering Tier 1 휴리스틱의 입력 소스로 활용 |
+| 2 | **Engine trait 통합** (CLI/SDK 듀얼 어댑터) | Codex | 현재 `run()`/`stream_run()` 패턴을 trait으로 정형화 |
+| 3 | **Cancel 전 엔진 지원** | Codex | codex/ollama cancel 미지원 → graceful stop 구현 |
+| 4 | **CLI-오케스트레이터 상태 동기화** | Gemini | resume_token 확장 + ContextPack 상태 추적 |
+
+---
+
 ## 미결 사항
 
 - Tier 1 휴리스틱의 정확도: false negative(필요한데 안 넣음) 위험
