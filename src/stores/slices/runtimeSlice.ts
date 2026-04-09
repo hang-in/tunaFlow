@@ -218,19 +218,26 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         stale.add(selectedConversationId);
         return { _staleConversations: stale };
       });
-      // Check for tool-request markers in the completed message → auto follow-up
+      // Check for tool-request markers in the completed message → auto follow-up.
+      // _endRun is deferred until after tool-request handling to prevent idle↔running flicker.
       const lastMsg = enriched.find((m) => m.id === messageId);
       if (lastMsg?.role === "assistant") {
-        import("@/lib/planProposalParser").then(async ({ extractToolRequests }) => {
+        try {
+          const { extractToolRequests } = await import("@/lib/planProposalParser");
           const requests = extractToolRequests(lastMsg.content);
           if (requests.length > 0) {
             const { executeToolRequests } = await import("@/lib/toolRequestHandler");
             const followUp = await executeToolRequests(requests);
             if (followUp) {
+              // sendWithEngine calls _startRun internally, so _endRun first to reset
+              get()._endRun(selectedConversationId);
               get().sendWithEngine(engine, followUp, model);
+              return; // _endRun will be called by the new sendWithEngine's completion
             }
           }
-        }).catch((e) => console.warn("[tool-request]", e));
+        } catch (err) {
+          console.warn("[tool-request]", err);
+        }
       }
 
       get()._endRun(selectedConversationId);

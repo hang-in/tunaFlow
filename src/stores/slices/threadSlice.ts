@@ -245,20 +245,27 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       }
       const threadMessages = await invoke<Message[]>("list_messages", { conversationId: convId });
       set({ threadMessages });
-      // Check for tool-request markers → auto follow-up in thread
+      // Check for tool-request markers → auto follow-up in thread.
+      // _endRun is deferred until after tool-request handling to prevent idle↔running flicker.
       const lastMsg = threadMessages.find((m) => m.id === e.payload.messageId);
+      let toolRequestHandled = false;
       if (lastMsg?.role === "assistant") {
-        import("@/lib/planProposalParser").then(async ({ extractToolRequests }) => {
+        try {
+          const { extractToolRequests } = await import("@/lib/planProposalParser");
           const requests = extractToolRequests(lastMsg.content);
           if (requests.length > 0) {
             const { executeToolRequests } = await import("@/lib/toolRequestHandler");
             const followUp = await executeToolRequests(requests);
             if (followUp) {
               const saved = get().getConversationEngine(convId);
+              get()._endRun(convId);
               get().sendThreadMessage(followUp, saved?.engine ?? "claude", saved?.model ?? undefined);
+              toolRequestHandled = true;
             }
           }
-        }).catch((e) => console.warn("[tool-request]", e));
+        } catch (err) {
+          console.warn("[tool-request]", err);
+        }
       }
       // Auto-sync implementation subtasks + detect completion
       autoSyncImplCompletion(convId, threadMessages);
@@ -268,7 +275,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       import("@/stores/notificationStore").then(({ notify }) => {
         notify("completed", "tunaFlow", "드로어 에이전트 응답 완료", convId);
       }).catch(() => {});
-      get()._endRun(convId);
+      if (!toolRequestHandled) get()._endRun(convId);
     });
     const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
       if (e.payload.conversationId !== convId) return;
