@@ -5,6 +5,7 @@ import {
   Zap, Shield, Box, Gauge, Lock, Trash2,
   Play, ChevronDown, ChevronRight, CheckSquare, Square,
   AlertTriangle, Info, XCircle, CheckCircle2, Clock, Loader2,
+  Download, ArrowUpRight,
 } from "lucide-react";
 import type { InsightSession, InsightFinding, InsightCategory, InsightSeverity } from "@/types";
 import * as insightApi from "@/lib/api/insight";
@@ -124,7 +125,7 @@ function FindingRow({
 
 // ── Detail panel ─────────────────────────────────────────────
 
-function FindingDetail({ finding }: { finding: InsightFinding }) {
+function FindingDetail({ finding, onPromoteToPlan }: { finding: InsightFinding; onPromoteToPlan?: (f: InsightFinding) => void }) {
   const catMeta = CATEGORY_META[finding.category];
   const sevMeta = SEVERITY_META[finding.severity];
 
@@ -169,11 +170,32 @@ function FindingDetail({ finding }: { finding: InsightFinding }) {
         </div>
       )}
 
+      {/* Resolution (resolved/done findings) */}
+      {finding.resolution && (
+        <div>
+          <p className="text-tf-xs text-status-approved/70 mb-1 font-medium">해결 방법</p>
+          <div className="text-tf-sm text-prose-base bg-status-approved/5 border border-status-approved/20 rounded-md p-3 whitespace-pre-wrap">
+            {finding.resolution}
+          </div>
+        </div>
+      )}
+
       {/* Meta */}
       {finding.estimatedFiles && finding.estimatedFiles > 1 && (
         <p className="text-tf-xs text-prose-disabled">
           예상 수정 파일: {finding.estimatedFiles}개
         </p>
+      )}
+
+      {/* Actions */}
+      {(finding.status === "open" || finding.status === "selected") && onPromoteToPlan && (
+        <button
+          onClick={() => onPromoteToPlan(finding)}
+          className="flex items-center gap-1 text-tf-xs px-2 py-1 rounded font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+        >
+          <ArrowUpRight className="w-3 h-3" />
+          Plan으로 승격
+        </button>
       )}
     </div>
   );
@@ -329,6 +351,42 @@ export function InsightPanel() {
     setSelectedIds(new Set());
   }, [selectedIds]);
 
+  // Export findings to project files
+  const handleExportToFiles = useCallback(async () => {
+    if (!activeSession || !selectedProjectKey) return;
+    const project = projects.find((p) => p.key === selectedProjectKey);
+    if (!project?.path) { toast.error("프로젝트 경로 없음"); return; }
+    try {
+      const count = await insightApi.exportInsightToFiles(activeSession.id, project.path);
+      toast.success(`${count}개 파일 저장 완료 (docs/insight/)`);
+    } catch (err) {
+      toast.error(`파일 저장 실패: ${err}`);
+    }
+  }, [activeSession, selectedProjectKey, projects]);
+
+  // Promote findings to Architect plan
+  const handlePromoteToPlan = useCallback(async (targetFindings: InsightFinding[]) => {
+    if (targetFindings.length === 0) return;
+    const lines = targetFindings.map((f) => {
+      let entry = `### ${f.title}\n- **카테고리**: ${f.category}\n- **심각도**: ${f.severity}`;
+      if (f.filePath) entry += `\n- **위치**: ${f.filePath}${f.lineNumber ? `:${f.lineNumber}` : ""}`;
+      entry += `\n- **설명**: ${f.description}`;
+      return entry;
+    });
+    const prompt = `## Insight 분석 결과 — Plan 요청\n\n다음 findings를 해결하는 plan을 제안해주세요.\n\n${lines.join("\n\n")}\n\n각 finding의 원본 파일을 확인하고 구체적인 subtask로 분해해주세요.`;
+
+    // Mark findings as in_progress
+    const ids = targetFindings.map((f) => f.id);
+    await insightApi.updateInsightFindingsBatchStatus(ids, "in_progress");
+    setFindings((prev) => prev.map((f) => ids.includes(f.id) ? { ...f, status: "in_progress" as const } : f));
+    setSelectedIds(new Set());
+
+    // Switch to Chat tab and send to Architect
+    window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "chat" }));
+    useChatStore.getState().sendWithEngine("claude", prompt);
+    toast.success(`${targetFindings.length}건 Plan 승격 → Architect에게 전달`);
+  }, []);
+
   // Auto fix quick wins
   const handleAutoFix = useCallback(async () => {
     if (running) return;
@@ -396,6 +454,16 @@ export function InsightPanel() {
           {running ? "분석 중..." : "분석 실행"}
         </button>
 
+        {activeSession && findings.length > 0 && (
+          <button
+            onClick={handleExportToFiles}
+            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-prose-muted hover:text-foreground hover:bg-muted/30 transition-colors"
+            title="docs/insight/ 에 파일 저장"
+          >
+            <Download className="w-3 h-3" />
+            파일 저장
+          </button>
+        )}
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value as InsightCategory | "all")}
@@ -440,6 +508,16 @@ export function InsightPanel() {
               {selectedIds.size > 0 && (
                 <div className="flex items-center gap-2 pt-2 border-t border-border/20">
                   <span className="text-tf-xs text-prose-muted">{selectedIds.size}개 선택</span>
+                  <button
+                    onClick={() => {
+                      const selected = findings.filter((f) => selectedIds.has(f.id));
+                      handlePromoteToPlan(selected);
+                    }}
+                    className="text-tf-xs text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 flex items-center gap-0.5"
+                  >
+                    <ArrowUpRight className="w-2.5 h-2.5" />
+                    Plan 승격
+                  </button>
                   <button
                     onClick={handleDismiss}
                     className="text-tf-xs text-prose-faint hover:text-foreground px-2 py-0.5 rounded border border-border/30"
@@ -492,7 +570,7 @@ export function InsightPanel() {
             >
               <XCircle className="w-4 h-4" />
             </button>
-            <FindingDetail finding={activeFinding} />
+            <FindingDetail finding={activeFinding} onPromoteToPlan={(f) => handlePromoteToPlan([f])} />
           </div>
         )}
       </div>

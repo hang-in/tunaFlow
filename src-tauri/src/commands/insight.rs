@@ -2,6 +2,7 @@ use rusqlite::params;
 use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
+use std::path::Path;
 
 use crate::db::{migrations::now_epoch, models::{InsightSession, InsightFinding, InsightReport}, DbState};
 use crate::errors::AppError;
@@ -324,4 +325,112 @@ pub fn list_insight_reports(
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([&session_id], map_report)?;
     Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+// ─── Export to files ────────────────────────────────────────────────────────
+
+/// Export insight findings and report to project files (docs/insight/).
+/// Creates the directory if it doesn't exist. Returns the number of files written.
+#[tauri::command]
+pub fn export_insight_to_files(
+    session_id: String,
+    project_path: String,
+    state: State<DbState>,
+) -> Result<usize, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+
+    // Load findings
+    let sql = format!(
+        "SELECT {} FROM insight_findings WHERE session_id = ?1
+         ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'major' THEN 1 WHEN 'minor' THEN 2 ELSE 3 END",
+        FINDING_COLS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let findings: Vec<InsightFinding> = stmt.query_map([&session_id], map_finding)?
+        .filter_map(|r| r.ok()).collect();
+
+    // Load session
+    let ssql = format!("SELECT {} FROM insight_sessions WHERE id = ?1", SESSION_COLS);
+    let session = conn.query_row(&ssql, [&session_id], map_session)
+        .map_err(|_| AppError::NotFound("session not found".into()))?;
+
+    if findings.is_empty() {
+        return Ok(0);
+    }
+
+    // Create directory
+    let insight_dir = Path::new(&project_path).join("docs").join("insight");
+    let findings_dir = insight_dir.join("findings");
+    std::fs::create_dir_all(&findings_dir)
+        .map_err(|e| AppError::Agent(format!("Failed to create insight dir: {}", e)))?;
+
+    let mut count = 0usize;
+
+    // Write individual finding files
+    for f in &findings {
+        let slug = f.title.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .collect::<String>()
+            .to_lowercase();
+        let slug = slug.trim_matches('-');
+        let filename = format!("{}-{}.md", f.category.chars().take(3).collect::<String>().to_uppercase(), slug);
+        let mut md = format!(
+            "# {}\n\n- **Category**: {}\n- **Severity**: {}\n- **Fix Difficulty**: {}\n- **Status**: {}\n",
+            f.title, f.category, f.severity, f.fix_difficulty, f.status
+        );
+        if let Some(ref fp) = f.file_path {
+            md.push_str(&format!("- **File**: {}{}\n", fp,
+                f.line_number.map(|n| format!(":{}", n)).unwrap_or_default()));
+        }
+        md.push_str(&format!("\n## Description\n\n{}\n", f.description));
+        if let Some(ref snippet) = f.snippet {
+            md.push_str(&format!("\n## Snippet\n\n```\n{}\n```\n", snippet));
+        }
+        if let Some(ref resolution) = f.resolution {
+            md.push_str(&format!("\n## Resolution\n\n{}\n", resolution));
+        }
+        let path = findings_dir.join(&filename);
+        std::fs::write(&path, &md)
+            .map_err(|e| AppError::Agent(format!("Failed to write finding {}: {}", filename, e)))?;
+        count += 1;
+    }
+
+    // Write latest-report.md (summary + all findings)
+    let ts = chrono::NaiveDateTime::from_timestamp_opt(session.created_at, 0)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| session.created_at.to_string());
+
+    let mut report = format!("# Insight Report — {}\n\n", ts);
+    if let Some(ref summary) = session.summary {
+        report.push_str(&format!("{}\n\n", summary));
+    }
+
+    // Group by category
+    let mut by_cat: std::collections::BTreeMap<String, Vec<&InsightFinding>> = std::collections::BTreeMap::new();
+    for f in &findings {
+        by_cat.entry(f.category.clone()).or_default().push(f);
+    }
+
+    for (cat, cat_findings) in &by_cat {
+        report.push_str(&format!("## {}\n\n", cat));
+        for f in cat_findings {
+            let status_icon = match f.status.as_str() {
+                "resolved" => "✅",
+                "dismissed" => "⊘",
+                "in_progress" => "🔧",
+                _ => "⬜",
+            };
+            report.push_str(&format!("- {} **{}** [{}] — {}\n",
+                status_icon, f.title, f.severity,
+                f.file_path.as_deref().unwrap_or("")));
+        }
+        report.push('\n');
+    }
+
+    let report_path = insight_dir.join("latest-report.md");
+    std::fs::write(&report_path, &report)
+        .map_err(|e| AppError::Agent(format!("Failed to write report: {}", e)))?;
+    count += 1;
+
+    Ok(count)
 }

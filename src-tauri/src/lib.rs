@@ -263,6 +263,7 @@ pub fn run() {
             commands::insight::resolve_insight_findings_by_plan,
             commands::insight::create_insight_report,
             commands::insight::list_insight_reports,
+            commands::insight::export_insight_to_files,
             commands::insight_extract::run_insight_extraction,
             commands::insight_extract::run_insight_analysis,
         ])

@@ -161,6 +161,13 @@ export interface ExtractionResult {
   memoryTopics: string[];
 }
 
+export async function exportInsightToFiles(
+  sessionId: string,
+  projectPath: string,
+): Promise<number> {
+  return invoke<number>("export_insight_to_files", { sessionId, projectPath });
+}
+
 export async function runInsightExtraction(
   projectKey: string,
   projectPath: string,
