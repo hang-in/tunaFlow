@@ -112,9 +112,8 @@ export function TerminalPanel() {
 
       const fit = new FitAddon();
       term.loadAddon(fit);
-      term.loadAddon(new Unicode11Addon());
-      term.unicode.activeVersion = "11";
-      term.loadAddon(new WebLinksAddon());
+      try { term.loadAddon(new Unicode11Addon()); term.unicode.activeVersion = "11"; } catch { /* unicode11 not critical */ }
+      try { term.loadAddon(new WebLinksAddon()); } catch { /* links not critical */ }
       term.open(containerRef.current);
       fit.fit();
 
