@@ -155,7 +155,7 @@ pub fn pty_spawn(
                     // Feed bytes into virtual terminal buffer
                     parser.advance(&mut term, raw);
 
-                    // Read screen content from virtual terminal grid
+                    // Read VISIBLE screen from VTE grid (for completion detection)
                     let grid = term.grid();
                     let mut screen_lines: Vec<String> = Vec::new();
                     for row_idx in 0..pty_rows {
@@ -167,18 +167,28 @@ pub fn pty_spawn(
                             .to_string();
                         screen_lines.push(line);
                     }
-
-                    // Trim trailing empty lines
                     while screen_lines.last().map_or(false, |l| l.is_empty()) {
                         screen_lines.pop();
                     }
                     let screen_text = screen_lines.join("\n");
 
-                    // Only emit if screen changed
+                    // Emit TWO events:
+                    // 1. pty:screen — VTE screen snapshot (for completion detection)
                     if screen_text != prev_screen_text && !screen_text.trim().is_empty() {
                         prev_screen_text = screen_text.clone();
-                        let _ = app.emit("pty:text", PtyOutputPayload {
+                        let _ = app.emit("pty:screen", PtyOutputPayload {
                             session_id: sid, data: screen_text,
+                        });
+                    }
+
+                    // 2. pty:text — ANSI-stripped text (for response accumulation)
+                    let stripped_bytes = strip_ansi_escapes::strip(raw);
+                    let stripped = String::from_utf8_lossy(&stripped_bytes)
+                        .replace('\r', "")
+                        .to_string();
+                    if !stripped.trim().is_empty() {
+                        let _ = app.emit("pty:text", PtyOutputPayload {
+                            session_id: sid, data: stripped,
                         });
                     }
                 }

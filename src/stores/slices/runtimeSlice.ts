@@ -518,15 +518,22 @@ async function sendViaPty(
     }
   };
 
-  // Listen for stripped text — accumulate silently, detect completion
-  const ulOutput = await listenEvent<{ sessionId: number; data: string }>("pty:text", (e) => {
+  // pty:text — accumulate ANSI-stripped text for response extraction
+  const ulText = await listenEvent<{ sessionId: number; data: string }>("pty:text", (e) => {
+    if (e.payload.sessionId !== sessionId || finalized) return;
+    const store = usePtyStore.getState();
+    if (!store.isCapturing) return;
+    store.appendOutput(e.payload.data);
+  });
+
+  // pty:screen — VTE screen snapshot for completion detection + status
+  const ulScreen = await listenEvent<{ sessionId: number; data: string }>("pty:screen", (e) => {
     if (e.payload.sessionId !== sessionId || finalized) return;
     const store = usePtyStore.getState();
     if (!store.isCapturing) return;
 
-    store.appendOutput(e.payload.data);
+    store.updateScreen(e.payload.data);
 
-    // Check completion (VTE screen: has ⏺ response + bare ❯ prompt)
     if (usePtyStore.getState().checkCompletion()) {
       finalized = true;
       finalize();
@@ -542,7 +549,8 @@ async function sendViaPty(
   });
 
   const finalize = async () => {
-    ulOutput();
+    ulText();
+    ulScreen();
     const finalText = usePtyStore.getState().endCapture();
 
     // VTE screen snapshot — extract response from screen lines.
@@ -625,7 +633,8 @@ async function sendViaPty(
     await new Promise((r) => setTimeout(r, 500));
     usePtyStore.getState().startCapture(asstMsgId, engine as import("@/stores/ptyStore").PtyEngine);
   } catch (err) {
-    ulOutput();
+    ulText();
+    ulScreen();
     usePtyStore.getState().endCapture();
     set((state) => ({
       error: errorMessage(err),

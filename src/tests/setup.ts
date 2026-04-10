@@ -13,7 +13,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 // Mock ptyStore (PTY sessions never active in tests)
 vi.mock("@/stores/ptyStore", () => ({
-  usePtyStore: { getState: () => ({ sessions: new Map(), getSession: () => null, setSession: vi.fn(), clearSession: vi.fn(), clearAllSessions: vi.fn(), isCapturing: false, outputBuffer: "", activeMessageId: null, activeEngine: null, startCapture: vi.fn(), appendOutput: vi.fn(() => ""), checkCompletion: vi.fn(() => false), endCapture: vi.fn(() => "") }) },
+  usePtyStore: { getState: () => ({ sessions: new Map(), getSession: () => null, setSession: vi.fn(), clearSession: vi.fn(), clearAllSessions: vi.fn(), isCapturing: false, outputBuffer: "", activeMessageId: null, activeEngine: null, completionSeen: false, responseStarted: false, startCapture: vi.fn(), appendOutput: vi.fn(() => ""), updateScreen: vi.fn(), checkCompletion: vi.fn(() => false), endCapture: vi.fn(() => "") }) },
   isPtyEngine: () => false,
   PTY_ENGINES: ["claude", "codex", "gemini"],
   getPtyBinary: () => null,
