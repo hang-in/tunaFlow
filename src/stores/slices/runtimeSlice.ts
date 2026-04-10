@@ -518,65 +518,22 @@ async function sendViaPty(
     }
   };
 
-  // pty:text — accumulate ANSI-stripped text for response extraction
-  const ulText = await listenEvent<{ sessionId: number; data: string }>("pty:text", (e) => {
-    if (e.payload.sessionId !== sessionId || finalized) return;
-    const store = usePtyStore.getState();
-    if (!store.isCapturing) return;
-    store.appendOutput(e.payload.data);
-  });
-
-  // pty:screen — VTE screen snapshot for completion detection + status
-  const ulScreen = await listenEvent<{ sessionId: number; data: string }>("pty:screen", (e) => {
-    if (e.payload.sessionId !== sessionId || finalized) return;
-    const store = usePtyStore.getState();
-    if (!store.isCapturing) return;
-
-    store.updateScreen(e.payload.data);
-
-    if (usePtyStore.getState().checkCompletion()) {
-      finalized = true;
-      finalize();
-      return;
-    }
-
-    // Update status indicator
-    if (/⏺/.test(e.payload.data)) {
-      setStatus("responding...");
-    } else if (/[✻✢✳✶✽]/.test(e.payload.data)) {
-      setStatus("thinking...");
-    }
-  });
-
-  // Outbox file path — generated before pty_write, read in finalize
+  // Outbox file path — agent writes response here, tunaFlow polls for it
   const runId = `${Date.now()}`;
   const outboxPath = `.tunaflow/outbox/${runId}.md`;
+  const projectPath = usePtyStore.getState().sessions.values().next().value?.projectPath || "";
+  const fullOutboxPath = `${projectPath}/${outboxPath}`;
 
-  const finalize = async () => {
-    ulText();
+  // Status indicator via pty:screen (visual only, not for completion)
+  const ulScreen = await listenEvent<{ sessionId: number; data: string }>("pty:screen", (e) => {
+    if (e.payload.sessionId !== sessionId || finalized) return;
+    if (/⏺/.test(e.payload.data)) setStatus("responding...");
+    else if (/[✻✢✳✶✽]/.test(e.payload.data)) setStatus("thinking...");
+  });
+
+  const finalize = async (cleaned: string) => {
     ulScreen();
     usePtyStore.getState().endCapture();
-
-    // Read response from outbox file (sideband — bypasses TUI parsing entirely)
-    let cleaned = "";
-    try {
-      // Wait for file to be fully written
-      for (let i = 0; i < 10; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        try {
-          const { readTextFile } = await import("@tauri-apps/plugin-fs");
-          const projectPath = usePtyStore.getState().sessions.values().next().value?.projectPath || "";
-          const content = await readTextFile(`${projectPath}/${outboxPath}`);
-          if (content && content.trim().length > 0) {
-            cleaned = content.trim();
-            console.log("[pty-outbox] read", outboxPath, "—", cleaned.length, "chars");
-            break;
-          }
-        } catch { /* file not yet written */ }
-      }
-    } catch (err) {
-      console.warn("[pty-outbox] failed to read outbox:", err);
-    }
 
     // Save assistant message to DB
     try {
@@ -617,13 +574,36 @@ async function sendViaPty(
     await new Promise((r) => setTimeout(r, 150));
     // 3. Submit with Enter
     await invoke("pty_write", { sessionId, data: "\r" });
-    // 4. Start capture after echo period (skip prompt echo in output)
-    await new Promise((r) => setTimeout(r, 500));
-    usePtyStore.getState().startCapture(asstMsgId, engine as import("@/stores/ptyStore").PtyEngine);
+
+    // 4. Poll for outbox file (agent writes response here)
+    setStatus("waiting for response...");
+    const { readTextFile } = await import("@tauri-apps/plugin-fs");
+    for (let attempt = 0; attempt < 120; attempt++) { // Max 2 minutes
+      await new Promise((r) => setTimeout(r, 1000));
+      if (finalized) break;
+      try {
+        const content = await readTextFile(fullOutboxPath);
+        if (content && content.trim().length > 0) {
+          finalized = true;
+          await finalize(content.trim());
+          return;
+        }
+      } catch { /* file not yet created */ }
+    }
+
+    // Timeout — no file after 2 minutes
+    if (!finalized) {
+      finalized = true;
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === asstMsgId ? { ...m, content: "(응답 파일 생성 대기 시간 초과)", status: "error" as const } : m
+        ),
+      }));
+      ulScreen();
+      get()._endRun(conversationId);
+    }
   } catch (err) {
-    ulText();
     ulScreen();
-    usePtyStore.getState().endCapture();
     set((state) => ({
       error: errorMessage(err),
       messages: state.messages.map((m) =>
