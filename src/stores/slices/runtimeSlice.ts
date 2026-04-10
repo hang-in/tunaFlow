@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { errorMessage } from "@/lib/utils";
+import { usePtyStore } from "@/stores/ptyStore";
 import { getSetting } from "@/lib/appStore";
 import { useToolStepsStore } from "@/stores/toolStepsStore";
 import { serializeSteps } from "@/lib/toolSteps";
@@ -111,6 +112,13 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
   sendWithEngine: async (engine: string, prompt: string, model?: string, systemPrompt?: string) => {
     const { selectedProjectKey, selectedConversationId, runningThreadIds } = get();
     if (!selectedProjectKey || !selectedConversationId) return;
+
+    // PTY shortcut: if a Claude PTY session is active, route through it
+    const ptySession = usePtyStore.getState().sessionId;
+    if (engine === "claude" && ptySession !== null) {
+      await sendViaPty(set, get, prompt, ptySession, selectedConversationId);
+      return;
+    }
 
     const config = ENGINE_CONFIGS[engine] ?? ENGINE_CONFIGS.claude;
 
@@ -441,5 +449,115 @@ async function runRoundtable(
     await invoke<{ messageId: string }>(command, { input: { conversationId: selectedConversationId, prompt, participants, mode } });
   } catch (e) {
     cleanup(); set({ error: errorMessage(e) }); get()._endRun(selectedConversationId);
+  }
+}
+
+// ─── PTY interactive mode ────────────────────────────────────────────────────
+// Routes a chat message through the active Claude PTY session instead of -p mode.
+// Output is streamed via pty:output events, ANSI-stripped, and displayed as a chat message.
+
+async function sendViaPty(
+  set: SetState, get: GetState,
+  prompt: string, sessionId: number, conversationId: string,
+) {
+  const { listen: listenEvent } = await import("@tauri-apps/api/event");
+
+  if (get().runningThreadIds.includes(conversationId)) {
+    get()._enqueue(conversationId, prompt.slice(0, 30), () =>
+      get().sendWithEngine("claude", prompt),
+    );
+    return;
+  }
+
+  get()._startRun(conversationId);
+  const now = Date.now();
+  const msgId = `pty-${now}`;
+
+  // Add user message + streaming placeholder
+  set((state) => ({
+    error: null,
+    messages: [
+      ...state.messages,
+      { id: `temp-user-${now}`, conversationId, role: "user" as const, content: prompt, timestamp: now, status: "done" as const },
+      { id: msgId, conversationId, role: "assistant" as const, content: "", timestamp: now, status: "streaming" as const, engine: "claude-code" },
+    ],
+  }));
+
+  // Start capturing PTY output
+  const pty = usePtyStore.getState();
+  pty.startCapture(msgId);
+
+  const isStillActive = () => get().selectedConversationId === conversationId;
+
+  // Throttled content update (200ms)
+  let pendingContent: string | null = null;
+  let contentTimer: ReturnType<typeof setTimeout> | null = null;
+  const flushContent = () => {
+    contentTimer = null;
+    if (pendingContent !== null && isStillActive()) {
+      const text = pendingContent;
+      pendingContent = null;
+      set((state) => ({
+        messages: state.messages.map((m) => m.id === msgId ? { ...m, content: text } : m),
+      }));
+    }
+  };
+
+  // Listen for PTY output and accumulate ANSI-stripped text
+  let completionTimer: ReturnType<typeof setTimeout> | null = null;
+  const ulOutput = await listenEvent<{ sessionId: number; data: string }>("pty:output", (e) => {
+    if (e.payload.sessionId !== sessionId) return;
+    const store = usePtyStore.getState();
+    if (!store.isCapturing) return;
+
+    store.appendOutput(e.payload.data);
+    pendingContent = store.outputBuffer;
+    if (!contentTimer) contentTimer = setTimeout(flushContent, 200);
+
+    // Debounced completion detection — check 1s after last output
+    if (completionTimer) clearTimeout(completionTimer);
+    completionTimer = setTimeout(() => {
+      if (usePtyStore.getState().checkCompletion()) {
+        finalize();
+      }
+    }, 1000);
+  });
+
+  const finalize = () => {
+    if (completionTimer) { clearTimeout(completionTimer); completionTimer = null; }
+    if (contentTimer) { clearTimeout(contentTimer); contentTimer = null; }
+    ulOutput();
+
+    const finalText = usePtyStore.getState().endCapture();
+    if (isStillActive()) {
+      // Clean up the output — remove initial echo and trailing prompt
+      const cleaned = finalText
+        .replace(/^\s*\n/, "")              // leading blank line
+        .replace(/\n❯\s*$/, "")            // trailing prompt
+        .replace(/Worked for \d+(\.\d+)?s?\s*$/, "")  // "Worked for Xs"
+        .trim();
+
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === msgId ? { ...m, content: cleaned, status: "done" as const } : m
+        ),
+      }));
+    }
+    get()._endRun(conversationId);
+  };
+
+  // Send prompt to PTY stdin
+  try {
+    await invoke("pty_write", { sessionId, data: prompt + "\n" });
+  } catch (err) {
+    ulOutput();
+    usePtyStore.getState().endCapture();
+    set((state) => ({
+      error: errorMessage(err),
+      messages: state.messages.map((m) =>
+        m.id === msgId ? { ...m, content: errorMessage(err), status: "error" as const } : m
+      ),
+    }));
+    get()._endRun(conversationId);
   }
 }

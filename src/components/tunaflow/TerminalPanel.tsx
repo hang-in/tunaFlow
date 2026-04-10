@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "@/stores/chatStore";
+import { usePtyStore } from "@/stores/ptyStore";
 import { RotateCcw } from "lucide-react";
 
 // Lazy-loaded types (xterm.js is DOM-dependent)
@@ -46,6 +47,7 @@ export function TerminalPanel() {
           term.write(`\r\n\x1b[90m[Process exited]\x1b[0m\r\n`);
           sessionIdRef.current = null;
           setStatus("exited");
+          usePtyStore.getState().clearSession();
         }
       });
 
@@ -60,6 +62,7 @@ export function TerminalPanel() {
 
       sessionIdRef.current = sessionId;
       setStatus("running");
+      usePtyStore.getState().setSession(sessionId, projectPath);
 
       // Store cleanup
       const prevCleanup = cleanupRef.current;
@@ -81,9 +84,11 @@ export function TerminalPanel() {
     let disposed = false;
 
     (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
+        import("@xterm/addon-unicode11"),
+        import("@xterm/addon-web-links"),
       ]);
       // @ts-ignore — CSS import has no type declaration
       try { await import("@xterm/xterm/css/xterm.css"); } catch { /* ok */ }
@@ -106,6 +111,9 @@ export function TerminalPanel() {
 
       const fit = new FitAddon();
       term.loadAddon(fit);
+      term.loadAddon(new Unicode11Addon());
+      term.unicode.activeVersion = "11";
+      term.loadAddon(new WebLinksAddon());
       term.open(containerRef.current);
       fit.fit();
 
