@@ -134,17 +134,31 @@ pub fn pty_spawn(
                         },
                     );
 
-                    // ANSI-stripped text → Chat message streaming
+                    // ANSI-stripped + TUI-chrome-filtered text → Chat message streaming
                     let stripped_bytes = strip_ansi_escapes::strip(raw);
                     let stripped = String::from_utf8_lossy(&stripped_bytes)
-                        .replace('\r', "")
-                        .to_string();
-                    if !stripped.trim().is_empty() {
+                        .replace('\r', "");
+                    // Filter out TUI chrome: box-drawing, UI hints, progress spinners
+                    let filtered: String = stripped.lines()
+                        .filter(|line| {
+                            let t = line.trim();
+                            if t.is_empty() { return true; }
+                            // Box-drawing borders
+                            if t.chars().all(|c| "━╭╮╰╯│─┌┐└┘├┤┬┴┼╶╴╷╵─ ".contains(c)) { return false; }
+                            // UI hint lines (ctrl+X to Y)
+                            if t.contains("ctrl+") && t.contains("to") { return false; }
+                            // Progress spinners / cursor movement artifacts
+                            if t.len() <= 2 && !t.chars().next().unwrap_or(' ').is_alphanumeric() { return false; }
+                            true
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !filtered.trim().is_empty() {
                         let _ = app.emit(
                             "pty:text",
                             PtyOutputPayload {
                                 session_id: sid,
-                                data: stripped,
+                                data: filtered,
                             },
                         );
                     }

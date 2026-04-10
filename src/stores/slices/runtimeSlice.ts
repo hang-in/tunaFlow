@@ -538,14 +538,15 @@ async function sendViaPty(
       return;
     }
 
-    // Fallback: idle detection — if no output for 2s after content, check again
+    // Fallback: idle detection — if no output for 15s after substantial content
     if (completionTimer) clearTimeout(completionTimer);
     completionTimer = setTimeout(() => {
-      if (!finalized && usePtyStore.getState().outputBuffer.length > 50) {
+      if (!finalized && usePtyStore.getState().outputBuffer.length > 100) {
+        console.log("[pty] idle timeout — finalizing");
         finalized = true;
         finalize();
       }
-    }, 3000);
+    }, 15000);
   });
 
   const finalize = async () => {
