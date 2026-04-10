@@ -544,6 +544,8 @@ async function sendViaPty(
     // VTE screen snapshot — extract response from screen lines.
     // Screen layout: header lines → prompt → response → status/prompt
     // Extract: lines between ⏺ (response start) and TUNAFLOW_DONE or last ❯ (next prompt)
+    console.log("[pty-finalize] finalText length:", finalText.length);
+    console.log("[pty-finalize] finalText:", JSON.stringify(finalText.slice(0, 500)));
     const lines = finalText.split("\n");
     let responseLines: string[] = [];
     let capturing = false;
