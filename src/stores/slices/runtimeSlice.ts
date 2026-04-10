@@ -585,8 +585,10 @@ async function sendViaPty(
   };
 
   // Send prompt to PTY stdin (append completion marker instruction)
-  // PTY Enter = \r (carriage return), not \n
-  const ptyPrompt = prompt + "\r";
+  // Bracket paste mode: \x1b[200~ ... \x1b[201~ wraps the text as a "paste"
+  // so the TUI receives it as a single block, not character-by-character typing.
+  // Then \r submits (Enter).
+  const ptyPrompt = `\x1b[200~${prompt}\x1b[201~\r`;
   try {
     await invoke("pty_write", { sessionId, data: ptyPrompt });
   } catch (err) {
