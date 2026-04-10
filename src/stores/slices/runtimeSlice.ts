@@ -497,10 +497,8 @@ async function sendViaPty(
     ],
   }));
 
-  // Start capturing PTY output
-  usePtyStore.getState().startCapture(asstMsgId, (engine as import("@/stores/ptyStore").PtyEngine));
-
   const isStillActive = () => get().selectedConversationId === conversationId;
+  // Capture starts after prompt is sent (below) — not here, to skip echo
 
   // Throttled content update (200ms)
   let pendingContent: string | null = null;
@@ -547,13 +545,27 @@ async function sendViaPty(
 
     const finalText = usePtyStore.getState().endCapture();
 
-    // Clean up output — remove echo, markers, trailing prompt
+    // Clean up output — remove echo, TUI chrome, markers, trailing prompt
+    const promptEscaped = prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const cleaned = finalText
+      // Remove completion markers
+      .replace(/TUNAFLOW_DONE/g, "")
       .replace(/<!--\s*tunaflow:response-complete\s*-->/g, "")
-      .replace(/^\s*\n/, "")
-      .replace(/\n❯\s*$/, "")
-      .replace(/Worked for \d+(\.\d+)?s?.*$/m, "")
-      .replace(/\n\s*\n\s*\n/g, "\n\n")
+      // Remove prompt echo lines
+      .replace(new RegExp(`Pasting text[^\\n]*`, "g"), "")
+      .replace(new RegExp(`❯\\s*${promptEscaped}[^\\n]*`, "g"), "")
+      .replace(new RegExp(promptEscaped, "g"), "")
+      // Remove TUI status icons and labels
+      .replace(/[✻✢✳✶⏺]\s*(Thinking|Befuddling|Cogit|Perus|Claud|Musing)[^\n]*/g, "")
+      // Remove trailing prompt
+      .replace(/\n❯\s*$/g, "")
+      .replace(/❯\s*$/g, "")
+      // Remove completion line
+      .replace(/Worked for \d+(\.\d+)?s?[^\n]*/g, "")
+      // Remove separator lines
+      .replace(/^[─━]+$/gm, "")
+      // Collapse whitespace
+      .replace(/\n{3,}/g, "\n\n")
       .trim();
 
     // Save assistant message to DB
@@ -588,12 +600,16 @@ async function sendViaPty(
   // Send prompt via bracket paste, then Enter separately after a short delay.
   // Claude Code TUI needs paste to complete before receiving Enter.
   try {
-    // 1. Paste the prompt text
-    await invoke("pty_write", { sessionId, data: `\x1b[200~${prompt}\x1b[201~` });
+    // 1. Paste the prompt text (append completion marker instruction)
+    const fullPrompt = `${prompt}\n\n[응답 마지막에 반드시 "TUNAFLOW_DONE" 이라고 써줘]`;
+    await invoke("pty_write", { sessionId, data: `\x1b[200~${fullPrompt}\x1b[201~` });
     // 2. Wait for TUI to process paste
     await new Promise((r) => setTimeout(r, 150));
     // 3. Submit with Enter
     await invoke("pty_write", { sessionId, data: "\r" });
+    // 4. Start capture after echo period (skip prompt echo in output)
+    await new Promise((r) => setTimeout(r, 500));
+    usePtyStore.getState().startCapture(asstMsgId, engine as import("@/stores/ptyStore").PtyEngine);
   } catch (err) {
     ulOutput();
     usePtyStore.getState().endCapture();

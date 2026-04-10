@@ -53,11 +53,13 @@ function stripAnsi(text: string): string {
 
 /** Detect response completion */
 function detectCompletion(text: string): boolean {
+  // Primary: explicit done marker (injected in PTY prompt suffix)
+  if (text.includes("TUNAFLOW_DONE")) return true;
+  // Secondary: tunaflow HTML marker
   if (text.includes("<!-- tunaflow:response-complete -->")) return true;
+  // Fallback: Claude Code specific
   const tail = text.slice(-300);
   if (/Worked for \d+/i.test(tail)) return true;
-  if (/[❯>]\s*$/.test(tail)) return true;
-  if (/\$\d+\.\d{2}\s*$/.test(tail)) return true;
   return false;
 }
 
