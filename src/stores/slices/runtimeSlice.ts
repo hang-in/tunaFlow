@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { errorMessage } from "@/lib/utils";
-import { usePtyStore } from "@/stores/ptyStore";
+import { usePtyStore, isPtyEngine } from "@/stores/ptyStore";
 import { getSetting } from "@/lib/appStore";
 import { useToolStepsStore } from "@/stores/toolStepsStore";
 import { serializeSteps } from "@/lib/toolSteps";
@@ -113,11 +113,13 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const { selectedProjectKey, selectedConversationId, runningThreadIds } = get();
     if (!selectedProjectKey || !selectedConversationId) return;
 
-    // PTY shortcut: if a Claude PTY session is active, route through it
-    const ptySession = usePtyStore.getState().sessionId;
-    if (engine === "claude" && ptySession !== null) {
-      await sendViaPty(set, get, prompt, ptySession, selectedConversationId);
-      return;
+    // PTY shortcut: if a PTY session is active for this engine, route through it
+    if (isPtyEngine(engine)) {
+      const ptySession = usePtyStore.getState().getSession(engine);
+      if (ptySession !== null) {
+        await sendViaPty(set, get, prompt, ptySession, selectedConversationId, engine);
+        return;
+      }
     }
 
     const config = ENGINE_CONFIGS[engine] ?? ENGINE_CONFIGS.claude;
@@ -458,13 +460,13 @@ async function runRoundtable(
 
 async function sendViaPty(
   set: SetState, get: GetState,
-  prompt: string, sessionId: number, conversationId: string,
+  prompt: string, sessionId: number, conversationId: string, engine: string = "claude",
 ) {
   const { listen: listenEvent } = await import("@tauri-apps/api/event");
 
   if (get().runningThreadIds.includes(conversationId)) {
     get()._enqueue(conversationId, prompt.slice(0, 30), () =>
-      get().sendWithEngine("claude", prompt),
+      get().sendWithEngine(engine, prompt),
     );
     return;
   }
@@ -491,12 +493,12 @@ async function sendViaPty(
     messages: [
       ...state.messages,
       { id: userMsgId, conversationId, role: "user" as const, content: prompt, timestamp: now, status: "done" as const },
-      { id: asstMsgId, conversationId, role: "assistant" as const, content: "", timestamp: now, status: "streaming" as const, engine: "claude-code" },
+      { id: asstMsgId, conversationId, role: "assistant" as const, content: "", timestamp: now, status: "streaming" as const, engine: (ENGINE_CONFIGS[engine] ?? ENGINE_CONFIGS.claude).engineKey },
     ],
   }));
 
   // Start capturing PTY output
-  usePtyStore.getState().startCapture(asstMsgId);
+  usePtyStore.getState().startCapture(asstMsgId, (engine as import("@/stores/ptyStore").PtyEngine));
 
   const isStillActive = () => get().selectedConversationId === conversationId;
 
@@ -553,7 +555,7 @@ async function sendViaPty(
     // Save assistant message to DB
     try {
       const savedMsg = await invoke<Message>("append_assistant_message", {
-        input: { conversationId, content: cleaned, engine: "claude-code", model: null, status: "done" },
+        input: { conversationId, content: cleaned, engine: (ENGINE_CONFIGS[engine] ?? ENGINE_CONFIGS.claude).engineKey, model: null, status: "done" },
       });
       // Replace temp ID with real DB ID
       if (isStillActive()) {

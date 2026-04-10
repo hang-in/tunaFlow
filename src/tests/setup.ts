@@ -11,9 +11,12 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: vi.fn(() => Promise.resolve()),
 }));
 
-// Mock ptyStore (PTY session never active in tests)
+// Mock ptyStore (PTY sessions never active in tests)
 vi.mock("@/stores/ptyStore", () => ({
-  usePtyStore: { getState: () => ({ sessionId: null, projectPath: null, isCapturing: false, outputBuffer: "", startCapture: vi.fn(), appendOutput: vi.fn(() => ""), checkCompletion: vi.fn(() => false), endCapture: vi.fn(() => ""), setSession: vi.fn(), clearSession: vi.fn() }) },
+  usePtyStore: { getState: () => ({ sessions: new Map(), getSession: () => null, setSession: vi.fn(), clearSession: vi.fn(), clearAllSessions: vi.fn(), isCapturing: false, outputBuffer: "", activeMessageId: null, activeEngine: null, startCapture: vi.fn(), appendOutput: vi.fn(() => ""), checkCompletion: vi.fn(() => false), endCapture: vi.fn(() => "") }) },
+  isPtyEngine: () => false,
+  PTY_ENGINES: ["claude", "codex", "gemini"],
+  getPtyBinary: () => null,
 }));
 
 // Mock xterm.js (DOM-dependent, not available in jsdom)

@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "@/stores/chatStore";
-import { usePtyStore } from "@/stores/ptyStore";
+import { usePtyStore, PTY_ENGINES, getPtyBinary, type PtyEngine } from "@/stores/ptyStore";
 import { RotateCcw } from "lucide-react";
 
 // Lazy-loaded types (xterm.js is DOM-dependent)
@@ -22,49 +22,79 @@ export function TerminalPanel() {
   const project = projects.find((p) => p.key === selectedProjectKey);
   const projectPath = project?.path;
 
+  // Track all spawned session IDs for this terminal instance
+  const sessionIdsRef = useRef<Map<PtyEngine, number>>(new Map());
+
   const startPty = useCallback(async (term: XTerminal) => {
-    // Kill existing session
-    if (sessionIdRef.current !== null) {
-      try { await invoke("pty_kill", { sessionId: sessionIdRef.current }); } catch { /* ignore */ }
-      sessionIdRef.current = null;
+    // Kill existing sessions
+    for (const [engine, sid] of sessionIdsRef.current) {
+      try { await invoke("pty_kill", { sessionId: sid }); } catch { /* ignore */ }
+      usePtyStore.getState().clearSession(engine);
     }
+    sessionIdsRef.current.clear();
+    sessionIdRef.current = null;
 
     if (!projectPath) return;
 
     setStatus("starting");
-    term.write(`\x1b[90m[Starting claude in ${projectPath}...]\x1b[0m\r\n`);
 
     try {
-      // Listen for PTY output events
+      // Listen for PTY output events (shared across all engines)
+      const allSessionIds = new Set<number>();
       const unlisten = await listen<{ sessionId: number; data: string }>("pty:output", (e) => {
+        // Only show Claude's output in terminal (primary debug view)
         if (e.payload.sessionId === sessionIdRef.current) {
           term.write(e.payload.data);
         }
       });
 
       const unlistenExit = await listen<{ sessionId: number; exitCode: number | null }>("pty:exit", (e) => {
-        if (e.payload.sessionId === sessionIdRef.current) {
-          term.write(`\r\n\x1b[90m[Process exited]\x1b[0m\r\n`);
-          sessionIdRef.current = null;
-          setStatus("exited");
-          usePtyStore.getState().clearSession();
+        if (!allSessionIds.has(e.payload.sessionId)) return;
+        // Find which engine this session belongs to
+        for (const [engine, sid] of sessionIdsRef.current) {
+          if (sid === e.payload.sessionId) {
+            term.write(`\r\n\x1b[90m[${engine} exited]\x1b[0m\r\n`);
+            sessionIdsRef.current.delete(engine);
+            usePtyStore.getState().clearSession(engine);
+            if (engine === "claude") {
+              sessionIdRef.current = null;
+              setStatus("exited");
+            }
+            break;
+          }
         }
       });
 
-      // Spawn PTY via Rust command
-      const sessionId = await invoke<number>("pty_spawn", {
-        file: "claude",
-        args: [] as string[],
-        cwd: projectPath,
-        cols: term.cols,
-        rows: term.rows,
-      });
+      // Spawn PTY for each supported engine
+      for (const engine of PTY_ENGINES) {
+        const binary = getPtyBinary(engine);
+        if (!binary) continue;
 
-      sessionIdRef.current = sessionId;
+        try {
+          const sessionId = await invoke<number>("pty_spawn", {
+            file: binary,
+            args: [] as string[],
+            cwd: projectPath,
+            cols: term.cols,
+            rows: term.rows,
+          });
+
+          sessionIdsRef.current.set(engine, sessionId);
+          allSessionIds.add(sessionId);
+          usePtyStore.getState().setSession(engine, sessionId, projectPath);
+          term.write(`\x1b[90m[${engine} started (session ${sessionId})]\x1b[0m\r\n`);
+
+          // Claude is the primary terminal view
+          if (engine === "claude") {
+            sessionIdRef.current = sessionId;
+          }
+        } catch (err) {
+          term.write(`\x1b[33m[${engine} unavailable: ${String(err).slice(0, 80)}]\x1b[0m\r\n`);
+        }
+      }
+
       setStatus("running");
-      usePtyStore.getState().setSession(sessionId, projectPath);
 
-      // Store cleanup
       const prevCleanup = cleanupRef.current;
       cleanupRef.current = () => {
         unlisten();
@@ -149,10 +179,13 @@ export function TerminalPanel() {
     return () => {
       disposed = true;
       cleanupRef.current?.();
-      if (sessionIdRef.current !== null) {
-        invoke("pty_kill", { sessionId: sessionIdRef.current }).catch(() => {});
-        sessionIdRef.current = null;
+      // Kill all PTY sessions
+      for (const [engine, sid] of sessionIdsRef.current) {
+        invoke("pty_kill", { sessionId: sid }).catch(() => {});
+        usePtyStore.getState().clearSession(engine);
       }
+      sessionIdsRef.current.clear();
+      sessionIdRef.current = null;
       termRef.current?.dispose();
       termRef.current = null;
       fitRef.current = null;

@@ -1,73 +1,106 @@
 import { create } from "zustand";
 
+/** CLI engines that support PTY interactive mode */
+export const PTY_ENGINES = ["claude", "codex", "gemini"] as const;
+export type PtyEngine = typeof PTY_ENGINES[number];
+
+/** Map engine key to CLI binary name */
+const ENGINE_BINARY: Record<PtyEngine, string> = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+};
+
+export function getPtyBinary(engine: string): string | null {
+  return ENGINE_BINARY[engine as PtyEngine] ?? null;
+}
+
+export function isPtyEngine(engine: string): engine is PtyEngine {
+  return PTY_ENGINES.includes(engine as PtyEngine);
+}
+
 /** Strip ANSI escape sequences and terminal control codes from output */
 function stripAnsi(text: string): string {
   return text
-    // CSI sequences: \x1b[...X (colors, cursor, erase, scroll, etc.)
     // eslint-disable-next-line no-control-regex
     .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
-    // DEC private modes: \x1b[?...h/l
     .replace(/\x1b\[\?[0-9;]*[hl]/g, "")
-    // OSC sequences: \x1b]...BEL
     .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-    // Character set designation: \x1b(X, \x1b)X
     .replace(/\x1b[()][A-Z0-9]/g, "")
-    // Application mode: \x1b=, \x1b>
     .replace(/\x1b[=>]/g, "")
-    // DEC save/restore cursor: \x1b7, \x1b8
     .replace(/\x1b[78]/g, "")
-    // Single-char C1 controls
     // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "")
-    // Carriage return (keep \n)
     .replace(/\r/g, "");
 }
 
 /** Detect response completion */
 function detectCompletion(text: string): boolean {
-  // Primary: tunaflow marker (most reliable — injected via PLATFORM_TIER0)
   if (text.includes("<!-- tunaflow:response-complete -->")) return true;
-  // Fallback: check last ~300 chars for CLI-specific signals
   const tail = text.slice(-300);
-  // "Worked for Xs" — Claude Code completion
   if (/Worked for \d+/i.test(tail)) return true;
-  // Prompt ready: ❯ or > at end of output
   if (/[❯>]\s*$/.test(tail)) return true;
-  // Cost line: "$X.XX" at end
   if (/\$\d+\.\d{2}\s*$/.test(tail)) return true;
   return false;
 }
 
-interface PtyStoreState {
-  sessionId: number | null;
-  projectPath: string | null;
+interface PtySession {
+  sessionId: number;
+  engine: PtyEngine;
+  projectPath: string;
+}
 
-  // Active message tracking (when sendViaPty is in progress)
+interface PtyStoreState {
+  /** Active PTY sessions by engine */
+  sessions: Map<PtyEngine, PtySession>;
+
+  /** Active message capture state */
   activeMessageId: string | null;
+  activeEngine: PtyEngine | null;
   outputBuffer: string;
   isCapturing: boolean;
 
-  setSession: (id: number, path: string) => void;
-  clearSession: () => void;
+  /** Get session ID for an engine */
+  getSession: (engine: string) => number | null;
+  setSession: (engine: PtyEngine, sessionId: number, projectPath: string) => void;
+  clearSession: (engine: PtyEngine) => void;
+  clearAllSessions: () => void;
 
-  startCapture: (messageId: string) => void;
-  appendOutput: (rawText: string) => string; // returns ANSI-stripped text
+  startCapture: (messageId: string, engine: PtyEngine) => void;
+  appendOutput: (rawText: string) => string;
   checkCompletion: () => boolean;
-  endCapture: () => string; // returns accumulated text
+  endCapture: () => string;
 }
 
 export const usePtyStore = create<PtyStoreState>((set, get) => ({
-  sessionId: null,
-  projectPath: null,
+  sessions: new Map(),
   activeMessageId: null,
+  activeEngine: null,
   outputBuffer: "",
   isCapturing: false,
 
-  setSession: (id, path) => set({ sessionId: id, projectPath: path }),
-  clearSession: () => set({ sessionId: null, projectPath: null }),
+  getSession: (engine) => {
+    const session = get().sessions.get(engine as PtyEngine);
+    return session?.sessionId ?? null;
+  },
 
-  startCapture: (messageId) => set({
+  setSession: (engine, sessionId, projectPath) => set((s) => {
+    const next = new Map(s.sessions);
+    next.set(engine, { sessionId, engine, projectPath });
+    return { sessions: next };
+  }),
+
+  clearSession: (engine) => set((s) => {
+    const next = new Map(s.sessions);
+    next.delete(engine);
+    return { sessions: next };
+  }),
+
+  clearAllSessions: () => set({ sessions: new Map() }),
+
+  startCapture: (messageId, engine) => set({
     activeMessageId: messageId,
+    activeEngine: engine,
     outputBuffer: "",
     isCapturing: true,
   }),
@@ -78,14 +111,11 @@ export const usePtyStore = create<PtyStoreState>((set, get) => ({
     return stripped;
   },
 
-  checkCompletion: () => {
-    const { outputBuffer } = get();
-    return detectCompletion(outputBuffer);
-  },
+  checkCompletion: () => detectCompletion(get().outputBuffer),
 
   endCapture: () => {
     const { outputBuffer } = get();
-    set({ activeMessageId: null, outputBuffer: "", isCapturing: false });
+    set({ activeMessageId: null, activeEngine: null, outputBuffer: "", isCapturing: false });
     return outputBuffer;
   },
 }));
