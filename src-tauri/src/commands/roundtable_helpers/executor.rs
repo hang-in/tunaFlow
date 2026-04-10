@@ -5,7 +5,6 @@ use crate::agents::{claude, codex, gemini, openai_compat, opencode};
 use crate::db::{models::Message, DbState};
 use crate::errors::AppError;
 use crate::CancelRegistry;
-use crate::commands::agents_helpers::send_common::build_normalized_prompt_with_budget;
 
 use super::prompt::{build_round_prompt_with_identity, PromptSources};
 use super::persist::{persist_streaming_start, persist_streaming_done};
@@ -14,69 +13,137 @@ use super::persist::{persist_streaming_start, persist_streaming_done};
 const LOCAL_MODE: &str = "lite";
 const LOCAL_BUDGET_CAP: usize = 15_000;
 
-/// Cached ContextPack results — built once per round, reused across participants.
-/// Two variants: auto mode (commercial engines) and lite mode (local engines).
+/// Lightweight RT context — Tier 0+1 only.
+/// Instead of running the full ContextPack pipeline (identity, skills, rawq,
+/// memory, cross-session, retrieval — ~15k chars), we load only what RT
+/// participants actually need: project path + active plan.
+/// This reduces per-participant context from ~5-7k tokens to ~1-2k tokens.
 struct RtContextCache {
-    auto_context: Option<String>,
-    lite_context: Option<String>,
+    context: Option<String>,
 }
 
 impl RtContextCache {
-    /// Build both variants once from DB. Subsequent lookups are free.
+    /// Build minimal Tier 0+1 context once per round.
     fn build(
         state: &DbState,
         conversation_id: &str,
-        topic: &str,
+        _topic: &str,
         project_path: Option<&str>,
-        has_local: bool,
+        _has_local: bool,
     ) -> Self {
         let conn = match state.read.lock() {
             Ok(c) => c,
-            Err(_) => return Self { auto_context: None, lite_context: None },
+            Err(_) => return Self { context: None },
         };
 
-        let auto_context = Self::extract_context(
-            &conn, conversation_id, topic, project_path, None, None,
-        );
+        let mut sections: Vec<String> = Vec::new();
 
-        let lite_context = if has_local {
-            Self::extract_context(
-                &conn, conversation_id, topic, project_path,
-                Some(LOCAL_MODE), Some(LOCAL_BUDGET_CAP),
-            )
+        // Tier 0: Project path
+        if let Some(p) = project_path {
+            sections.push(format!("Project: {}", p));
+        }
+
+        // Tier 1: Active plan (if exists) — the "source of truth" for current work
+        let plan_conv_id = Self::resolve_plan_conv_id(&conn, conversation_id);
+        if let Some(plan) = Self::load_plan_summary(&conn, &plan_conv_id) {
+            sections.push(plan);
+        }
+
+        // Tier 1: Review findings (if phase=review)
+        if let Some(findings) = Self::load_review_findings(&conn, &plan_conv_id) {
+            sections.push(findings);
+        }
+
+        if sections.is_empty() {
+            Self { context: None }
         } else {
-            None
-        };
-
-        Self { auto_context, lite_context }
+            Self { context: Some(format!("## Project Context\n\n{}", sections.join("\n\n"))) }
+        }
     }
 
-    fn extract_context(
-        conn: &rusqlite::Connection,
-        conversation_id: &str,
-        topic: &str,
-        project_path: Option<&str>,
-        mode: Option<&str>,
-        cap: Option<usize>,
-    ) -> Option<String> {
-        let (enriched, _, _) = build_normalized_prompt_with_budget(
-            conn, conversation_id, topic, project_path,
-            &[], &[], None, mode, cap,
-        );
-        if let Some(pos) = enriched.rfind("\n\n---\n\n") {
-            let context = enriched[..pos].trim();
-            if !context.is_empty() {
-                return Some(format!("## Project Context\n\n{}", context));
+    /// Resolve plan conversation ID (handles branch shadow conversations).
+    fn resolve_plan_conv_id(conn: &rusqlite::Connection, conversation_id: &str) -> String {
+        if conversation_id.starts_with("branch:") {
+            // Find parent conversation for branch
+            conn.query_row(
+                "SELECT parent_id FROM conversations WHERE id = ?1",
+                [conversation_id], |row| row.get::<_, Option<String>>(0),
+            ).ok().flatten().unwrap_or_else(|| conversation_id.to_string())
+        } else {
+            conversation_id.to_string()
+        }
+    }
+
+    /// Load compact plan summary (title + phase + subtask status).
+    fn load_plan_summary(conn: &rusqlite::Connection, conversation_id: &str) -> Option<String> {
+        let (title, phase): (String, String) = conn.query_row(
+            "SELECT title, phase FROM plans
+             WHERE conversation_id = ?1 AND status = 'active'
+             ORDER BY updated_at DESC LIMIT 1",
+            [conversation_id], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).ok()?;
+
+        let plan_id: String = conn.query_row(
+            "SELECT id FROM plans WHERE conversation_id = ?1 AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+            [conversation_id], |row| row.get(0),
+        ).ok()?;
+
+        let mut out = format!("### Active Plan (phase: {})\n{}", phase, title);
+
+        // Compact subtask list
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT title, status FROM plan_subtasks WHERE plan_id = ?1 ORDER BY idx"
+        ) {
+            let subtasks: Vec<(String, String)> = stmt.query_map([&plan_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            }).ok()?.filter_map(|r| r.ok()).collect();
+
+            if !subtasks.is_empty() {
+                out.push('\n');
+                for (st_title, st_status) in &subtasks {
+                    let icon = match st_status.as_str() { "done" => "✅", "in_progress" => "🔧", _ => "⬜" };
+                    out.push_str(&format!("{} {}\n", icon, st_title));
+                }
             }
         }
-        None
+
+        Some(out)
     }
 
-    /// Get cached context for a given engine.
-    fn get(&self, engine_key: &str) -> Option<&str> {
-        let is_local = matches!(engine_key, "ollama" | "opencode");
-        let ctx = if is_local { &self.lite_context } else { &self.auto_context };
-        ctx.as_deref()
+    /// Load review findings (only if plan is in review phase).
+    fn load_review_findings(conn: &rusqlite::Connection, conversation_id: &str) -> Option<String> {
+        let phase: String = conn.query_row(
+            "SELECT phase FROM plans WHERE conversation_id = ?1 AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+            [conversation_id], |row| row.get(0),
+        ).ok()?;
+
+        if phase != "review" && phase != "review_conditional" {
+            return None;
+        }
+
+        // Load latest review findings from failure_lessons
+        let mut stmt = conn.prepare(
+            "SELECT finding FROM failure_lessons
+             WHERE project_key = (SELECT project_key FROM conversations WHERE id = ?1)
+             AND resolution IS NULL
+             ORDER BY created_at DESC LIMIT 5"
+        ).ok()?;
+
+        let findings: Vec<String> = stmt.query_map([conversation_id], |row| row.get(0))
+            .ok()?.filter_map(|r| r.ok()).collect();
+
+        if findings.is_empty() { return None; }
+
+        let mut out = String::from("### Open Review Findings\n");
+        for f in &findings {
+            out.push_str(&format!("- {}\n", f));
+        }
+        Some(out)
+    }
+
+    /// Get cached context (same for all engines — minimal is always small enough).
+    fn get(&self, _engine_key: &str) -> Option<&str> {
+        self.context.as_deref()
     }
 }
 
@@ -750,24 +817,25 @@ mod tests {
 
     // ─── RtContextCache::get routing ─────────────────────────────────────
 
+    // ─── RtContextCache (Tier 0+1 minimal) ─────────────────────────────
+
     #[test]
-    fn context_cache_routing_local_vs_commercial() {
+    fn context_cache_returns_same_for_all_engines() {
         let cache = RtContextCache {
-            auto_context: Some("auto ctx".into()),
-            lite_context: Some("lite ctx".into()),
+            context: Some("plan ctx".into()),
         };
-        assert_eq!(cache.get("claude"), Some("auto ctx"));
-        assert_eq!(cache.get("gemini"), Some("auto ctx"));
-        assert_eq!(cache.get("codex"), Some("auto ctx"));
-        assert_eq!(cache.get("ollama"), Some("lite ctx"));
-        assert_eq!(cache.get("opencode"), Some("lite ctx"));
+        // Tier 0+1 minimal: same context for all engines (no auto/lite split)
+        assert_eq!(cache.get("claude"), Some("plan ctx"));
+        assert_eq!(cache.get("gemini"), Some("plan ctx"));
+        assert_eq!(cache.get("codex"), Some("plan ctx"));
+        assert_eq!(cache.get("ollama"), Some("plan ctx"));
+        assert_eq!(cache.get("opencode"), Some("plan ctx"));
     }
 
     #[test]
     fn context_cache_none_for_missing() {
         let cache = RtContextCache {
-            auto_context: None,
-            lite_context: None,
+            context: None,
         };
         assert_eq!(cache.get("claude"), None);
         assert_eq!(cache.get("ollama"), None);

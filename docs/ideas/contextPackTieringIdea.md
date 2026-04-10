@@ -437,7 +437,7 @@ messages:
 
 | 순서 | 항목 | 효과 | 난이도 |
 |------|------|------|--------|
-| 1 | **RT minimal ContextPack** (Tier 0+1만) | RT 70% 절감, 즉시 체감 | 낮 |
+| 1 | ~~**RT minimal ContextPack** (Tier 0+1만)~~ | ✅ 완료 (세션 16, `feature/context-tiering`) | — |
 | 2 | **Chunk 품질: 슬라이딩 윈도우 + 화자 prefix** | 검색 recall +10-15% | 낮 |
 | 3 | **Chunk 품질: Parent retriever 연결** | 원본 반환으로 정보 손실 제거 | 낮 (인프라 있음) |
 | 4 | **sqlite-vec 도입** | 검색 O(n)→O(log n), 전수 로드 제거 | 중 |

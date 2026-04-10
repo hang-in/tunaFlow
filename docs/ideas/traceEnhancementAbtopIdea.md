@@ -230,7 +230,9 @@ pub struct OrphanProcess {
 - TracePanel에 경고 섹션 (~40줄)
 - DB 변경 없음
 
-### 3.2 [P1] Git 상태 표시
+### 3.2 [P1] Git 상태 표시 + dirty 감지
+
+> 추가 레퍼런스: `_research/_util/claude-status-bar/` — `git diff --quiet HEAD`로 dirty 감지
 
 **현재**: 프로젝트 경로는 알지만 git 상태를 표시 안 함.
 
@@ -240,9 +242,11 @@ pub struct OrphanProcess {
 #[tauri::command]
 pub fn get_git_status(project_path: String) -> Result<GitStatus, AppError> {
     // git -C {project_path} branch --show-current
+    // git -C {project_path} diff --quiet HEAD → dirty 여부
     // git -C {project_path} status --porcelain | wc -l
     Ok(GitStatus {
         branch: "main".into(),
+        dirty: true,             // 미커밋 변경 있음
         added: 3,
         modified: 7,
         untracked: 2,
@@ -250,17 +254,42 @@ pub fn get_git_status(project_path: String) -> Result<GitStatus, AppError> {
 }
 ```
 
-**표시**: RuntimeStatusBar 또는 TracePanel에 branch + 변경 파일 수.
+**표시**: RuntimeStatusBar 또는 커스텀 타이틀바에 branch + dirty + 변경 파일 수.
 
 ```
-git: main (+3 ~7)
+🌿 main* (+3 ~7)     ← *는 dirty 표시
+🌿 main (+0 ~0)      ← clean 상태
 ```
 
 **가치**: Developer 에이전트 실행 전후의 변경량 비교. "이 에이전트가 파일 7개를 수정했다" 확인.
 
 **구현**:
-- 새 Tauri command (~30줄)
+- 새 Tauri command (~40줄, dirty 체크 포함)
 - RuntimeStatusBar에 조건부 표시 (~20줄)
+- DB 변경 없음
+
+### 3.3 [P1] 시간당 비용 ($/h)
+
+> 추가 레퍼런스: `_research/_util/claude-status-bar/` — `cost / (duration_ms / 1000) * 3600`
+
+**현재**: RuntimeStatusBar에 누적 비용($X.XX)은 있지만, **시간당 비용**은 없음.
+
+**추가**:
+
+```typescript
+// RuntimeStatusBar.tsx
+const sessionDurationHours = (Date.now() - sessionStartTime) / 3600000;
+const hourlyRate = sessionDurationHours > 0 ? totalCost / sessionDurationHours : 0;
+
+// 표시
+`💰 $${totalCost.toFixed(2)} ($${hourlyRate.toFixed(2)}/h)`
+```
+
+**가치**: "이 세션이 비싼지 싼지"를 직관적으로 파악. 시간당 $2 vs $0.10은 모델/모드 선택에 영향.
+
+**구현**:
+- RuntimeStatusBar에 계산 + 표시 (~10줄 FE)
+- 세션 시작 시간은 첫 trace_log의 recorded_at 사용
 - DB 변경 없음
 
 ---
@@ -370,6 +399,11 @@ tunaFlow에서: RuntimeStatusBar의 `list_active_jobs()` 폴링(현재 2초)에 
 
 ## 참고
 
+- claude-status-bar 소스: `_research/_util/claude-status-bar/` (Bash 97줄)
+  - 시간당 비용 계산: `statusline.sh` (cost/duration*3600)
+  - Context % 3-tier 경고: 🧊(<70%) ⚠️(70-79%) ❗(≥80%)
+  - Git dirty 감지: `git diff --quiet HEAD`
+  - Rate limit: Claude Code statusline JSON stdin에서 추출
 - abtop 소스: `_research/_util/abtop/` (Rust 4,950줄)
 - abtop 세션 모델: `_research/_util/abtop/src/model/session.rs` (174줄)
 - abtop 프로세스 스캔: `_research/_util/abtop/src/collector/process.rs` (142줄)

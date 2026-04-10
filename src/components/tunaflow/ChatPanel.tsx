@@ -44,14 +44,23 @@ export function ChatPanel() {
 
   // Create branch and immediately open in drawer
   const handleCreateBranch = async (checkpointId: string) => {
-    if (!selectedConversationId) return;
-    await createBranch(selectedConversationId, checkpointId);
-    const { branches: freshBranches } = useChatStore.getState();
-    const newBranch = freshBranches
-      .filter((b) => b.checkpointId === checkpointId && b.status === "active")
-      .sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (newBranch) {
-      openThread(newBranch.id);
+    console.log("[branch] handleCreateBranch called:", checkpointId, "convId:", selectedConversationId, "activeBranchId:", activeBranchId);
+    if (!selectedConversationId) { console.warn("[branch] no selectedConversationId"); return; }
+    try {
+      await createBranch(selectedConversationId, checkpointId);
+      const { branches: freshBranches } = useChatStore.getState();
+      console.log("[branch] created, freshBranches:", freshBranches.length);
+      const newBranch = freshBranches
+        .filter((b) => b.checkpointId === checkpointId && b.status === "active")
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (newBranch) {
+        console.log("[branch] opening thread:", newBranch.id);
+        openThread(newBranch.id);
+      } else {
+        console.warn("[branch] no matching branch found for checkpoint:", checkpointId);
+      }
+    } catch (err) {
+      console.error("[branch] createBranch failed:", err);
     }
   };
 
