@@ -18,6 +18,7 @@
     "shell:default",
     "store:default",
     "window-state:default",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "pty:default"
   ]
 }

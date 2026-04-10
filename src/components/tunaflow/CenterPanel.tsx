@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -10,9 +10,10 @@ import { HarnessSummary, type WorkflowStageId } from "./context-panel/HarnessSum
 import { ReviewPanel } from "./context-panel/ReviewPanel";
 import { InsightPanel } from "./context-panel/InsightPanel";
 import { ArtifactsPanel } from "./context-panel/ArtifactsPanel";
+const TerminalPanel = lazy(() => import("./TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
 import { InlineRename } from "./InlineRename";
 
-type CenterTab = "chat" | "plan" | "artifacts" | "review" | "insight";
+type CenterTab = "chat" | "plan" | "artifacts" | "review" | "insight" | "terminal";
 
 const TABS: { id: CenterTab; label: string }[] = [
   { id: "chat", label: "Chat" },
@@ -20,6 +21,7 @@ const TABS: { id: CenterTab; label: string }[] = [
   { id: "artifacts", label: "Artifacts" },
   { id: "review", label: "Review" },
   { id: "insight", label: "Insight" },
+  { id: "terminal", label: "Terminal" },
 ];
 
 /** Map PlanPhase → WorkflowStageId for auto-switching */
@@ -317,6 +319,12 @@ export function CenterPanel() {
 
         {effectiveTab === "insight" && (
           <InsightPanel />
+        )}
+
+        {effectiveTab === "terminal" && (
+          <Suspense fallback={<div className="flex items-center justify-center h-full text-prose-faint text-tf-sm">Terminal 로딩 중...</div>}>
+            <TerminalPanel />
+          </Suspense>
         )}
 
       </div>
