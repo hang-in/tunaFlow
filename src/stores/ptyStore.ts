@@ -58,18 +58,15 @@ function detectCompletion(text: string): boolean {
   const hasResponse = /⏺/.test(text);
   if (!hasResponse) return false;
 
-  // Check if screen ends with bare prompt (❯ with nothing after it)
-  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  const lastMeaningful = lines[lines.length - 1] || "";
-  // Bare prompt: just ❯ or "? for shortcuts"
-  if (/^❯\s*$/.test(lastMeaningful)) return true;
-  if (/^\?\s*for\s*shortcuts/.test(lastMeaningful)) return true;
-  // "Worked for Xs" line
-  if (/Worked for \d+/i.test(lastMeaningful)) return true;
-  // Check second-to-last (prompt might be on the line above status bar)
-  const secondLast = lines[lines.length - 2] || "";
-  if (/^❯\s*$/.test(secondLast)) return true;
-
+  // Screen has response (⏺). Check if Claude is idle (bare ❯ prompt visible).
+  // Scan bottom lines, skipping TUI chrome (status bar, separators).
+  const lines = text.split("\n").map((l) => l.trim());
+  // Check last ~8 lines for bare ❯ (skip status bar, separators, empty lines)
+  const bottom = lines.slice(-8);
+  for (const line of bottom) {
+    if (/^❯\s*$/.test(line)) return true;
+    if (/Worked for \d+/i.test(line)) return true;
+  }
   return false;
 }
 
