@@ -15,6 +15,7 @@ export interface ProjectSlice {
 
 // Cleanup function for previous rawq listeners
 let rawqListenerCleanup: (() => void) | null = null;
+let ptyListenerCleanup: (() => void) | null = null;
 // Cleanup function for fs watcher
 let fsWatcherCleanup: (() => void) | null = null;
 
@@ -185,5 +186,56 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
     }).catch(() => {
       set({ rawqStatus: { available: false, indexed: false, status: "unavailable", message: "rawq not found" } });
     });
+
+    // PTY: spawn interactive sessions for all CLI engines (project-level lifecycle)
+    invoke<Project>("get_project", { key }).then(async (project) => {
+      if (!project.path) return;
+      const { usePtyStore, PTY_ENGINES, getPtyBinary } = await import("@/stores/ptyStore");
+      const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
+      const { listen: tauriListen } = await import("@tauri-apps/api/event");
+      const pty = usePtyStore.getState();
+
+      // Kill previous sessions from different project
+      for (const engine of PTY_ENGINES) {
+        const prevSid = pty.getSession(engine);
+        if (prevSid !== null) {
+          tauriInvoke("pty_kill", { sessionId: prevSid }).catch(() => {});
+          pty.clearSession(engine);
+        }
+      }
+
+      // Setup shared PTY output listener (lives as long as project is selected)
+      if (ptyListenerCleanup) { ptyListenerCleanup(); ptyListenerCleanup = null; }
+      const ulOutput = await tauriListen<{ sessionId: number; data: string }>("pty:output", () => {
+        // Output routing is handled by TerminalPanel and sendViaPty — no-op here
+      });
+      const ulExit = await tauriListen<{ sessionId: number }>("pty:exit", (e) => {
+        const store = usePtyStore.getState();
+        for (const engine of PTY_ENGINES) {
+          const sid = store.getSession(engine);
+          if (sid === e.payload.sessionId) {
+            store.clearSession(engine);
+            console.warn(`[pty] ${engine} session ${sid} exited`);
+            break;
+          }
+        }
+      });
+      ptyListenerCleanup = () => { ulOutput(); ulExit(); };
+
+      // Spawn all engines
+      for (const engine of PTY_ENGINES) {
+        const binary = getPtyBinary(engine);
+        if (!binary) continue;
+        try {
+          const sessionId = await tauriInvoke<number>("pty_spawn", {
+            file: binary, args: [], cwd: project.path, cols: 120, rows: 40,
+          });
+          pty.setSession(engine, sessionId, project.path!);
+          console.log(`[pty] ${engine} session ${sessionId} started for project ${key}`);
+        } catch (err) {
+          console.warn(`[pty] ${engine} unavailable:`, err);
+        }
+      }
+    }).catch((e) => console.debug("[pty-init]", e));
   },
 });

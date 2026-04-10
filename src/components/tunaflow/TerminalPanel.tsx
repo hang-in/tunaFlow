@@ -1,127 +1,49 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "@/stores/chatStore";
-import { usePtyStore, PTY_ENGINES, getPtyBinary, type PtyEngine } from "@/stores/ptyStore";
+import { usePtyStore } from "@/stores/ptyStore";
 import { RotateCcw } from "lucide-react";
 
-// Lazy-loaded types (xterm.js is DOM-dependent)
+// Lazy-loaded types
 type XTerminal = import("@xterm/xterm").Terminal;
 type XFitAddon = import("@xterm/addon-fit").FitAddon;
 
+/**
+ * Debug/monitoring terminal view.
+ * Shows Claude's PTY output. Does NOT manage PTY lifecycle —
+ * sessions are managed at project level by projectSlice.
+ */
 export function TerminalPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const fitRef = useRef<XFitAddon | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
-  const sessionIdRef = useRef<number | null>(null);
-  const [status, setStatus] = useState<"idle" | "starting" | "running" | "exited">("idle");
 
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const projects = useChatStore((s) => s.projects);
   const project = projects.find((p) => p.key === selectedProjectKey);
   const projectPath = project?.path;
 
-  // Track all spawned session IDs for this terminal instance
-  const sessionIdsRef = useRef<Map<PtyEngine, number>>(new Map());
+  // Get Claude session from ptyStore (project-level managed)
+  const claudeSession = usePtyStore((s) => s.sessions.get("claude"));
 
-  const startPty = useCallback(async (term: XTerminal) => {
-    // Kill existing sessions
-    for (const [engine, sid] of sessionIdsRef.current) {
-      try { await invoke("pty_kill", { sessionId: sid }); } catch { /* ignore */ }
-      usePtyStore.getState().clearSession(engine);
-    }
-    sessionIdsRef.current.clear();
-    sessionIdRef.current = null;
-
-    if (!projectPath) return;
-
-    setStatus("starting");
-
-    try {
-      // Listen for PTY output events (shared across all engines)
-      const allSessionIds = new Set<number>();
-      const unlisten = await listen<{ sessionId: number; data: string }>("pty:output", (e) => {
-        // Only show Claude's output in terminal (primary debug view)
-        if (e.payload.sessionId === sessionIdRef.current) {
-          term.write(e.payload.data);
-        }
-      });
-
-      const unlistenExit = await listen<{ sessionId: number; exitCode: number | null }>("pty:exit", (e) => {
-        if (!allSessionIds.has(e.payload.sessionId)) return;
-        // Find which engine this session belongs to
-        for (const [engine, sid] of sessionIdsRef.current) {
-          if (sid === e.payload.sessionId) {
-            term.write(`\r\n\x1b[90m[${engine} exited]\x1b[0m\r\n`);
-            sessionIdsRef.current.delete(engine);
-            usePtyStore.getState().clearSession(engine);
-            if (engine === "claude") {
-              sessionIdRef.current = null;
-              setStatus("exited");
-            }
-            break;
-          }
-        }
-      });
-
-      // Spawn PTY for each supported engine
-      for (const engine of PTY_ENGINES) {
-        const binary = getPtyBinary(engine);
-        if (!binary) continue;
-
-        try {
-          const sessionId = await invoke<number>("pty_spawn", {
-            file: binary,
-            args: [] as string[],
-            cwd: projectPath,
-            cols: term.cols,
-            rows: term.rows,
-          });
-
-          sessionIdsRef.current.set(engine, sessionId);
-          allSessionIds.add(sessionId);
-          usePtyStore.getState().setSession(engine, sessionId, projectPath);
-          term.write(`\x1b[90m[${engine} started (session ${sessionId})]\x1b[0m\r\n`);
-
-          // Claude is the primary terminal view
-          if (engine === "claude") {
-            sessionIdRef.current = sessionId;
-          }
-        } catch (err) {
-          term.write(`\x1b[33m[${engine} unavailable: ${String(err).slice(0, 80)}]\x1b[0m\r\n`);
-        }
-      }
-
-      setStatus("running");
-
-      const prevCleanup = cleanupRef.current;
-      cleanupRef.current = () => {
-        unlisten();
-        unlistenExit();
-        prevCleanup?.();
-      };
-    } catch (err) {
-      console.error("[pty] spawn failed:", err);
-      term.write(`\r\n\x1b[31m[Failed to start: ${String(err)}]\x1b[0m\r\n`);
-      setStatus("exited");
-    }
-  }, [projectPath]);
-
-  // Initialize xterm.js + connect PTY
+  // Initialize xterm.js and connect to existing PTY session
   useEffect(() => {
     if (!containerRef.current) return;
     let disposed = false;
 
     (async () => {
-      const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
-        import("@xterm/addon-unicode11"),
-        import("@xterm/addon-web-links"),
       ]);
-      // @ts-ignore — CSS import has no type declaration
+      // @ts-ignore
       try { await import("@xterm/xterm/css/xterm.css"); } catch { /* ok */ }
+
+      let Unicode11Addon: any, WebLinksAddon: any;
+      try { Unicode11Addon = (await import("@xterm/addon-unicode11")).Unicode11Addon; } catch { /* ok */ }
+      try { WebLinksAddon = (await import("@xterm/addon-web-links")).WebLinksAddon; } catch { /* ok */ }
 
       if (disposed || !containerRef.current) return;
 
@@ -142,62 +64,64 @@ export function TerminalPanel() {
 
       const fit = new FitAddon();
       term.loadAddon(fit);
-      try { term.loadAddon(new Unicode11Addon()); term.unicode.activeVersion = "11"; } catch { /* unicode11 not critical */ }
-      try { term.loadAddon(new WebLinksAddon()); } catch { /* links not critical */ }
+      try { if (Unicode11Addon) { term.loadAddon(new Unicode11Addon()); term.unicode.activeVersion = "11"; } } catch { /* ok */ }
+      try { if (WebLinksAddon) { term.loadAddon(new WebLinksAddon()); } } catch { /* ok */ }
       term.open(containerRef.current);
       fit.fit();
 
       termRef.current = term;
       fitRef.current = fit;
 
-      // User input → PTY stdin via Tauri invoke
+      // User input → Claude PTY stdin (debug: direct interaction)
       term.onData((data: string) => {
-        if (sessionIdRef.current !== null) {
-          invoke("pty_write", { sessionId: sessionIdRef.current, data }).catch(console.error);
+        const sid = usePtyStore.getState().getSession("claude");
+        if (sid !== null) {
+          invoke("pty_write", { sessionId: sid, data }).catch(console.error);
         }
       });
 
-      // Resize → PTY
+      // Resize
       term.onResize(({ cols, rows }) => {
-        if (sessionIdRef.current !== null) {
-          invoke("pty_resize", { sessionId: sessionIdRef.current, cols, rows }).catch(console.error);
+        const sid = usePtyStore.getState().getSession("claude");
+        if (sid !== null) {
+          invoke("pty_resize", { sessionId: sid, cols, rows }).catch(console.error);
         }
       });
 
-      // Window resize
+      // Listen for PTY output from Claude session
+      const ulOutput = await listen<{ sessionId: number; data: string }>("pty:output", (e) => {
+        const sid = usePtyStore.getState().getSession("claude");
+        if (sid !== null && e.payload.sessionId === sid) {
+          term.write(e.payload.data);
+        }
+      });
+
       const resizeHandler = () => fit.fit();
       window.addEventListener("resize", resizeHandler);
 
       cleanupRef.current = () => {
         window.removeEventListener("resize", resizeHandler);
+        ulOutput();
       };
 
-      // Start PTY
-      startPty(term);
+      // Show session status
+      const sessions = usePtyStore.getState().sessions;
+      for (const [engine, session] of sessions) {
+        term.write(`\x1b[90m[${engine} session ${session.sessionId} active]\x1b[0m\r\n`);
+      }
+      if (sessions.size === 0) {
+        term.write(`\x1b[33m[No PTY sessions — select a project]\x1b[0m\r\n`);
+      }
     })().catch(console.error);
 
     return () => {
       disposed = true;
       cleanupRef.current?.();
-      // Kill all PTY sessions
-      for (const [engine, sid] of sessionIdsRef.current) {
-        invoke("pty_kill", { sessionId: sid }).catch(() => {});
-        usePtyStore.getState().clearSession(engine);
-      }
-      sessionIdsRef.current.clear();
-      sessionIdRef.current = null;
       termRef.current?.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Restart PTY when project changes
-  useEffect(() => {
-    if (!termRef.current || !projectPath) return;
-    termRef.current.clear();
-    startPty(termRef.current);
-  }, [projectPath, startPty]);
+  }, [claudeSession?.sessionId]); // Re-attach when Claude session changes
 
   // Re-fit on visibility
   useEffect(() => {
@@ -205,11 +129,22 @@ export function TerminalPanel() {
     return () => clearTimeout(timer);
   });
 
-  const handleRestart = useCallback(() => {
-    if (!termRef.current) return;
-    termRef.current.clear();
-    startPty(termRef.current);
-  }, [startPty]);
+  const handleRestart = useCallback(async () => {
+    // Kill and re-spawn Claude PTY only
+    const sid = usePtyStore.getState().getSession("claude");
+    if (sid !== null && projectPath) {
+      await invoke("pty_kill", { sessionId: sid }).catch(() => {});
+      usePtyStore.getState().clearSession("claude");
+      try {
+        const newSid = await invoke<number>("pty_spawn", {
+          file: "claude", args: [], cwd: projectPath, cols: 120, rows: 40,
+        });
+        usePtyStore.getState().setSession("claude", newSid, projectPath);
+      } catch (err) {
+        console.error("[pty] restart failed:", err);
+      }
+    }
+  }, [projectPath]);
 
   if (!selectedProjectKey || !projectPath) {
     return (
@@ -223,11 +158,10 @@ export function TerminalPanel() {
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/20 shrink-0">
         <span className="text-tf-xs text-prose-muted font-mono truncate flex-1">{projectPath}</span>
-        <span className="text-tf-micro text-prose-disabled">{status}</span>
         <button
           onClick={handleRestart}
           className="flex items-center gap-1 text-tf-micro px-1.5 py-0.5 rounded text-prose-faint hover:text-foreground hover:bg-muted/30 transition-colors"
-          title="재시작"
+          title="Claude 재시작"
         >
           <RotateCcw className="w-3 h-3" />
           재시작
