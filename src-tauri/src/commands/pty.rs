@@ -271,6 +271,13 @@ pub fn pty_kill_all(
     Ok(count)
 }
 
+/// Read a file as text (no scope restriction).
+#[tauri::command]
+pub fn pty_read_outbox(path: String) -> Result<String, AppError> {
+    std::fs::read_to_string(&path)
+        .map_err(|e| AppError::NotFound(format!("{}: {}", path, e)))
+}
+
 /// Kill a PTY session.
 #[tauri::command]
 pub fn pty_kill(

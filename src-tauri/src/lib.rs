@@ -272,6 +272,7 @@ pub fn run() {
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_kill,
+            commands::pty::pty_read_outbox,
             commands::pty::pty_kill_all,
         ])
         .on_window_event(|window, event| {
