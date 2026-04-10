@@ -471,21 +471,32 @@ async function sendViaPty(
 
   get()._startRun(conversationId);
   const now = Date.now();
-  const msgId = `pty-${now}`;
 
-  // Add user message + streaming placeholder
+  // Save user message to DB first
+  let userMsgId: string;
+  try {
+    const userMsg = await invoke<Message>("append_user_message", {
+      input: { conversationId, content: prompt },
+    });
+    userMsgId = userMsg.id;
+  } catch {
+    userMsgId = `temp-user-${now}`;
+  }
+
+  const asstMsgId = `pty-${now}`;
+
+  // Add messages to store
   set((state) => ({
     error: null,
     messages: [
       ...state.messages,
-      { id: `temp-user-${now}`, conversationId, role: "user" as const, content: prompt, timestamp: now, status: "done" as const },
-      { id: msgId, conversationId, role: "assistant" as const, content: "", timestamp: now, status: "streaming" as const, engine: "claude-code" },
+      { id: userMsgId, conversationId, role: "user" as const, content: prompt, timestamp: now, status: "done" as const },
+      { id: asstMsgId, conversationId, role: "assistant" as const, content: "", timestamp: now, status: "streaming" as const, engine: "claude-code" },
     ],
   }));
 
   // Start capturing PTY output
-  const pty = usePtyStore.getState();
-  pty.startCapture(msgId);
+  usePtyStore.getState().startCapture(asstMsgId);
 
   const isStillActive = () => get().selectedConversationId === conversationId;
 
@@ -498,7 +509,7 @@ async function sendViaPty(
       const text = pendingContent;
       pendingContent = null;
       set((state) => ({
-        messages: state.messages.map((m) => m.id === msgId ? { ...m, content: text } : m),
+        messages: state.messages.map((m) => m.id === asstMsgId ? { ...m, content: text } : m),
       }));
     }
   };
@@ -514,35 +525,55 @@ async function sendViaPty(
     pendingContent = store.outputBuffer;
     if (!contentTimer) contentTimer = setTimeout(flushContent, 200);
 
-    // Debounced completion detection — check 1s after last output
+    // Debounced completion detection — check 1.5s after last output
     if (completionTimer) clearTimeout(completionTimer);
     completionTimer = setTimeout(() => {
       if (usePtyStore.getState().checkCompletion()) {
         finalize();
       }
-    }, 1000);
+    }, 1500);
   });
 
-  const finalize = () => {
+  const finalize = async () => {
     if (completionTimer) { clearTimeout(completionTimer); completionTimer = null; }
     if (contentTimer) { clearTimeout(contentTimer); contentTimer = null; }
     ulOutput();
 
     const finalText = usePtyStore.getState().endCapture();
-    if (isStillActive()) {
-      // Clean up the output — remove initial echo and trailing prompt
-      const cleaned = finalText
-        .replace(/^\s*\n/, "")              // leading blank line
-        .replace(/\n❯\s*$/, "")            // trailing prompt
-        .replace(/Worked for \d+(\.\d+)?s?\s*$/, "")  // "Worked for Xs"
-        .trim();
 
-      set((state) => ({
-        messages: state.messages.map((m) =>
-          m.id === msgId ? { ...m, content: cleaned, status: "done" as const } : m
-        ),
-      }));
+    // Clean up output — remove echo, trailing prompt, completion marker
+    const cleaned = finalText
+      .replace(/^\s*\n/, "")
+      .replace(/\n❯\s*$/, "")
+      .replace(/Worked for \d+(\.\d+)?s?.*$/m, "")
+      .replace(/\n\s*\n\s*\n/g, "\n\n")  // collapse triple+ newlines
+      .trim();
+
+    // Save assistant message to DB
+    try {
+      const savedMsg = await invoke<Message>("append_assistant_message", {
+        input: { conversationId, content: cleaned, engine: "claude-code", model: null, status: "done" },
+      });
+      // Replace temp ID with real DB ID
+      if (isStillActive()) {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === asstMsgId ? { ...savedMsg, content: cleaned } : m
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error("[pty] failed to save message:", err);
+      // Still show in UI even if DB save fails
+      if (isStillActive()) {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === asstMsgId ? { ...m, content: cleaned, status: "done" as const } : m
+          ),
+        }));
+      }
     }
+
     get()._endRun(conversationId);
   };
 
@@ -555,7 +586,7 @@ async function sendViaPty(
     set((state) => ({
       error: errorMessage(err),
       messages: state.messages.map((m) =>
-        m.id === msgId ? { ...m, content: errorMessage(err), status: "error" as const } : m
+        m.id === asstMsgId ? { ...m, content: errorMessage(err), status: "error" as const } : m
       ),
     }));
     get()._endRun(conversationId);

@@ -1,20 +1,39 @@
 import { create } from "zustand";
 
-/** Strip ANSI escape sequences from terminal output */
+/** Strip ANSI escape sequences and terminal control codes from output */
 function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
-    .replace(/\x1b\][^\x07]*\x07/g, "")   // OSC sequences
-    .replace(/\x1b\[\?[0-9;]*[hl]/g, "")   // DEC private modes
-    .replace(/\x1b[()][A-Z0-9]/g, "")       // Character set
-    .replace(/\x1b=/g, "")                   // Application keypad
-    .replace(/\r/g, "");                     // Carriage returns
+  return text
+    // CSI sequences: \x1b[...X (colors, cursor, erase, scroll, etc.)
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, "")
+    // DEC private modes: \x1b[?...h/l
+    .replace(/\x1b\[\?[0-9;]*[hl]/g, "")
+    // OSC sequences: \x1b]...BEL
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+    // Character set designation: \x1b(X, \x1b)X
+    .replace(/\x1b[()][A-Z0-9]/g, "")
+    // Application mode: \x1b=, \x1b>
+    .replace(/\x1b[=>]/g, "")
+    // DEC save/restore cursor: \x1b7, \x1b8
+    .replace(/\x1b[78]/g, "")
+    // Single-char C1 controls
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "")
+    // Carriage return (keep \n)
+    .replace(/\r/g, "");
 }
 
 /** Detect Claude Code completion pattern */
 function detectCompletion(text: string): boolean {
-  // "Worked for Xs" or "> " prompt after output
-  return /Worked for \d+/i.test(text) || /\n❯\s*$/.test(text);
+  // Check last ~200 chars for completion signals
+  const tail = text.slice(-200);
+  // "Worked for Xs" — primary signal
+  if (/Worked for \d+/i.test(tail)) return true;
+  // Prompt ready: ❯ or > at end of output
+  if (/[❯>]\s*$/.test(tail)) return true;
+  // Cost line: "$X.XX" at end (Claude shows cost after completion)
+  if (/\$\d+\.\d{2}\s*$/.test(tail)) return true;
+  return false;
 }
 
 interface PtyStoreState {
