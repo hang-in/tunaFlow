@@ -157,10 +157,49 @@ Claude Code 측에서도 `/clear`가 새 세션을 시작하므로 양쪽이 일
 
 ---
 
+## Branch / RT 세션 정책 (확정)
+
+| 모드 | 세션 정책 | 이유 |
+|------|----------|------|
+| **Branch** | 부모 채팅의 PTY 세션 공유 | 분기→adopt/폐기, 같은 맥락에서 작업 |
+| **RT** | `-p` 모드 유지 | 1턴 발언, stateful 불필요, 맥락은 ContextPack 주입, 1회성 |
+
+---
+
+## 엔진별 파서 (확정)
+
+각 엔진의 JSONL/JSON 구조가 모두 다르므로 **엔진별 별도 파서** 구현. 불필요한 추상화 금지.
+
+| 엔진 | 파서 | 위치 | 형식 |
+|------|------|------|------|
+| Claude | `pty_poll_jsonl` (구현 완료) | `~/.claude/projects/{encoded}/{id}.jsonl` | JSONL |
+| Codex | `pty_poll_codex` (미구현) | `~/.codex/sessions/{y/m/d}/rollout-{id}.jsonl` | JSONL |
+| Gemini | `pty_poll_gemini` (미구현) | `~/.gemini/tmp/{project}/chats/session-{id}.json` | 단일 JSON |
+
+참고: seCall `crates/secall-core/src/ingest/{claude,codex,gemini}.rs`
+
+---
+
+## ContextPack × PTY (검토 필요)
+
+### 현재 `-p` 모드
+- 매 메시지마다 `build_normalized_prompt_with_budget()`로 전체 ContextPack을 system prompt에 주입
+- 에이전트가 매번 identity, plan, memory, skills 등 전체 맥락을 받음
+
+### PTY 모드의 차이
+- PTY는 **stateful** — 에이전트가 이전 대화를 기억
+- 매 메시지마다 전체 ContextPack을 보내면 **중복** (이미 세션에 축적된 맥락)
+- 하지만 plan 변경, memory 갱신 등 **동적 맥락**은 갱신 필요
+
+### 검토 포인트
+1. **초기 세션**: 첫 메시지 시 전체 ContextPack 주입 → CLAUDE.md 또는 system prompt로?
+2. **후속 메시지**: 변경된 섹션만 delta로 전달? 아니면 매번 전체?
+3. **CLAUDE.md 동적 갱신**: PTY 세션의 프로젝트 CLAUDE.md에 tunaFlow context 섹션을 동적으로 갱신?
+4. **토큰 절감**: stateful이므로 반복 주입 불필요 → 초기 1회 + delta만으로 충분?
+
+---
+
 ## 미결 사항
 
-- **Branch/RT의 PTY 세션**: Branch도 별도 세션? 아니면 부모 채팅 세션 공유?
-  - 제안: Branch는 부모 세션 공유 (같은 컨텍스트에서 분기하는 것이 자연스러움)
-  - RT는 `-p` 모드 유지 (다중 에이전트 병렬 실행 필요)
-- **Codex/Gemini PTY**: Claude만 우선 구현, 다른 엔진은 CLI 구조가 다르므로 별도 검토
-- **세션 정리**: 오래된 JSONL 파일 자동 삭제 정책 (Claude Code 자체 관리에 위임?)
+- **ContextPack × PTY 구체 설계**: 위 검토 포인트 기반으로 구현 방향 결정
+- **세션 정리**: 오래된 JSONL 파일 자동 삭제 정책 (CLI 자체 관리에 위임?)
