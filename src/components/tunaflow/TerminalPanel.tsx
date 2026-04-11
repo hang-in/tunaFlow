@@ -1,9 +1,21 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
 import { RotateCcw } from "lucide-react";
+import { getSetting } from "@/lib/appStore";
+
+interface TerminalSettings {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+}
+const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
+  fontFamily: "'JetBrains Mono', 'Consolas', monospace",
+  fontSize: 12,
+  lineHeight: 1.3,
+};
 
 // Lazy-loaded types
 type XTerminal = import("@xterm/xterm").Terminal;
@@ -47,6 +59,8 @@ export function TerminalPanel() {
 
       if (disposed || !containerRef.current) return;
 
+      const settings = await getSetting<TerminalSettings>("terminalSettings", DEFAULT_TERMINAL_SETTINGS);
+
       const term = new Terminal({
         allowProposedApi: true,
         theme: {
@@ -55,9 +69,9 @@ export function TerminalPanel() {
           cursor: "#a78bfa",
           selectionBackground: "#a78bfa40",
         },
-        fontFamily: "'JetBrains Mono', 'Consolas', monospace",
-        fontSize: 13,
-        lineHeight: 1.4,
+        fontFamily: settings.fontFamily || DEFAULT_TERMINAL_SETTINGS.fontFamily,
+        fontSize: settings.fontSize || DEFAULT_TERMINAL_SETTINGS.fontSize,
+        lineHeight: settings.lineHeight || DEFAULT_TERMINAL_SETTINGS.lineHeight,
         cursorBlink: true,
         convertEol: true,
       });

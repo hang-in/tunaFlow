@@ -1,18 +1,20 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { X, Bot, UserCircle, Zap, Cpu } from "lucide-react";
+import { X, Bot, UserCircle, Zap, Cpu, Terminal } from "lucide-react";
 import { SkillsPanel } from "./context-panel/SkillsPanel";
 import { AgentsSection } from "./settings/AgentsSection";
 import { PersonasSection } from "./settings/PersonasSection";
 import { RuntimeSection } from "./settings/RuntimeSection";
+import { TerminalSection } from "./settings/TerminalSection";
 
-type SettingsSection = "agents" | "personas" | "skills" | "runtime";
+type SettingsSection = "agents" | "personas" | "skills" | "runtime" | "terminal";
 
 const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
   { id: "agents", label: "Agents", icon: <Bot className="w-4 h-4" /> },
   { id: "personas", label: "Personas", icon: <UserCircle className="w-4 h-4" /> },
   { id: "skills", label: "Skills", icon: <Zap className="w-4 h-4" /> },
   { id: "runtime", label: "Runtime", icon: <Cpu className="w-4 h-4" /> },
+  { id: "terminal", label: "Terminal", icon: <Terminal className="w-4 h-4" /> },
 ];
 
 interface SettingsPanelProps {
@@ -65,6 +67,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 </div>
               )}
               {activeSection === "runtime" && <RuntimeSection />}
+              {activeSection === "terminal" && <TerminalSection />}
             </div>
           </div>
         </div>
