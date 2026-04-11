@@ -577,11 +577,14 @@ async function sendViaPty(
     } catch { /* ok */ }
   }
 
-  // Inject ContextPack for new sessions (no tracked JSONL = first message in this session)
+  // ContextPack handling:
+  // - New session (no trackedJsonl): inject full ContextPack into prompt
+  // - Existing session: update CLAUDE.md with current context (delta via file)
   let enrichedPrompt = prompt;
-  if (!trackedJsonl) {
-    try {
-      const { activeSkills, crossSessionIds } = get();
+  try {
+    const { activeSkills, crossSessionIds } = get();
+    if (!trackedJsonl) {
+      // New session: full ContextPack in prompt
       const contextResult = await invoke<{ assembledPrompt: string; sections: string[] }>(
         "pty_build_context", {
           conversationId,
@@ -595,11 +598,25 @@ async function sendViaPty(
       );
       if (contextResult.assembledPrompt) {
         enrichedPrompt = contextResult.assembledPrompt;
-        console.log(`[pty] injected ContextPack (${contextResult.sections.length} sections, ${contextResult.assembledPrompt.length} chars)`);
+        console.log(`[pty] injected full ContextPack (${contextResult.sections.length} sections)`);
       }
-    } catch (e) {
-      console.warn("[pty] ContextPack build failed, sending raw prompt:", e);
+    } else {
+      // Existing session: update CLAUDE.md so agent reads fresh context
+      const contextResult = await invoke<{ assembledPrompt: string }>(
+        "pty_build_context", {
+          conversationId, prompt: "", projectPath: projectPath || null,
+          activeSkills: activeSkills ?? [], crossSessionIds: crossSessionIds ?? [],
+          personaFragment: null, contextMode: "lite",
+        }
+      );
+      if (contextResult.assembledPrompt && projectPath) {
+        invoke("pty_update_claude_md", {
+          projectPath, contextSection: contextResult.assembledPrompt,
+        }).catch(() => {});
+      }
     }
+  } catch (e) {
+    console.warn("[pty] ContextPack failed, sending raw prompt:", e);
   }
 
   // Send prompt via bracket paste + Enter

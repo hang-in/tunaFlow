@@ -48,16 +48,21 @@ export async function spawnPtyForConversation(conv: Conversation, projectPath: s
     await tauriInvoke("pty_kill_all").catch(() => {});
     pty.clearAllSessions();
 
-    // Build engine-specific args
+    // Build engine-specific args (including resume)
     const args: string[] = [];
     if (engine === "claude") {
       if (conv.resumeToken) args.push("--resume", conv.resumeToken);
       args.push("--permission-mode", "bypassPermissions");
     } else if (engine === "codex") {
-      // Codex: --full-auto for auto-approval
-      args.push("--full-auto");
+      if (conv.resumeToken) {
+        // Codex uses "resume <sessionId>" subcommand pattern
+        // But in interactive mode, we pass as args to the binary
+        args.push("resume", conv.resumeToken, "--full-auto");
+      } else {
+        args.push("--full-auto");
+      }
     } else if (engine === "gemini") {
-      // Gemini: -y for auto-yes
+      if (conv.resumeToken) args.push("--resume", conv.resumeToken);
       args.push("-y");
     }
 

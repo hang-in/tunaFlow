@@ -79,6 +79,8 @@ export function ToolStepsView({ steps, isStreaming, durationMs }: ToolStepsViewP
 function StepLine({ step, showOutput }: { step: ToolStep; showOutput?: boolean }) {
   const icon = stepIcon(step);
   const text = formatStep(step);
+  const [outputOpen, setOutputOpen] = useState(false);
+  const hasOutput = showOutput && step.output;
 
   return (
     <div>
@@ -88,13 +90,20 @@ function StepLine({ step, showOutput }: { step: ToolStep; showOutput?: boolean }
           step.status === "running" && "text-primary/70",
           step.status === "done" && "text-muted-foreground/50",
           step.status === "error" && "text-status-rejected/70",
+          hasOutput && "cursor-pointer hover:text-muted-foreground/70",
         )}
+        onClick={hasOutput ? () => setOutputOpen((v) => !v) : undefined}
       >
         <span className="shrink-0 w-3 text-center">{icon}</span>
         <span className="truncate">{text}</span>
+        {hasOutput && (
+          <span className="shrink-0 text-[8px] opacity-40 ml-1">
+            {outputOpen ? "▾" : "▸"}
+          </span>
+        )}
       </div>
-      {showOutput && step.output && (
-        <pre className="ml-5 mt-0.5 mb-1 text-[9px] leading-tight text-muted-foreground/40 max-h-20 overflow-y-auto whitespace-pre-wrap break-all">
+      {outputOpen && step.output && (
+        <pre className="ml-5 mt-0.5 mb-1 text-[9px] leading-tight text-muted-foreground/40 max-h-32 overflow-y-auto whitespace-pre-wrap break-all border-l border-border/20 pl-2">
           {step.output}
         </pre>
       )}
