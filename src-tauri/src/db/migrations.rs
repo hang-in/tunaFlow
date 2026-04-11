@@ -112,6 +112,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 29 {
         apply_v29(conn)?;
     }
+    if current < 30 {
+        apply_v30(conn)?;
+    }
     Ok(())
 }
 
@@ -680,6 +683,34 @@ pub fn now_epoch() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs() as i64
+}
+
+fn apply_v30(conn: &Connection) -> Result<(), AppError> {
+    // sqlite-vec: vec0 virtual table for vector search (replaces brute-force cosine)
+    // Uses 384-dim float32 embeddings with cosine distance metric.
+    // Linked to conversation_chunks via rowid.
+    conn.execute_batch("
+        CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+            embedding float[384] distance_metric=cosine
+        );
+    ")?;
+
+    // Backfill: copy existing embeddings from conversation_chunks BLOB to vec0.
+    // Only rows with non-NULL embedding are indexed.
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM conversation_chunks WHERE embedding IS NOT NULL", [], |r| r.get(0)
+    ).unwrap_or(0);
+
+    if count > 0 {
+        conn.execute_batch("
+            INSERT OR IGNORE INTO vec_chunks(rowid, embedding)
+            SELECT rowid, embedding FROM conversation_chunks WHERE embedding IS NOT NULL;
+        ")?;
+        eprintln!("[migration v30] backfilled {} embeddings into vec_chunks", count);
+    }
+
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (30, ?1)", [now_epoch()])?;
+    Ok(())
 }
 
 /// Milliseconds since Unix epoch (for Message.timestamp)

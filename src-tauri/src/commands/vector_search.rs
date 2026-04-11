@@ -129,7 +129,8 @@ pub fn index_conversation(
     Ok(indexed)
 }
 
-/// Search for similar chunks across a project using brute-force cosine similarity.
+/// Search for similar chunks across a project using sqlite-vec KNN.
+/// Falls back to brute-force cosine if vec0 table is unavailable.
 pub fn search_similar(
     conn: &Connection,
     query_embedding: &[f32],
@@ -137,7 +138,79 @@ pub fn search_similar(
     exclude_conv_id: &str,
     limit: usize,
 ) -> Vec<VectorChunk> {
-    // Load all chunk embeddings for the project (excluding the current conversation)
+    let query_blob = embedding_to_blob(query_embedding);
+
+    // Try sqlite-vec KNN first (O(log n) with HNSW index)
+    let results = search_via_vec0(conn, &query_blob, project_key, exclude_conv_id, limit);
+    if !results.is_empty() {
+        return results;
+    }
+
+    // Fallback: brute-force cosine (for pre-migration databases)
+    search_brute_force(conn, query_embedding, project_key, exclude_conv_id, limit)
+}
+
+/// KNN search via sqlite-vec vec0 virtual table.
+fn search_via_vec0(
+    conn: &Connection,
+    query_blob: &[u8],
+    project_key: &str,
+    exclude_conv_id: &str,
+    limit: usize,
+) -> Vec<VectorChunk> {
+    // vec0 KNN: MATCH returns (rowid, distance) ordered by distance ASC (cosine: 0=identical)
+    // Join back to conversation_chunks for metadata + filter by project/conversation.
+    let sql = "
+        SELECT cc.id, cc.conversation_id, cc.kind, cc.text_preview, cc.root_message_id, vc.distance
+        FROM vec_chunks vc
+        JOIN conversation_chunks cc ON cc.rowid = vc.rowid
+        WHERE vc.embedding MATCH ?1
+          AND cc.project_key = ?2
+          AND cc.conversation_id != ?3
+          AND vc.k = ?4
+        ORDER BY vc.distance
+    ";
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[vector] vec0 query failed (falling back to brute-force): {}", e);
+            return Vec::new();
+        }
+    };
+
+    let fetch_limit = limit * 3; // Over-fetch to account for filtered rows
+    let rows: Vec<(String, String, String, String, String, f64)> = stmt
+        .query_map(params![query_blob, project_key, exclude_conv_id, fetch_limit as i64], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+        })
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+
+    // Convert distance to similarity score (cosine distance: 0=identical, 2=opposite)
+    let mut chunks: Vec<VectorChunk> = Vec::with_capacity(limit);
+    for (id, conv_id, kind, text, root_msg_id, distance) in rows.into_iter().take(limit) {
+        let score = 1.0 - (distance as f32 / 2.0); // distance 0→score 1.0, distance 2→score 0.0
+
+        // Parent Document Retriever: resolve full text
+        let full_text = conn.query_row(
+            "SELECT content FROM messages WHERE id = ?1",
+            [&root_msg_id],
+            |row| row.get::<_, String>(0),
+        ).ok().map(|c| truncate_str(&c, 600));
+
+        chunks.push(VectorChunk { id, conversation_id: conv_id, kind, text_preview: text, score, full_text });
+    }
+    chunks
+}
+
+/// Brute-force cosine similarity search (fallback for pre-v30 databases).
+fn search_brute_force(
+    conn: &Connection,
+    query_embedding: &[f32],
+    project_key: &str,
+    exclude_conv_id: &str,
+    limit: usize,
+) -> Vec<VectorChunk> {
     let mut stmt = match conn.prepare(
         "SELECT id, conversation_id, kind, text_preview, embedding, root_message_id
          FROM conversation_chunks
@@ -162,30 +235,19 @@ pub fn search_similar(
                 .filter_map(|(id, conv_id, kind, text, blob, root_msg_id)| {
                     let embedding = blob_to_embedding(&blob)?;
                     let score = rawq::cosine_similarity(query_embedding, &embedding);
-                    Some((VectorChunk {
-                        id,
-                        conversation_id: conv_id,
-                        kind,
-                        text_preview: text,
-                        score,
-                        full_text: None,
-                    }, root_msg_id))
+                    Some((VectorChunk { id, conversation_id: conv_id, kind, text_preview: text, score, full_text: None }, root_msg_id))
                 })
                 .collect()
         })
         .unwrap_or_default();
 
-    // Sort by score descending, take top N
     results.sort_by(|a, b| b.0.score.partial_cmp(&a.0.score).unwrap_or(std::cmp::Ordering::Equal));
     results.truncate(limit);
 
-    // Parent Document Retriever: resolve full text from root_message_id
     let mut chunks: Vec<VectorChunk> = Vec::with_capacity(results.len());
     for (mut chunk, root_msg_id) in results {
         if let Ok(content) = conn.query_row(
-            "SELECT content FROM messages WHERE id = ?1",
-            [&root_msg_id],
-            |row| row.get::<_, String>(0),
+            "SELECT content FROM messages WHERE id = ?1", [&root_msg_id], |row| row.get::<_, String>(0),
         ) {
             chunk.full_text = Some(truncate_str(&content, 600));
         }
@@ -410,6 +472,17 @@ pub async fn index_conversation_chunks(
 
         // Phase 3: write results (short lock)
         let conn = db.write.lock().map_err(|_| AppError::Lock)?;
+        // Delete existing chunks + vec0 entries for this conversation
+        // Get rowids before deleting conversation_chunks (needed for vec_chunks cleanup)
+        let rowids: Vec<i64> = conn.prepare(
+            "SELECT rowid FROM conversation_chunks WHERE conversation_id = ?1"
+        ).and_then(|mut s| {
+            s.query_map([&conversation_id], |r| r.get(0))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        }).unwrap_or_default();
+        for rid in &rowids {
+            conn.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [rid]).ok();
+        }
         conn.execute("DELETE FROM conversation_chunks WHERE conversation_id = ?1", [&conversation_id])?;
         let now = now_epoch_ms();
         let mut indexed = 0;
@@ -420,6 +493,16 @@ pub async fn index_conversation_chunks(
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![id, project_key, conversation_id, kind, root_id, text, blob, now],
             )?;
+            // Insert into vec0 for KNN search (uses conversation_chunks rowid)
+            let chunk_rowid: i64 = conn.query_row(
+                "SELECT rowid FROM conversation_chunks WHERE id = ?1", [&id], |r| r.get(0)
+            ).unwrap_or(0);
+            if chunk_rowid > 0 {
+                conn.execute(
+                    "INSERT INTO vec_chunks(rowid, embedding) VALUES (?1, ?2)",
+                    rusqlite::params![chunk_rowid, blob],
+                ).ok(); // best-effort — vec0 failure shouldn't block indexing
+            }
             indexed += 1;
         }
         eprintln!("[vector] indexed {} chunks for {} (from {} texts)", indexed, conversation_id, chunks.len());

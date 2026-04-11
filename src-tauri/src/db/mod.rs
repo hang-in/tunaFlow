@@ -37,6 +37,13 @@ impl DbState {
 }
 
 pub fn init(db_path: PathBuf) -> Result<(Connection, Connection), AppError> {
+    // Register sqlite-vec as auto-extension (process-global, before any Connection::open)
+    unsafe {
+        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        )));
+    }
+
     // Write connection — runs migrations, enables WAL + foreign keys
     let write_conn = Connection::open(&db_path)?;
     write_conn.execute_batch("PRAGMA journal_mode = WAL;")?;
