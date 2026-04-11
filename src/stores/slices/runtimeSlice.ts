@@ -466,7 +466,17 @@ async function runRoundtable(
 }
 
 // ─── PTY interactive mode ────────────────────────────────────────────────────
-// Routes a chat message through the active Claude PTY session instead of -p mode.
+
+/** Determine the poll command and list command for each engine */
+function getPtyPollConfig(engine: string) {
+  switch (engine) {
+    case "codex": return { pollCmd: "pty_poll_codex", listCmd: "pty_list_codex_files", pathParam: "jsonlPath" };
+    case "gemini": return { pollCmd: "pty_poll_gemini", listCmd: "pty_list_gemini_files", pathParam: "jsonPath" };
+    default: return { pollCmd: "pty_poll_jsonl", listCmd: "pty_list_jsonl_files", pathParam: "jsonlPath" };
+  }
+}
+
+// Routes a chat message through the active PTY session instead of -p mode.
 // Output is streamed via pty:output events, ANSI-stripped, and displayed as a chat message.
 
 async function sendViaPty(
@@ -539,13 +549,20 @@ async function sendViaPty(
     }
   });
 
+  // Engine-specific poll/list commands
+  const pollConfig = getPtyPollConfig(engine);
+
   // Get current JSONL line count (baseline — poll for lines after this)
   let trackedJsonl = jsonlPath ?? null;
   let baselineLines = 0;
   if (trackedJsonl) {
     try {
+      const pollArgs: Record<string, unknown> = { afterLine: 0 };
+      if (engine === "claude") { pollArgs.projectPath = projectPath; pollArgs.jsonlPath = trackedJsonl; }
+      else if (engine === "gemini") { pollArgs.jsonPath = trackedJsonl; pollArgs.afterMessageCount = 0; }
+      else { pollArgs.jsonlPath = trackedJsonl; pollArgs.afterLine = 0; }
       const baseline = await invoke<{ totalLines: number; isComplete: boolean; [k: string]: unknown } | null>(
-        "pty_poll_jsonl", { projectPath, afterLine: 0, jsonlPath: trackedJsonl }
+        pollConfig.pollCmd, pollArgs
       );
       if (baseline) baselineLines = baseline.totalLines;
     } catch { /* ok */ }
@@ -555,7 +572,7 @@ async function sendViaPty(
   let snapshotBefore: Set<string> | null = null;
   if (!trackedJsonl) {
     try {
-      const files = await invoke<string[]>("pty_list_jsonl_files", { projectPath });
+      const files = await invoke<string[]>(pollConfig.listCmd, { projectPath });
       snapshotBefore = new Set(files);
     } catch { /* ok */ }
   }
@@ -617,8 +634,11 @@ async function sendViaPty(
             console.log(`[pty-jsonl] detected JSONL: ${trackedJsonl} (session: ${claudeSessionId})`);
             // Get baseline for the newly found file
             try {
+              const blArgs: Record<string, unknown> = engine === "gemini"
+                ? { jsonPath: trackedJsonl, afterMessageCount: 0 }
+                : { projectPath, afterLine: 0, jsonlPath: trackedJsonl };
               const bl = await invoke<{ totalLines: number; isComplete: boolean; [k: string]: unknown } | null>(
-                "pty_poll_jsonl", { projectPath, afterLine: 0, jsonlPath: trackedJsonl }
+                pollConfig.pollCmd, blArgs
               );
               if (bl) baselineLines = Math.max(0, bl.totalLines - 2);
             } catch { /* ok */ }
@@ -637,9 +657,10 @@ async function sendViaPty(
           totalLines: number;
           isComplete: boolean;
         };
-        const result = await invoke<PtyResult | null>(
-          "pty_poll_jsonl", { projectPath, afterLine: baselineLines, jsonlPath: trackedJsonl }
-        );
+        const mainPollArgs: Record<string, unknown> = engine === "gemini"
+          ? { jsonPath: trackedJsonl, afterMessageCount: baselineLines }
+          : { projectPath, afterLine: baselineLines, jsonlPath: trackedJsonl };
+        const result = await invoke<PtyResult | null>(pollConfig.pollCmd, mainPollArgs);
 
         if (result) {
           // Show tool steps progress during streaming

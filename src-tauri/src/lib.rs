@@ -278,6 +278,10 @@ pub fn run() {
             commands::pty::pty_list_jsonl_files,
             commands::pty::pty_build_context,
             commands::pty::pty_update_claude_md,
+            commands::pty::pty_poll_codex,
+            commands::pty::pty_poll_gemini,
+            commands::pty::pty_list_codex_files,
+            commands::pty::pty_list_gemini_files,
             commands::pty::pty_kill_all,
         ])
         .on_window_event(|window, event| {

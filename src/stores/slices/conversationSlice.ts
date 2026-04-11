@@ -22,21 +22,24 @@ export async function spawnPtyForConversation(conv: Conversation, projectPath: s
   if (ptySpawnLock) return;
   ptySpawnLock = true;
   try {
-    const { usePtyStore, getPtyBinary } = await import("@/stores/ptyStore");
+    const { usePtyStore, getPtyBinary, isPtyEngine } = await import("@/stores/ptyStore");
     const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
 
-    const engine = "claude";
+    // Determine engine from conversation (default to claude)
+    const engine = (conv.engine ?? "claude").replace("claude-code", "claude") as import("@/stores/ptyStore").PtyEngine;
+    if (!isPtyEngine(engine)) return; // non-PTY engine (ollama, etc.)
+
     const binary = getPtyBinary(engine);
     if (!binary) return;
 
     const pty = usePtyStore.getState();
 
     // Skip if PTY is already running for this conversation's session
-    const existingSession = pty.sessions.get("claude");
+    const existingSession = pty.sessions.get(engine);
     if (existingSession && conv.resumeToken) {
       const existingJsonl = existingSession.jsonlPath ?? "";
       if (existingJsonl.includes(conv.resumeToken)) {
-        console.log(`[pty] claude already running for session ${conv.resumeToken}, skipping`);
+        console.log(`[pty] ${engine} already running for session ${conv.resumeToken}, skipping`);
         return;
       }
     }
@@ -45,11 +48,18 @@ export async function spawnPtyForConversation(conv: Conversation, projectPath: s
     await tauriInvoke("pty_kill_all").catch(() => {});
     pty.clearAllSessions();
 
+    // Build engine-specific args
     const args: string[] = [];
-    if (conv.resumeToken) {
-      args.push("--resume", conv.resumeToken);
+    if (engine === "claude") {
+      if (conv.resumeToken) args.push("--resume", conv.resumeToken);
+      args.push("--permission-mode", "bypassPermissions");
+    } else if (engine === "codex") {
+      // Codex: --full-auto for auto-approval
+      args.push("--full-auto");
+    } else if (engine === "gemini") {
+      // Gemini: -y for auto-yes
+      args.push("-y");
     }
-    args.push("--permission-mode", "bypassPermissions");
 
     const sessionId = await tauriInvoke<number>("pty_spawn", {
       file: binary, args, cwd: projectPath, cols: 80, rows: 500,
@@ -57,25 +67,30 @@ export async function spawnPtyForConversation(conv: Conversation, projectPath: s
     });
     pty.setSession(engine, sessionId, projectPath);
 
-    // If resume token exists, find JSONL by matching filename
+    // Find session file for resume tracking
     if (conv.resumeToken) {
+      const listCmd = engine === "claude" ? "pty_list_jsonl_files"
+        : engine === "codex" ? "pty_list_codex_files"
+        : "pty_list_gemini_files";
       try {
-        const files = await tauriInvoke<string[]>("pty_list_jsonl_files", { projectPath });
+        const files = await tauriInvoke<string[]>(listCmd, { projectPath });
         const match = files.find((f) => f.includes(conv.resumeToken!));
         if (match) {
-          pty.setJsonlPath("claude", match);
-          console.log(`[pty] claude resumed session ${conv.resumeToken}, JSONL: ${match}`);
+          pty.setJsonlPath(engine, match);
+          console.log(`[pty] ${engine} resumed session ${conv.resumeToken}, file: ${match}`);
           return;
         }
       } catch { /* ok — will detect on first message */ }
     }
 
-    console.log(`[pty] claude new session ${sessionId} for conv ${conv.id}`);
+    console.log(`[pty] ${engine} new session ${sessionId} for conv ${conv.id}`);
 
-    // Update CLAUDE.md with current context (plan, identity) — fire-and-forget
-    updateClaudeMdContext(conv.id, projectPath, tauriInvoke).catch(() => {});
+    // Update CLAUDE.md with current context (Claude only)
+    if (engine === "claude") {
+      updateClaudeMdContext(conv.id, projectPath, tauriInvoke).catch(() => {});
+    }
   } catch (err) {
-    console.warn(`[pty] claude unavailable:`, err);
+    console.warn(`[pty] unavailable:`, err);
   } finally {
     ptySpawnLock = false;
   }
