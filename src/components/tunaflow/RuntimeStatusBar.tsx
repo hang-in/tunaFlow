@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
-import { Activity, Loader2, Zap, Terminal } from "lucide-react";
+import { Activity, Loader2, Zap, Terminal, Settings } from "lucide-react";
+import { SettingsPanel } from "./SettingsPanel";
 import { TraceModal } from "./TraceModal";
 import type { Message } from "@/types";
 import { lazy, Suspense } from "react";
@@ -68,6 +69,7 @@ export function RuntimeStatusBar() {
   const [gitStatus, setGitStatus] = useState<{ branch: string | null; dirty: boolean; added: number; modified: number; untracked: number } | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Sync terminal toggle with CenterPanel via custom event
   const toggleTerminal = useCallback(() => {
     setTerminalOpen((v) => {
@@ -221,6 +223,14 @@ export function RuntimeStatusBar() {
   return (
     <>
       <div className="flex items-center h-7 shrink-0 text-tf-xs text-prose-muted select-none">
+        {/* Settings button — far left of footer */}
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="flex items-center px-2.5 h-full text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          title="Settings"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
         <span className="flex-1" />
 
         {/* Trace area — clickable, opens modal */}
@@ -325,8 +335,7 @@ export function RuntimeStatusBar() {
       </div>
 
       {traceOpen && <TraceModal onClose={() => setTraceOpen(false)} />}
-
-      {/* PTY Terminal Panel moved to CenterPanel (inside chat area) */}
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </>
   );
 }

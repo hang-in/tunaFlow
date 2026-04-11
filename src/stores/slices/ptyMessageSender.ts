@@ -181,7 +181,9 @@ export async function sendMessageViaPty(
     }
 
     await invoke("pty_write", { sessionId, data: `\x1b[200~${enrichedPrompt}\x1b[201~` });
-    await new Promise((r) => setTimeout(r, 150));
+    // Scale delay with prompt size — large prompts need more time for bracket paste to flush
+    const pasteDelayMs = Math.max(200, Math.min(800, Math.floor(enrichedPrompt.length / 300)));
+    await new Promise((r) => setTimeout(r, pasteDelayMs));
     await invoke("pty_write", { sessionId, data: "\r" });
 
     // ── Delivery confirmation: check pty:screen for idle prompt disappearing ──

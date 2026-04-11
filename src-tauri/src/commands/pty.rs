@@ -34,8 +34,12 @@ pub struct PtyState {
 struct PtySession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     _child: Box<dyn portable_pty::Child + Send>,
+    /// PTY master — kept alive for resize (SIGWINCH).
+    master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     /// Latest VTE screen text — shared with reader thread for on-demand access.
     screen: Arc<Mutex<String>>,
+    /// Current terminal dimensions — shared with reader thread for VTE scan.
+    dims: Arc<Mutex<(usize, usize)>>,
 }
 
 impl PtyState {
@@ -103,6 +107,9 @@ pub fn pty_spawn(
         .try_clone_reader()
         .map_err(|e| AppError::Agent(format!("Failed to get PTY reader: {}", e)))?;
 
+    let master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>> =
+        Arc::new(Mutex::new(pair.master));
+
     // Assign session ID
     let session_id = {
         let mut id = state.next_id.lock();
@@ -115,6 +122,12 @@ pub fn pty_spawn(
     let shared_screen = Arc::new(Mutex::new(String::new()));
     let screen_for_reader = Arc::clone(&shared_screen);
 
+    // Shared terminal dimensions — updated by pty_resize, used by reader thread for VTE scan
+    let init_cols = cols.unwrap_or(80) as usize;
+    let init_rows = rows.unwrap_or(50) as usize;
+    let shared_dims = Arc::new(Mutex::new((init_cols, init_rows)));
+    let dims_for_reader = Arc::clone(&shared_dims);
+
     // Store session
     {
         let mut sessions = state.sessions.lock();
@@ -123,20 +136,21 @@ pub fn pty_spawn(
             PtySession {
                 writer: Arc::clone(&writer),
                 _child: child,
+                master: Arc::clone(&master),
                 screen: shared_screen,
+                dims: shared_dims,
             },
         );
     }
 
-    // Spawn reader thread — emits pty:output (raw) + pty:text (screen snapshot) events
+    // Spawn reader thread — emits pty:output (raw) + pty:screen events
     let sid = session_id;
-    let pty_cols = cols.unwrap_or(80) as usize;
-    let pty_rows = rows.unwrap_or(24) as usize;
     std::thread::spawn(move || {
         use alacritty_terminal::term::{Config as TermConfig, Term, test::TermSize};
         use alacritty_terminal::event::VoidListener;
         use alacritty_terminal::vte::ansi;
         use alacritty_terminal::index::{Line, Column};
+        use alacritty_terminal::grid::Dimensions;
 
         // Noop timeout for Processor
         #[derive(Default)]
@@ -147,8 +161,9 @@ pub fn pty_spawn(
             fn pending_timeout(&self) -> bool { false }
         }
 
-        // Create virtual terminal buffer
-        let size = TermSize::new(pty_cols, pty_rows);
+        // Create virtual terminal buffer using initial dims
+        let (init_c, init_r) = *dims_for_reader.lock();
+        let size = TermSize::new(init_c, init_r);
         let mut term = Term::new(TermConfig::default(), &size, VoidListener);
         let mut parser = ansi::Processor::<NoTimeout>::new();
         let mut prev_screen_text = String::new();
@@ -161,20 +176,28 @@ pub fn pty_spawn(
                     let raw = &buf[..n];
                     let text = String::from_utf8_lossy(raw).to_string();
 
-                    // Raw output → xterm.js (debug terminal panel)
+                    // Raw output → xterm.js
                     let _ = app.emit("pty:output", PtyOutputPayload {
                         session_id: sid, data: text,
                     });
 
-                    // Feed bytes into virtual terminal buffer
+                    // Feed bytes into virtual terminal buffer (for screen detection)
                     parser.advance(&mut term, raw);
+
+                    // Get current dims (may have been updated by pty_resize)
+                    let (cur_cols, cur_rows) = *dims_for_reader.lock();
+
+                    // Resize VTE term if dims changed
+                    if cur_cols != term.columns() || cur_rows != term.screen_lines() {
+                        term.resize(TermSize::new(cur_cols, cur_rows));
+                    }
 
                     // Read VISIBLE screen from VTE grid (for completion detection)
                     let grid = term.grid();
                     let mut screen_lines: Vec<String> = Vec::new();
-                    for row_idx in 0..pty_rows {
+                    for row_idx in 0..cur_rows {
                         let row = &grid[Line(row_idx as i32)];
-                        let line: String = (0..pty_cols)
+                        let line: String = (0..cur_cols)
                             .map(|col| row[Column(col)].c)
                             .collect::<String>()
                             .trim_end()
@@ -186,25 +209,12 @@ pub fn pty_spawn(
                     }
                     let screen_text = screen_lines.join("\n");
 
-                    // Emit TWO events:
-                    // 1. pty:screen — VTE screen snapshot (for completion detection)
+                    // pty:screen — VTE screen snapshot (for completion detection)
                     if screen_text != prev_screen_text && !screen_text.trim().is_empty() {
                         prev_screen_text = screen_text.clone();
-                        // Update shared screen buffer for on-demand access
                         *screen_for_reader.lock() = screen_text.clone();
                         let _ = app.emit("pty:screen", PtyOutputPayload {
                             session_id: sid, data: screen_text,
-                        });
-                    }
-
-                    // 2. pty:text — ANSI-stripped text (for response accumulation)
-                    let stripped_bytes = strip_ansi_escapes::strip(raw);
-                    let stripped = String::from_utf8_lossy(&stripped_bytes)
-                        .replace('\r', "")
-                        .to_string();
-                    if !stripped.trim().is_empty() {
-                        let _ = app.emit("pty:text", PtyOutputPayload {
-                            session_id: sid, data: stripped,
                         });
                     }
                 }
@@ -279,18 +289,25 @@ pub fn pty_is_alive(
     sessions.contains_key(&session_id)
 }
 
-/// Resize a PTY session.
+/// Resize a PTY session (sends SIGWINCH to the child process).
 #[tauri::command]
 pub fn pty_resize(
     session_id: u32,
     cols: u16,
     rows: u16,
-    _state: State<'_, PtyState>,
+    state: State<'_, PtyState>,
 ) -> Result<(), AppError> {
-    // portable-pty resize requires the master, but we only stored writer/reader.
-    // For now, log and skip — resize support requires storing the master handle.
-    // Resize not yet implemented — requires storing master handle
-    let _ = (session_id, cols, rows);
+    let sessions = state.sessions.lock();
+    let session = sessions.get(&session_id).ok_or(AppError::NotFound("pty session not found".into()))?;
+
+    // Update shared dims for reader thread VTE sync
+    *session.dims.lock() = (cols as usize, rows as usize);
+
+    // Resize actual PTY master (sends SIGWINCH to child)
+    let new_size = PtySize { rows, cols, pixel_width: 0, pixel_height: 0 };
+    session.master.lock().resize(new_size)
+        .map_err(|e| AppError::Agent(format!("pty resize failed: {e}")))?;
+
     Ok(())
 }
 

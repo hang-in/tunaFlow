@@ -458,9 +458,26 @@ pub async fn index_conversation_chunks(
 
         if chunks.is_empty() { return Ok(0); }
 
-        // Phase 2: embed (NO lock held — rawq is external process, can be slow)
+        // Phase 1b: find already-indexed root_message_ids (incremental — skip re-embedding)
+        let already_indexed: std::collections::HashSet<String> = {
+            let conn = db.read.lock().map_err(|_| AppError::Lock)?;
+            let mut stmt = conn.prepare(
+                "SELECT root_message_id FROM conversation_chunks WHERE conversation_id = ?1"
+            ).unwrap_or_else(|_| conn.prepare("SELECT ''").unwrap());
+            stmt.query_map([&conversation_id], |r| r.get::<_, String>(0))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+                .unwrap_or_default()
+        };
+
+        // Phase 2: embed only NEW chunks (not yet indexed)
+        let new_chunks: Vec<_> = chunks.iter()
+            .filter(|(root_id, _, _)| !already_indexed.contains(root_id))
+            .collect();
+
+        if new_chunks.is_empty() { return Ok(0); }
+
         let mut embedded: Vec<(String, String, String, Vec<u8>)> = Vec::new();
-        for (root_id, kind, text) in &chunks {
+        for (root_id, kind, text) in &new_chunks {
             match embedder::embed_text(text, false) {
                 Ok(v) => {
                     embedded.push((root_id.clone(), kind.clone(), text.clone(), embedding_to_blob(&v)));
@@ -473,20 +490,8 @@ pub async fn index_conversation_chunks(
 
         if embedded.is_empty() { return Ok(0); }
 
-        // Phase 3: write results (short lock)
+        // Phase 3: write only new results (short lock) — do NOT delete existing chunks
         let conn = db.write.lock().map_err(|_| AppError::Lock)?;
-        // Delete existing chunks + vec0 entries for this conversation
-        // Get rowids before deleting conversation_chunks (needed for vec_chunks cleanup)
-        let rowids: Vec<i64> = conn.prepare(
-            "SELECT rowid FROM conversation_chunks WHERE conversation_id = ?1"
-        ).and_then(|mut s| {
-            s.query_map([&conversation_id], |r| r.get(0))
-                .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        }).unwrap_or_default();
-        for rid in &rowids {
-            conn.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [rid]).ok();
-        }
-        conn.execute("DELETE FROM conversation_chunks WHERE conversation_id = ?1", [&conversation_id])?;
         let now = now_epoch_ms();
         let mut indexed = 0;
         for (root_id, kind, text, blob) in &embedded {
@@ -508,7 +513,7 @@ pub async fn index_conversation_chunks(
             }
             indexed += 1;
         }
-        eprintln!("[vector] indexed {} chunks for {} (from {} texts)", indexed, conversation_id, chunks.len());
+        eprintln!("[vector] indexed {} new chunks for {} ({} already indexed)", indexed, conversation_id, already_indexed.len());
         Ok(indexed)
     }).await.map_err(|_| AppError::Lock)?
 }

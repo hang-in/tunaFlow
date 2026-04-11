@@ -137,11 +137,11 @@ export function TerminalPanel() {
     };
   }, [claudeSession?.sessionId]); // Re-attach when Claude session changes
 
-  // Re-fit on visibility
+  // Re-fit when terminal becomes visible (project/session change)
   useEffect(() => {
     const timer = setTimeout(() => fitRef.current?.fit(), 50);
     return () => clearTimeout(timer);
-  });
+  }, [selectedProjectKey, claudeSession?.sessionId]);
 
   const handleRestart = useCallback(async () => {
     // Kill and re-spawn Claude PTY only

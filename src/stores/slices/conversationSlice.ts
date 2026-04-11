@@ -67,7 +67,7 @@ export async function spawnPtyForConversation(conv: Conversation, projectPath: s
     }
 
     const sessionId = await tauriInvoke<number>("pty_spawn", {
-      file: binary, args, cwd: projectPath, cols: 80, rows: 500,
+      file: binary, args, cwd: projectPath, cols: 220, rows: 50,
       env: { NO_COLOR: "1" },
     });
     pty.setSession(engine, sessionId, projectPath);

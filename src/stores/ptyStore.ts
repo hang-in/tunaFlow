@@ -45,7 +45,6 @@ interface PtyStoreState {
 
   activeMessageId: string | null;
   activeEngine: PtyEngine | null;
-  outputBuffer: string;       // Accumulated ANSI-stripped text (pty:text)
   isCapturing: boolean;
   completionSeen: boolean;
   responseStarted: boolean;
@@ -58,17 +57,15 @@ interface PtyStoreState {
   clearAllSessions: () => void;
 
   startCapture: (messageId: string, engine: PtyEngine) => void;
-  appendOutput: (text: string) => string;       // pty:text — accumulate stripped text
   updateScreen: (screenText: string) => void;   // pty:screen — completion detection
   checkCompletion: () => boolean;
-  endCapture: () => string;
+  endCapture: () => void;
 }
 
 export const usePtyStore = create<PtyStoreState>((set, get) => ({
   sessions: new Map(),
   activeMessageId: null,
   activeEngine: null,
-  outputBuffer: "",
   isCapturing: false,
   completionSeen: false,
   responseStarted: false,
@@ -102,17 +99,10 @@ export const usePtyStore = create<PtyStoreState>((set, get) => ({
   startCapture: (messageId, engine) => set({
     activeMessageId: messageId,
     activeEngine: engine,
-    outputBuffer: "",
     isCapturing: true,
     completionSeen: false,
     responseStarted: false,
   }),
-
-  appendOutput: (text) => {
-    // pty:text — ANSI-stripped incremental chunks, ACCUMULATE
-    set((s) => ({ outputBuffer: s.outputBuffer + text }));
-    return text;
-  },
 
   updateScreen: (screenText) => {
     // pty:screen — VTE screen snapshot, used for completion detection only
@@ -128,8 +118,6 @@ export const usePtyStore = create<PtyStoreState>((set, get) => ({
   checkCompletion: () => get().completionSeen,
 
   endCapture: () => {
-    const { outputBuffer } = get();
-    set({ activeMessageId: null, activeEngine: null, outputBuffer: "", isCapturing: false, completionSeen: false, responseStarted: false });
-    return outputBuffer;
+    set({ activeMessageId: null, activeEngine: null, isCapturing: false, completionSeen: false, responseStarted: false });
   },
 }));

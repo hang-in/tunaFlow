@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
-import { ChevronDown, ChevronRight, FolderOpen, Folder, Trash2, Loader2, Settings, GitBranch, Archive, Users, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, Folder, Trash2, Loader2, GitBranch, Archive, Users, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { Branch } from "@/types";
@@ -12,7 +12,6 @@ import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 import { DocsSection } from "./sidebar/DocsSection";
 import { AddProjectForm } from "./sidebar/AddProjectForm";
 import { useProjectBranches } from "./sidebar/useProjectBranches";
-import { SettingsPanel } from "./SettingsPanel";
 import { getSetting, setSetting } from "@/lib/appStore";
 
 // ─── CollapsibleSection: header + collapsible content ────────────────────────
@@ -69,7 +68,6 @@ export function Sidebar() {
   const messageQueue = useChatStore((s) => s.messageQueue);
   const [renameCounter, setRenameCounter] = useState(0);
   const [showCreateRT, setShowCreateRT] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // 3-tier collapsible sections (persisted)
   const [sectionState, setSectionState] = useState({ branches: true, docs: true, archive: true });
@@ -374,19 +372,7 @@ export function Sidebar() {
         <nav className="flex-1" />
       )}
 
-      {/* Settings button — bottom left */}
-      <div className="shrink-0 px-3 py-2">
-        <button
-          onClick={() => setSettingsOpen(true)}
-          className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-sidebar-accent/50 transition-colors"
-          title="Settings"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-      </div>
-
       <CreateRoundtableDialog open={showCreateRT} onClose={() => setShowCreateRT(false)} />
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </aside>
   );
 }
