@@ -73,6 +73,45 @@ pub fn build_round_prompt_with_identity(
     )
 }
 
+/// Build prompt using vector-retrieved context instead of full transcript.
+/// Each prior response is represented by its most relevant chunk (~800 chars)
+/// rather than the full response (~4000 chars), saving ~80% tokens.
+pub fn build_round_prompt_with_vector_context(
+    topic: &str,
+    vector_context: &[(String, String)], // (name, relevant_chunk)
+    current_round: &[(String, String)],
+    identity: Option<&str>,
+) -> String {
+    let mut sections: Vec<String> = Vec::new();
+
+    if let Some(id) = identity {
+        sections.push(id.to_string());
+    }
+
+    if !vector_context.is_empty() {
+        let lines: Vec<String> = vector_context
+            .iter()
+            .map(|(name, chunk)| format!("[{}]:\n{}", name, chunk))
+            .collect();
+        sections.push(format!("## Prior discussion (relevant excerpts)\n\n{}", lines.join("\n\n")));
+    }
+
+    if !current_round.is_empty() {
+        let lines: Vec<String> = current_round
+            .iter()
+            .map(|(name, content)| format!("[{}]:\n{}", name, truncate(content, MAX_ANSWER_LENGTH)))
+            .collect();
+        sections.push(format!("## This round (other agents)\n\n{}", lines.join("\n\n")));
+    }
+
+    if sections.is_empty() {
+        return topic.to_string();
+    }
+
+    let context_block = sections.join("\n\n---\n\n");
+    format!("{}\n\n---\n\n{}", context_block, topic)
+}
+
 /// Describes what context was included in a participant's prompt.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]

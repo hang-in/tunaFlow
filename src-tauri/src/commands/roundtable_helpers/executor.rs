@@ -6,7 +6,7 @@ use crate::db::{models::Message, DbState};
 use crate::errors::AppError;
 use crate::CancelRegistry;
 
-use super::prompt::{build_round_prompt_with_identity, PromptSources};
+use super::prompt::{build_round_prompt_with_identity, build_round_prompt_with_vector_context, PromptSources};
 use super::persist::{persist_streaming_start, persist_streaming_done};
 
 /// Budget settings for local models (ollama, opencode) — smaller context window.
@@ -147,6 +147,61 @@ impl RtContextCache {
     fn get(&self, _engine_key: &str) -> Option<&str> {
         self.context.as_deref()
     }
+}
+
+/// In-memory vector index for RT transcript sharing.
+/// Instead of copying full responses (~4000 chars each) to every participant,
+/// embeds responses and retrieves only relevant chunks via cosine similarity.
+/// Saves ~80% tokens in multi-round RT discussions.
+struct RtVectorIndex {
+    entries: Vec<RtVectorEntry>,
+}
+
+struct RtVectorEntry {
+    name: String,
+    text: String,       // truncated text (~800 chars)
+    embedding: Vec<f32>,
+}
+
+impl RtVectorIndex {
+    fn new() -> Self { Self { entries: Vec::new() } }
+
+    /// Add a participant's response to the index. Embeds via rawq daemon.
+    fn add(&mut self, name: &str, content: &str) {
+        use crate::agents::rawq;
+        let text = super::prompt::truncate(content, 800);
+        match rawq::embed_text(&text, false) {
+            Ok(emb) => {
+                self.entries.push(RtVectorEntry {
+                    name: name.to_string(), text, embedding: emb,
+                });
+            }
+            Err(e) => eprintln!("[rt-vec] embed failed for {}: {:?}", name, e),
+        }
+    }
+
+    /// Search for top-K most relevant chunks given a topic query.
+    /// Returns (name, relevant_text) pairs.
+    fn search(&self, topic: &str, limit: usize) -> Vec<(String, String)> {
+        use crate::agents::rawq;
+        let query_emb = match rawq::embed_text(topic, true) {
+            Ok(e) => e,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut scored: Vec<(f32, &RtVectorEntry)> = self.entries.iter()
+            .map(|e| (rawq::cosine_similarity(&query_emb, &e.embedding), e))
+            .collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+
+        scored.into_iter()
+            .filter(|(score, _)| *score > 0.2) // minimum relevance threshold
+            .map(|(_, e)| (e.name.clone(), e.text.clone()))
+            .collect()
+    }
+
+    fn is_empty(&self) -> bool { self.entries.is_empty() }
 }
 
 /// Real-time participant execution status — emitted at actual subprocess lifecycle points.
@@ -492,6 +547,17 @@ async fn execute_sequential(
     let has_local = participants.iter().any(|p| matches!(p.engine.as_deref(), Some("ollama" | "opencode")));
     let ctx_cache = RtContextCache::build(state, conversation_id, topic, project_path, has_local);
 
+    // Vector index: embed prior transcript for selective retrieval (Tier 2 optimization)
+    let mut vec_index = RtVectorIndex::new();
+    if crate::agents::rawq::is_daemon_ready() {
+        for (name, content) in transcript {
+            vec_index.add(name, content);
+        }
+        if !vec_index.is_empty() {
+            eprintln!("[rt] vector index built: {} entries from prior transcript", vec_index.entries.len());
+        }
+    }
+
     for p in participants {
         if cancel.check_and_consume(conversation_id) {
             return Err(AppError::Agent("cancelled by user".into()));
@@ -527,10 +593,15 @@ async fn execute_sequential(
         });
 
         // Phase 2: stream participant (emits roundtable:chunk events during execution)
+        // Use vector context if available (Tier 2 optimization: ~80% token savings)
         let identity = participant_identity(p);
         let mut prompt = if p.blind {
             eprintln!("[rt] blind verifier: {} — no transcript", p.name);
             build_round_prompt_with_identity(topic, &[], &[], Some(&identity))
+        } else if !vec_index.is_empty() {
+            let vec_ctx = vec_index.search(topic, 5);
+            eprintln!("[rt] {} using vector context: {} chunks (vs {} full transcript)", p.name, vec_ctx.len(), transcript.len());
+            build_round_prompt_with_vector_context(topic, &vec_ctx, &round_responses, Some(&identity))
         } else {
             build_round_prompt_with_identity(topic, transcript, &round_responses, Some(&identity))
         };
@@ -557,6 +628,10 @@ async fn execute_sequential(
         messages.push(final_msg);
 
         if r.status == "done" {
+            // Add to vector index for next participant (sequential: each sees prior responses)
+            if crate::agents::rawq::is_daemon_ready() {
+                vec_index.add(&r.name, &r.content);
+            }
             round_responses.push((r.name.clone(), r.content.clone()));
         }
     }
@@ -629,15 +704,37 @@ async fn execute_parallel(
     let transcript_owned: Vec<(String, String)> = transcript.to_vec();
     let topic_owned = topic.to_string();
 
+    // Vector index for prior transcript (shared across all parallel participants)
+    let mut vec_index = RtVectorIndex::new();
+    if crate::agents::rawq::is_daemon_ready() {
+        for (name, content) in transcript {
+            vec_index.add(name, content);
+        }
+        if !vec_index.is_empty() {
+            eprintln!("[rt-parallel] vector index built: {} entries", vec_index.entries.len());
+        }
+    }
+
+    // Pre-compute vector context for all participants (same for deliberative — no current-round)
+    let vec_ctx: Vec<(String, String)> = if !vec_index.is_empty() {
+        vec_index.search(&topic_owned, 5)
+    } else {
+        Vec::new()
+    };
+
     for (i, p) in participants.iter().enumerate() {
         let p_clone = p.clone();
         let identity = participant_identity(p);
         let engine_key = p.engine.as_deref().unwrap_or("claude");
         let tr = transcript_owned.clone();
         let tp = topic_owned.clone();
+        let vc = vec_ctx.clone();
         let mut pr = if p.blind {
             eprintln!("[rt] blind verifier: {} — no transcript (deliberative)", p.name);
             build_round_prompt_with_identity(&tp, &[], &[], Some(&identity))
+        } else if !vc.is_empty() {
+            eprintln!("[rt-parallel] {} using vector context: {} chunks", p.name, vc.len());
+            build_round_prompt_with_vector_context(&tp, &vc, &[], Some(&identity))
         } else {
             build_round_prompt_with_identity(&tp, &tr, &[], Some(&identity))
         };
