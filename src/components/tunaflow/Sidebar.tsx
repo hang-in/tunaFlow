@@ -366,7 +366,7 @@ export function Sidebar() {
               activeChatBranches.map((b) => (
                 <button key={b.id} onClick={() => openThread(b.id)}
                   className={cn(
-                    "w-full flex items-center gap-1.5 px-1 py-0.5 text-tf-sm rounded transition-colors group",
+                    "w-full flex items-center gap-1.5 px-1 py-0.5 text-tf-xs rounded transition-colors group",
                     b.id === threadBranchId
                       ? "bg-sidebar-accent text-sidebar-foreground"
                       : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
@@ -406,7 +406,7 @@ export function Sidebar() {
               activeRTBranches.map((b) => (
                 <button key={b.id} onClick={() => openThread(b.id)}
                   className={cn(
-                    "w-full flex items-center gap-1.5 px-1 py-0.5 text-tf-sm rounded transition-colors",
+                    "w-full flex items-center gap-1.5 px-1 py-0.5 text-tf-xs rounded transition-colors",
                     b.id === threadBranchId
                       ? "bg-sidebar-accent text-sidebar-foreground"
                       : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40"
@@ -465,7 +465,7 @@ export function Sidebar() {
             {archivedBranches.map((b) => (
               <button key={b.id} onClick={() => openThread(b.id)}
                 className={cn(
-                  "w-full flex items-center gap-1.5 px-1 py-0.5 text-tf-sm rounded transition-colors",
+                  "w-full flex items-center gap-1.5 px-1 py-0.5 text-tf-xs rounded transition-colors",
                   b.id === threadBranchId
                     ? "bg-sidebar-accent text-sidebar-foreground"
                     : "text-sidebar-foreground/35 hover:text-sidebar-foreground/60 hover:bg-sidebar-accent/40"
