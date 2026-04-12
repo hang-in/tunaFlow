@@ -15,6 +15,9 @@ import type {
 
 let ptySpawnLock = false; // Prevent concurrent spawn calls
 
+/** Returns true if PTY is currently being spawned (lock held). */
+export function isPtySpawning() { return ptySpawnLock; }
+
 /** Spawn a PTY Claude session for the given conversation.
  *  If conversation has a resumeToken, resumes that exact session.
  *  Otherwise starts a new session. */

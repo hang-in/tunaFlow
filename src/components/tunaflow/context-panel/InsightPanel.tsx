@@ -5,11 +5,11 @@ import {
   Zap, Shield, Box, Gauge, Lock, Trash2,
   Play, ChevronDown, ChevronRight, CheckSquare, Square,
   AlertTriangle, Info, XCircle, CheckCircle2, Clock, Loader2,
-  Download, ArrowUpRight,
+  Download, ArrowUpRight, RefreshCw, GitBranch,
 } from "lucide-react";
 import type { InsightSession, InsightFinding, InsightCategory, InsightSeverity } from "@/types";
 import * as insightApi from "@/lib/api/insight";
-import { runInsightAnalysis, autoFixQuickWins } from "@/lib/insightOrchestration";
+import { runInsightAnalysis, revalidateFindings } from "@/lib/insightOrchestration";
 import { toast } from "sonner";
 
 // ── Constants ────────────────────────────────────────────────
@@ -125,7 +125,7 @@ function FindingRow({
 
 // ── Detail panel ─────────────────────────────────────────────
 
-function FindingDetail({ finding, onPromoteToPlan }: { finding: InsightFinding; onPromoteToPlan?: (f: InsightFinding) => void }) {
+function FindingDetail({ finding, onSendToArchitect }: { finding: InsightFinding; onSendToArchitect?: (f: InsightFinding) => void }) {
   const catMeta = CATEGORY_META[finding.category];
   const sevMeta = SEVERITY_META[finding.severity];
 
@@ -188,13 +188,13 @@ function FindingDetail({ finding, onPromoteToPlan }: { finding: InsightFinding; 
       )}
 
       {/* Actions */}
-      {(finding.status === "open" || finding.status === "selected") && onPromoteToPlan && (
+      {(finding.status === "open" || finding.status === "selected") && onSendToArchitect && (
         <button
-          onClick={() => onPromoteToPlan(finding)}
+          onClick={() => onSendToArchitect(finding)}
           className="flex items-center gap-1 text-tf-xs px-2 py-1 rounded font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
         >
-          <ArrowUpRight className="w-3 h-3" />
-          Plan으로 승격
+          <GitBranch className="w-3 h-3" />
+          Architect 검토
         </button>
       )}
     </div>
@@ -244,13 +244,13 @@ function QuadrantSection({
           {meta.label}
           <span className="text-tf-micro text-prose-disabled">— {meta.desc} ({open.length})</span>
         </button>
-        {quadrant === "quick-wins" && open.length > 0 && onAutoFix && (
-          <button
-            onClick={onAutoFix}
-            className="text-tf-micro px-1.5 py-0.5 rounded bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
+        {quadrant === "quick-wins" && open.length > 0 && (
+          <span
+            title="메타에이전트 도입 후 활성화 예정"
+            className="text-tf-micro px-1.5 py-0.5 rounded bg-muted/30 text-prose-disabled cursor-not-allowed"
           >
-            Run All
-          </button>
+            Auto Fix (준비 중)
+          </span>
         )}
       </div>
       {!collapsed && (
@@ -364,57 +364,102 @@ export function InsightPanel() {
     }
   }, [activeSession, selectedProjectKey, projects]);
 
-  // Promote findings to Architect plan
-  const handlePromoteToPlan = useCallback(async (targetFindings: InsightFinding[]) => {
+  // Send findings to Architect via a new Review Branch (B안)
+  const handleSendToArchitect = useCallback(async (targetFindings: InsightFinding[]) => {
     if (targetFindings.length === 0) return;
+    const store = useChatStore.getState();
+    const convId = store.selectedConversationId;
+    if (!convId) { toast.error("대화를 먼저 선택해주세요"); return; }
+
     const lines = targetFindings.map((f) => {
-      let entry = `### ${f.title}\n- **카테고리**: ${f.category}\n- **심각도**: ${f.severity}`;
-      if (f.filePath) entry += `\n- **위치**: ${f.filePath}${f.lineNumber ? `:${f.lineNumber}` : ""}`;
+      let entry = `### ${f.title}\n- **카테고리**: ${f.category} | **심각도**: ${f.severity} | **난이도**: ${f.fixDifficulty}`;
+      if (f.filePath) entry += `\n- **위치**: \`${f.filePath}${f.lineNumber ? `:${f.lineNumber}` : ""}\``;
       entry += `\n- **설명**: ${f.description}`;
+      if (f.snippet) entry += `\n\`\`\`\n${f.snippet.slice(0, 300)}\n\`\`\``;
       return entry;
     });
-    const prompt = `## Insight 분석 결과 — Plan 요청\n\n다음 findings를 해결하는 plan을 제안해주세요.\n\n${lines.join("\n\n")}\n\n각 finding의 원본 파일을 확인하고 구체적인 subtask로 분해해주세요.`;
 
-    // Mark findings as in_progress
-    const ids = targetFindings.map((f) => f.id);
-    await insightApi.updateInsightFindingsBatchStatus(ids, "in_progress");
-    setFindings((prev) => prev.map((f) => ids.includes(f.id) ? { ...f, status: "in_progress" as const } : f));
-    setSelectedIds(new Set());
+    const prompt = `## Insight 분석 결과 검토 요청
 
-    // Switch to Chat tab and send to Architect
-    window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "chat" }));
-    useChatStore.getState().sendWithEngine("claude", prompt);
-    toast.success(`${targetFindings.length}건 Plan 승격 → Architect에게 전달`);
+다음 ${targetFindings.length}건의 코드 품질 이슈를 검토해주세요.
+
+각 항목에 대해 **자율적으로 판단**해주세요:
+- 관련 파일을 직접 읽고 현재 상태 확인
+- Plan으로 승격할지, 단순 메모로 처리할지, 이미 해결됐는지 판단
+- Plan이 필요하다면 여러 항목을 묶어 하나의 plan-proposal로 작성 (불필요한 Plan 낭비 방지)
+- Plan 없이 처리 가능한 것들은 처리 방법을 간략히 설명
+
+---
+
+${lines.join("\n\n")}`;
+
+    try {
+      // Create Architect Review Branch
+      await store.createBranch(convId, undefined, `Insight Review (${targetFindings.length}건)`, "chat");
+      // Branch is now at top of list — find it
+      const newBranch = useChatStore.getState().branches
+        .filter((b) => b.conversationId === convId && b.mode !== "roundtable")
+        .sort((a, b) => b.createdAt - a.createdAt)[0];
+
+      if (!newBranch) { toast.error("브랜치 생성 실패"); return; }
+
+      // Mark findings as in_progress
+      const ids = targetFindings.map((f) => f.id);
+      await insightApi.updateInsightFindingsBatchStatus(ids, "in_progress");
+      setFindings((prev) => prev.map((f) => ids.includes(f.id) ? { ...f, status: "in_progress" as const } : f));
+      setSelectedIds(new Set());
+
+      // Open branch drawer and send message
+      store.openThread(newBranch.id);
+      setTimeout(() => {
+        store.sendThreadMessage(prompt);
+      }, 300);
+
+      toast.success(`Architect Review Branch 생성 → ${targetFindings.length}건 전달`);
+    } catch (err) {
+      toast.error(`브랜치 생성 실패: ${err}`);
+    }
   }, []);
 
-  // Auto fix quick wins
-  const handleAutoFix = useCallback(async () => {
-    if (running) return;
-    const project = projects.find((p) => p.key === selectedProjectKey);
-    if (!project?.path) return;
+  // Revalidate open findings against current codebase
+  const handleRevalidate = useCallback(async () => {
+    if (running || !selectedProjectKey) return;
+    const openCount = findings.filter((f) => f.status === "open").length;
+    if (openCount === 0) { toast.info("재검토할 open findings가 없습니다"); return; }
 
     setRunning(true);
-    setProgress("Auto Fix 시작...");
+    setProgress(`${openCount}건 재검토 중...`);
     try {
-      const { fixed, failed } = await autoFixQuickWins(
-        findings,
-        selectedProjectKey!,
-        project.path,
-        setProgress,
-      );
-      toast.success(`Auto Fix 완료: ${fixed}건 수정, ${failed}건 실패`);
-      // Reload findings
-      if (activeSession) {
-        const updated = await insightApi.listInsightFindings(activeSession.id);
-        setFindings(updated);
+      const results = await revalidateFindings(findings, selectedProjectKey, setProgress);
+      const resolved = results.filter((r) => r.status === "resolved");
+      const uncertain = results.filter((r) => r.status === "uncertain");
+
+      // Update resolved findings in DB and local state
+      for (const r of resolved) {
+        await insightApi.updateInsightFindingStatus(r.id, "resolved", r.reason);
       }
+      if (resolved.length > 0) {
+        setFindings((prev) => prev.map((f) => {
+          const match = resolved.find((r) => r.id === f.id);
+          return match ? { ...f, status: "resolved" as const } : f;
+        }));
+      }
+
+      const msg = resolved.length > 0
+        ? `재검토 완료: ${resolved.length}건 해결됨으로 업데이트${uncertain.length > 0 ? `, ${uncertain.length}건 불확실` : ""}`
+        : `재검토 완료: 모든 findings가 여전히 유효합니다`;
+      toast.success(msg);
     } catch (err) {
-      toast.error(`Auto Fix 실패: ${err}`);
+      toast.error(`재검토 실패: ${err}`);
     } finally {
       setRunning(false);
       setProgress("");
     }
-  }, [running, findings, selectedProjectKey, projects, activeSession]);
+  }, [running, findings, selectedProjectKey]);
+
+  // Auto fix — disabled, pending meta-agent (see docs/ideas/onboardingMetaAgentIdea.md §8)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _handleAutoFix = useCallback(() => {}, []);
 
   // Filter findings
   const filtered = categoryFilter === "all"
@@ -439,7 +484,7 @@ export function InsightPanel() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/20 shrink-0">
+      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/20 shrink-0">
         <button
           onClick={handleRunAnalysis}
           disabled={running}
@@ -456,14 +501,29 @@ export function InsightPanel() {
 
         {activeSession && findings.length > 0 && (
           <button
+            onClick={handleRevalidate}
+            disabled={running}
+            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-prose-muted hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="현재 코드 기반으로 open findings 재검토"
+          >
+            <RefreshCw className="w-3 h-3" />
+            재검토
+          </button>
+        )}
+
+        {activeSession && findings.length > 0 && (
+          <button
             onClick={handleExportToFiles}
             className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-prose-muted hover:text-foreground hover:bg-muted/30 transition-colors"
             title="docs/insight/ 에 파일 저장"
           >
             <Download className="w-3 h-3" />
-            파일 저장
+            저장
           </button>
         )}
+
+        <span className="w-px h-3 bg-border/30 mx-0.5" />
+
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value as InsightCategory | "all")}
@@ -476,11 +536,61 @@ export function InsightPanel() {
         </select>
 
         {activeSession && (
-          <span className="text-[9px] text-muted-foreground/40 ml-auto">
+          <span className="text-[9px] text-muted-foreground/35 ml-auto">
             {new Date(activeSession.createdAt * 1000).toLocaleString()}
           </span>
         )}
       </div>
+
+      {/* Summary strip — always visible when findings exist */}
+      {findings.length > 0 && (() => {
+        const open = findings.filter((f) => f.status === "open").length;
+        const resolved = findings.filter((f) => f.status === "resolved").length;
+        const inProgress = findings.filter((f) => f.status === "in_progress").length;
+        const total = findings.length;
+        const bySeverity = { critical: 0, major: 0, minor: 0, info: 0 };
+        for (const f of findings.filter((f) => f.status === "open")) {
+          bySeverity[f.severity] = (bySeverity[f.severity] || 0) + 1;
+        }
+        return (
+          <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border/10 shrink-0 text-[9px] bg-card/20">
+            {bySeverity.critical > 0 && (
+              <span className="flex items-center gap-0.5 text-red-500/80">
+                <XCircle className="w-2.5 h-2.5" />{bySeverity.critical}
+              </span>
+            )}
+            {bySeverity.major > 0 && (
+              <span className="flex items-center gap-0.5 text-orange-500/80">
+                <AlertTriangle className="w-2.5 h-2.5" />{bySeverity.major}
+              </span>
+            )}
+            {bySeverity.minor > 0 && (
+              <span className="flex items-center gap-0.5 text-yellow-500/70">
+                <Info className="w-2.5 h-2.5" />{bySeverity.minor}
+              </span>
+            )}
+            {bySeverity.info > 0 && (
+              <span className="flex items-center gap-0.5 text-blue-400/70">
+                <Info className="w-2.5 h-2.5" />{bySeverity.info}
+              </span>
+            )}
+            <span className="w-px h-2.5 bg-border/30" />
+            <span className="text-prose-disabled">
+              {open > 0 && <span className="text-foreground/50">{open} open</span>}
+              {inProgress > 0 && <span className="ml-1.5 text-primary/50">{inProgress} 진행 중</span>}
+              {resolved > 0 && <span className="ml-1.5 text-status-approved/60">{resolved}/{total} 해결</span>}
+            </span>
+            {resolved > 0 && (
+              <div className="ml-auto w-20 h-1 bg-muted/40 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-status-approved/50 rounded-full transition-all"
+                  style={{ width: `${Math.round((resolved / total) * 100)}%` }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Progress */}
       {running && progress && (
@@ -498,9 +608,7 @@ export function InsightPanel() {
         )}>
           {findings.length > 0 ? (
             <>
-              <SummaryBar findings={filtered} />
-
-              <QuadrantSection quadrant="quick-wins" findings={quadrants["quick-wins"]} selectedIds={selectedIds} activeFindingId={activeFinding?.id ?? null} onToggle={handleToggle} onSelect={setActiveFinding} onAutoFix={handleAutoFix} />
+              <QuadrantSection quadrant="quick-wins" findings={quadrants["quick-wins"]} selectedIds={selectedIds} activeFindingId={activeFinding?.id ?? null} onToggle={handleToggle} onSelect={setActiveFinding} />
               <QuadrantSection quadrant="strategic" findings={quadrants["strategic"]} selectedIds={selectedIds} activeFindingId={activeFinding?.id ?? null} onToggle={handleToggle} onSelect={setActiveFinding} />
               <QuadrantSection quadrant="fill-ins" findings={quadrants["fill-ins"]} selectedIds={selectedIds} activeFindingId={activeFinding?.id ?? null} onToggle={handleToggle} onSelect={setActiveFinding} />
               <QuadrantSection quadrant="deprioritize" findings={quadrants["deprioritize"]} selectedIds={selectedIds} activeFindingId={activeFinding?.id ?? null} onToggle={handleToggle} onSelect={setActiveFinding} />
@@ -511,12 +619,12 @@ export function InsightPanel() {
                   <button
                     onClick={() => {
                       const selected = findings.filter((f) => selectedIds.has(f.id));
-                      handlePromoteToPlan(selected);
+                      handleSendToArchitect(selected);
                     }}
                     className="text-tf-xs text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 flex items-center gap-0.5"
                   >
-                    <ArrowUpRight className="w-2.5 h-2.5" />
-                    Plan 승격
+                    <GitBranch className="w-2.5 h-2.5" />
+                    Architect 검토
                   </button>
                   <button
                     onClick={handleDismiss}
@@ -570,7 +678,7 @@ export function InsightPanel() {
             >
               <XCircle className="w-4 h-4" />
             </button>
-            <FindingDetail finding={activeFinding} onPromoteToPlan={(f) => handlePromoteToPlan([f])} />
+            <FindingDetail finding={activeFinding} onSendToArchitect={(f) => handleSendToArchitect([f])} />
           </div>
         )}
       </div>

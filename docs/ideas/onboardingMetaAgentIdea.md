@@ -576,6 +576,70 @@ tunaFlow 철학 "Human with Agent"와 일치: **판정은 Human, 정리는 Agent
 
 ---
 
+## 8. Auto Fix — 메타에이전트의 핵심 서브루틴
+
+> **현재 상태 (2026-04-12)**: Insight 탭에 `fix_difficulty: auto` 분류는 존재하지만, Auto Fix 버튼은 비활성화. 메타에이전트 도입 후 구현 예정.
+
+### 8.1 왜 메타에이전트가 필요한가
+
+Auto Fix는 단순히 에이전트에게 "이 파일 고쳐줘"를 보내는 것이 아니다. **수정 → 검증 → 실패 처리** 전체 루프를 자율적으로 관리해야 한다.
+
+```
+[현재 없는 것 — 메타에이전트가 담당해야 할 루프]
+
+Finding (auto)
+  ↓
+코딩 에이전트에게 수정 지시 (Developer 역할)
+  ↓
+수정 완료 응답
+  ↓
+[메타에이전트 판단]
+  ├── run_project_tests → 실패 → 롤백 + guided로 격상 + Human 게이트
+  ├── rawq 재스캔 → 패턴 여전히 존재 → 수정 불완전 → 재시도 or 격상
+  └── 모두 통과 → finding resolved + commit
+```
+
+Human이 이 루프에 개입하면 "auto"의 의미가 없다. Human 없이 루프를 돌릴 수 있어야 하므로, 이 판단 로직을 가진 메타에이전트가 필요하다.
+
+### 8.2 현재 임시 처리 — manual 전환
+
+Auto Fix 대신 현재 흐름:
+
+```
+Insight finding (auto/guided/manual)
+  ↓
+"Architect에게 전달" → Architect Review Branch 생성
+  ↓
+Architect가 자율 판단:
+  - 여러 auto finding → 하나의 Plan subtask로 묶거나 / Plan 없이 메모로 남기거나
+  - guided/manual → Plan subtask로 승격
+  ↓
+Human Approval Gate → Developer 실행
+```
+
+작은 auto finding들은 Architect가 "한 번에 처리할 수 있는 잡무 묶음"으로 판단해서 하나의 subtask로 처리. Plan 하나에 subtask 1개가 되는 낭비를 Architect 판단으로 방지.
+
+### 8.3 메타에이전트 도입 시 변경 범위
+
+| 항목 | 내용 |
+|---|---|
+| 메타에이전트 진입 | `fix_difficulty: auto` findings 선택 → Auto Fix 버튼 활성화 |
+| 에이전트 선택 | Developer 역할 + 코딩 엔진 (Claude/Codex 중 선택) |
+| 루프 관리 | 수정 → 테스트 → rawq 검증 → 성공/실패 분기 |
+| 실패 처리 | 자동 롤백 + `fix_difficulty: guided`로 격상 + Insight UI 업데이트 |
+| 성공 처리 | `finding.status = resolved` + git commit 메시지 자동 생성 |
+| Human 게이트 | 실패 시에만 개입 (성공 경로는 완전 자동) |
+
+### 8.4 구현 우선순위
+
+메타에이전트 도입 순서 (의존성 기준):
+
+1. **RT 판정 게이트** (§4) — 라운드 완료 시 Human 제어. 가장 단순한 메타에이전트 패턴.
+2. **온보딩 분석** (§3) — 프로젝트 분석 + 설정 제안. 단방향 분석이라 부작용 없음.
+3. **Auto Fix 루프** (§8) — 수정 + 검증 + 롤백. 부작용(파일 변경) 있으므로 마지막.
+
+---
+
 ## 참고
 
 - 메타 에이전트 Tier 1: `docs/ideas/projectMetaAgentIdea.md`

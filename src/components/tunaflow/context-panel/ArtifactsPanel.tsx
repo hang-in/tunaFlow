@@ -8,6 +8,8 @@ import {
   ClipboardCheck, FileSearch, Gavel, TestTube, ChevronDown, ChevronRight,
 } from "lucide-react";
 import type { Artifact, Plan } from "@/types";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -35,9 +37,22 @@ const STATUS_CONFIG: Record<ArtifactStatus, { icon: React.ReactNode; class: stri
   rejected: { icon: <XCircle className="w-2.5 h-2.5" />,      class: "text-status-rejected/70 bg-status-rejected/8",    label: "rejected" },
 };
 
+// Navigate to artifact source conversation/branch
+function jumpToSource(artifact: Artifact, store: any) {
+  if (artifact.branchId) {
+    store.openThread(artifact.branchId);
+  } else if (artifact.conversationId) {
+    store.selectConversation(artifact.conversationId);
+  }
+}
+
 // ─── ArtifactCard ────────────────────────────────────────────────────────────
 
-function ArtifactCard({ artifact, onOpen }: { artifact: Artifact; onOpen: (a: Artifact) => void }) {
+function ArtifactCard({
+  artifact, active, onOpen,
+}: {
+  artifact: Artifact; active: boolean; onOpen: (a: Artifact) => void;
+}) {
   const status = STATUS_CONFIG[artifact.status];
   const isHarness = HARNESS_TYPES.has(artifact.type);
   const harnessConfig = isHarness ? HARNESS_TYPE_CONFIG[artifact.type] : null;
@@ -53,7 +68,9 @@ function ArtifactCard({ artifact, onOpen }: { artifact: Artifact; onOpen: (a: Ar
     <div
       className={cn(
         "rounded-md border p-2.5 hover:border-border/60 transition-colors cursor-pointer group",
-        isHarness ? "border-border/40 bg-card/80" : "border-border/30 bg-card/50"
+        active
+          ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
+          : isHarness ? "border-border/40 bg-card/80" : "border-border/30 bg-card/50"
       )}
       onClick={() => onOpen(artifact)}
     >
@@ -137,23 +154,17 @@ function HarnessStrip({ artifacts }: { artifacts: Artifact[] }) {
   );
 }
 
-// ─── Plan Group ─────────────────────────────────────────────────────────────
+// ─── Plan Group ──────────────────────────────────────────────────────────────
 
 function PlanGroup({
-  planId,
-  planTitle,
-  artifacts,
-  onOpen,
+  planId, planTitle, artifacts, activeId, onOpen,
 }: {
-  planId: string | null;
-  planTitle?: string;
-  artifacts: Artifact[];
+  planId: string | null; planTitle?: string;
+  artifacts: Artifact[]; activeId: string | null;
   onOpen: (a: Artifact) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const label = planId
-    ? (planTitle ?? "Plan...")
-    : "Ungrouped";
+  const label = planId ? (planTitle ?? "Plan...") : "Ungrouped";
 
   return (
     <div className="rounded-md border border-border/20 bg-card/30">
@@ -169,23 +180,129 @@ function PlanGroup({
       </button>
       {!collapsed && (
         <div className="px-1.5 pb-1.5 space-y-1">
-          {artifacts.map((a) => <ArtifactCard key={a.id} artifact={a} onOpen={onOpen} />)}
+          {artifacts.map((a) => (
+            <ArtifactCard key={a.id} artifact={a} active={a.id === activeId} onOpen={onOpen} />
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// ─── ArtifactsPanel (main export) ────────────────────────────────────────────
+// ─── Detail Panel ────────────────────────────────────────────────────────────
 
-// Navigate to artifact source conversation/branch
-function jumpToSource(artifact: Artifact, store: any) {
-  if (artifact.branchId) {
-    store.openThread(artifact.branchId);
-  } else if (artifact.conversationId) {
-    store.selectConversation(artifact.conversationId);
-  }
+function ArtifactDetailPanel({
+  artifact, onClose,
+}: {
+  artifact: Artifact; onClose: () => void;
+}) {
+  const { updateArtifactStatus, deleteArtifact, sendFollowup, conversations, branches } = useChatStore();
+  const status = STATUS_CONFIG[artifact.status];
+  const harnessConfig = HARNESS_TYPES.has(artifact.type) ? HARNESS_TYPE_CONFIG[artifact.type] : null;
+
+  const sourceConv = artifact.conversationId ? conversations.find((c) => c.id === artifact.conversationId) : null;
+  const sourceBranch = artifact.branchId ? branches.find((b) => b.id === artifact.branchId) : null;
+  const sourceLabel = sourceBranch
+    ? `Branch: ${sourceBranch.customLabel ?? sourceBranch.label}${sourceBranch.mode === "roundtable" ? " (RT)" : ""}`
+    : sourceConv ? `${sourceConv.customLabel ?? sourceConv.label}` : null;
+
+  return (
+    <div className="flex-1 min-w-0 flex flex-col border-l border-border/20 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-start gap-2 px-4 pt-3 pb-2.5 shrink-0 border-b border-border/20">
+        {harnessConfig ? (
+          <span className={cn("shrink-0 mt-1 p-0.5 rounded", harnessConfig.cls)}>{harnessConfig.icon}</span>
+        ) : (
+          <FileText className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0 mt-1" />
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[13px] font-[550] text-foreground leading-snug">{artifact.title}</h3>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            <span className={cn("inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded", status.class)}>
+              {status.icon} {status.label}
+            </span>
+            {harnessConfig && (
+              <span className={cn("text-[7px] font-medium px-1.5 py-0.5 rounded", harnessConfig.cls)}>
+                {harnessConfig.label}
+              </span>
+            )}
+            <span className="text-[9px] text-muted-foreground/30 font-mono">
+              {new Date(artifact.updatedAt * 1000).toLocaleString()}
+            </span>
+          </div>
+          {(sourceLabel || artifact.subtaskId) && (
+            <div className="flex items-center gap-2 mt-1 text-[9px] text-muted-foreground/40">
+              {sourceLabel && (
+                <button
+                  onClick={() => jumpToSource(artifact, useChatStore.getState())}
+                  className="hover:text-primary/60 hover:underline transition-colors"
+                >
+                  {sourceLabel}
+                </button>
+              )}
+              {artifact.subtaskId && <span>· Subtask linked</span>}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="prose prose-sm prose-invert max-w-none text-[12px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h2]:text-[14px] [&>h2]:font-semibold [&>h2]:mt-4 [&>h2]:mb-2 [&>h3]:text-[12px] [&>h3]:font-semibold [&>h3]:mt-3 [&>h3]:mb-1 [&>ul]:space-y-0.5 [&>ul>li]:text-[11px] [&>p]:text-foreground/85">
+          <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]}>
+            {artifact.content}
+          </ReactMarkdown>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 px-4 py-2 border-t border-border/20 shrink-0 text-[10px] flex-wrap">
+        {artifact.status !== "approved" && (
+          <button
+            onClick={() => updateArtifactStatus(artifact.id, "approved")}
+            className="text-status-approved/70 hover:underline"
+          >Approve</button>
+        )}
+        {artifact.status !== "rejected" && (
+          <button
+            onClick={() => updateArtifactStatus(artifact.id, "rejected")}
+            className="text-status-rejected/70 hover:underline"
+          >Reject</button>
+        )}
+        {artifact.status !== "draft" && (
+          <button
+            onClick={() => updateArtifactStatus(artifact.id, "draft")}
+            className="text-muted-foreground hover:underline"
+          >Draft</button>
+        )}
+        <span className="flex-1" />
+        <button
+          onClick={() => copyToClipboard(artifact.content)}
+          className="text-muted-foreground/50 hover:text-foreground hover:underline"
+        >Copy</button>
+        {FORWARD_ENGINES.map((eng) => (
+          <button
+            key={eng.id}
+            onClick={() => sendFollowup(eng.id, "artifact", `[${artifact.title}] ${artifact.content}`)}
+            className="text-primary/60 hover:text-primary hover:underline"
+          >→ {eng.label}</button>
+        ))}
+        <button
+          onClick={() => { deleteArtifact(artifact.id); onClose(); }}
+          className="text-destructive/70 hover:underline"
+        >Delete</button>
+      </div>
+    </div>
+  );
 }
+
+// ─── Filter / Sort options ────────────────────────────────────────────────────
 
 const FILTER_TABS = [
   { id: "all", label: "All" },
@@ -200,6 +317,8 @@ const SORT_OPTIONS = [
   { id: "oldest", label: "Oldest" },
   { id: "title", label: "Title" },
 ];
+
+// ─── ArtifactsPanel ──────────────────────────────────────────────────────────
 
 export function ArtifactsPanel() {
   const { artifacts, selectedConversationId, createArtifact } = useChatStore();
@@ -228,9 +347,7 @@ export function ArtifactsPanel() {
       ),
     ).then((results) => {
       const map = { ...planTitles };
-      for (const r of results) {
-        if (r) map[r[0]] = r[1];
-      }
+      for (const r of results) { if (r) map[r[0]] = r[1]; }
       setPlanTitles(map);
     });
   }, [planIds]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -265,7 +382,6 @@ export function ArtifactsPanel() {
       list.push(a);
       map.set(key, list);
     }
-    // Sort groups: plans first (by most recent artifact), then ungrouped
     const entries = [...map.entries()].sort((a, b) => {
       if (a[0] === null) return 1;
       if (b[0] === null) return -1;
@@ -277,9 +393,9 @@ export function ArtifactsPanel() {
   }, [sorted, groupByPlan, planIds.length]);
 
   return (
-    <div className="space-y-3">
-      {/* Filter + Sort bar */}
-      <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/20 shrink-0 flex-wrap">
         <div className="flex items-center gap-0.5">
           {FILTER_TABS.map((tab) => (
             <button key={tab.id} onClick={() => setFilter(tab.id)}
@@ -297,55 +413,24 @@ export function ArtifactsPanel() {
             className={cn("px-1.5 py-0.5 rounded text-[10px] transition-colors",
               groupByPlan ? "bg-accent text-foreground" : "text-muted-foreground/40 hover:text-foreground"
             )}
-          >
-            Plan
-          </button>
+          >Plan</button>
         )}
         <select value={sort} onChange={(e) => setSort(e.target.value)}
           className="bg-transparent text-[10px] text-muted-foreground/50 outline-none cursor-pointer">
           {SORT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          New
+        </button>
       </div>
 
-      {/* Summary strip */}
-      {artifacts.length > 0 && <HarnessStrip artifacts={artifacts} />}
-
-      {/* Artifact cards — grouped or flat */}
-      {sorted.length > 0 ? (
-        groups ? (
-          <div className="space-y-2">
-            {groups.map(([planId, items]) => (
-              <PlanGroup
-                key={planId ?? "__ungrouped"}
-                planId={planId}
-                planTitle={planId ? planTitles[planId] : undefined}
-                artifacts={items}
-                onOpen={setDetailArtifact}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {sorted.map((a) => <ArtifactCard key={a.id} artifact={a} onOpen={setDetailArtifact} />)}
-          </div>
-        )
-      ) : artifacts.length > 0 ? (
-        <div className="text-center py-4 text-[12px] text-muted-foreground/40">
-          No artifacts match this filter
-        </div>
-      ) : null}
-
-      {/* Empty state */}
-      {artifacts.length === 0 && !showForm && (
-        <div className="text-center py-4">
-          <FileText className="w-5 h-5 text-muted-foreground/30 mx-auto mb-2" />
-          <p className="text-[11px] text-muted-foreground/50">No artifacts yet</p>
-        </div>
-      )}
-
-      {/* Create form */}
+      {/* Create form (inline below toolbar) */}
       {showForm && (
-        <div className="rounded-md border border-border/40 bg-card p-2.5 space-y-2">
+        <div className="px-3 py-2 border-b border-border/20 shrink-0 space-y-1.5">
           <select
             value={artType}
             onChange={(e) => setArtType(e.target.value)}
@@ -379,125 +464,64 @@ export function ArtifactsPanel() {
             <button
               onClick={handleCreate}
               className="flex-1 px-2 py-1 rounded bg-primary/12 text-primary text-[11px] hover:bg-primary/20 transition-colors"
-            >
-              Create
-            </button>
+            >Create</button>
             <button
               onClick={() => setShowForm(false)}
               className="px-2 py-1 rounded text-muted-foreground text-[11px] hover:bg-accent transition-colors"
-            >
-              Cancel
-            </button>
+            >Cancel</button>
           </div>
         </div>
       )}
-      {!showForm && (
-        <button
-          onClick={() => setShowForm(true)}
-          className="w-full flex items-center gap-2 px-2 py-1 rounded text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 transition-colors"
-        >
-          <Plus className="w-3 h-3" />
-          New artifact
-        </button>
-      )}
 
-      {/* Detail modal */}
-      {detailArtifact && (
-        <ArtifactDetailModal artifact={detailArtifact} onClose={() => setDetailArtifact(null)} />
-      )}
-    </div>
-  );
-}
+      {/* Master-detail content */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left: list */}
+        <div className={cn(
+          "overflow-y-auto p-3 space-y-2",
+          detailArtifact ? "w-[42%] shrink-0" : "flex-1",
+        )}>
+          {artifacts.length > 0 && <HarnessStrip artifacts={artifacts} />}
 
-// ─── Detail Modal ───────────────────────────────────────────────────────────
-
-function ArtifactDetailModal({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
-  const { updateArtifactStatus, deleteArtifact, sendFollowup, conversations, branches } = useChatStore();
-  const status = STATUS_CONFIG[artifact.status];
-  const harnessConfig = HARNESS_TYPES.has(artifact.type) ? HARNESS_TYPE_CONFIG[artifact.type] : null;
-
-  // Provenance
-  const sourceConv = artifact.conversationId ? conversations.find((c) => c.id === artifact.conversationId) : null;
-  const sourceBranch = artifact.branchId ? branches.find((b) => b.id === artifact.branchId) : null;
-  const sourceLabel = sourceBranch
-    ? `Branch: ${sourceBranch.customLabel ?? sourceBranch.label}${sourceBranch.mode === "roundtable" ? " (RT)" : ""}`
-    : sourceConv
-    ? `${sourceConv.customLabel ?? sourceConv.label}`
-    : null;
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-
-      <div className="relative bg-card border border-border/40 rounded-xl shadow-2xl w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-start gap-3 px-5 pt-4 pb-3 shrink-0">
-          {harnessConfig ? (
-            <span className={cn("shrink-0 mt-1 p-1 rounded", harnessConfig.cls)}>{harnessConfig.icon}</span>
-          ) : (
-            <FileText className="w-4 h-4 text-muted-foreground/40 shrink-0 mt-1" />
-          )}
-          <div className="flex-1 min-w-0">
-            <h2 className="text-[15px] font-[550] text-foreground leading-snug">{artifact.title}</h2>
-            <div className="flex items-center gap-2 mt-1 text-[11px] flex-wrap">
-              <span className={cn("inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded", status.class)}>
-                {status.icon} {status.label}
-              </span>
-              {harnessConfig && <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-medium", harnessConfig.cls)}>{harnessConfig.label}</span>}
-              <span className="text-muted-foreground/40 font-mono">{artifact.type}</span>
-              <span className="text-muted-foreground/30 font-mono">{new Date(artifact.updatedAt * 1000).toLocaleString()}</span>
-            </div>
-            {/* Provenance — clickable */}
-            {(sourceLabel || artifact.subtaskId) && (
-              <div className="flex items-center gap-2 mt-1.5 text-[10px] text-muted-foreground/50">
-                {sourceLabel && (
-                  <button
-                    onClick={() => { jumpToSource(artifact, useChatStore.getState()); onClose(); }}
-                    className="hover:text-primary/60 hover:underline transition-colors"
-                  >
-                    Source: {sourceLabel}
-                  </button>
-                )}
-                {artifact.subtaskId && <span>· Subtask linked</span>}
+          {sorted.length > 0 ? (
+            groups ? (
+              <div className="space-y-2">
+                {groups.map(([planId, items]) => (
+                  <PlanGroup
+                    key={planId ?? "__ungrouped"}
+                    planId={planId}
+                    planTitle={planId ? planTitles[planId] : undefined}
+                    artifacts={items}
+                    activeId={detailArtifact?.id ?? null}
+                    onOpen={setDetailArtifact}
+                  />
+                ))}
               </div>
-            )}
-          </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0">
-            <X className="w-4 h-4" />
-          </button>
+            ) : (
+              <div className="space-y-1.5">
+                {sorted.map((a) => (
+                  <ArtifactCard key={a.id} artifact={a} active={a.id === detailArtifact?.id} onOpen={setDetailArtifact} />
+                ))}
+              </div>
+            )
+          ) : artifacts.length > 0 ? (
+            <div className="text-center py-4 text-[12px] text-muted-foreground/40">
+              No artifacts match this filter
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <FileText className="w-5 h-5 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-[11px] text-muted-foreground/50">No artifacts yet</p>
+            </div>
+          )}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 pb-4">
-          <div className="text-[13px] text-foreground/90 leading-relaxed whitespace-pre-wrap">
-            {artifact.content}
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 px-5 py-3 border-t border-border/30 shrink-0 text-[11px]">
-          {artifact.status !== "approved" && (
-            <button onClick={() => { updateArtifactStatus(artifact.id, "approved"); onClose(); }}
-              className="text-status-approved/70 hover:underline">Approve</button>
-          )}
-          {artifact.status !== "rejected" && (
-            <button onClick={() => { updateArtifactStatus(artifact.id, "rejected"); onClose(); }}
-              className="text-status-rejected/70 hover:underline">Reject</button>
-          )}
-          {artifact.status !== "draft" && (
-            <button onClick={() => { updateArtifactStatus(artifact.id, "draft"); onClose(); }}
-              className="text-muted-foreground hover:underline">Draft</button>
-          )}
-          <span className="flex-1" />
-          <button onClick={() => copyToClipboard(artifact.content)}
-            className="text-muted-foreground/50 hover:text-foreground hover:underline">Copy</button>
-          {FORWARD_ENGINES.map((eng) => (
-            <button key={eng.id} onClick={() => { sendFollowup(eng.id, "artifact", `[${artifact.title}] ${artifact.content}`); onClose(); }}
-              className="text-primary/60 hover:text-primary hover:underline">→ {eng.label}</button>
-          ))}
-          <button onClick={() => { deleteArtifact(artifact.id); onClose(); }}
-            className="text-destructive/70 hover:underline">Delete</button>
-        </div>
+        {/* Right: detail */}
+        {detailArtifact && (
+          <ArtifactDetailPanel
+            artifact={detailArtifact}
+            onClose={() => setDetailArtifact(null)}
+          />
+        )}
       </div>
     </div>
   );

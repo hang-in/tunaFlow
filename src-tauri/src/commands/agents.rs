@@ -88,29 +88,23 @@ pub async fn start_claude_stream(
     let mo = input.model.clone();
 
     // DB-heavy work off main thread
-    let (prep, resume_token, system_prompt) = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
+    let (prep, system_prompt) = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
         let prep = prepare_engine_run("claude-code", &input, id_frag.as_deref(), &db)?;
 
-        let (resume_token, system_prompt) = {
+        let system_prompt = {
             let conn = db.write.lock().map_err(|_| AppError::Lock)?;
-            let rt = conn.query_row(
-                "SELECT resume_token, resume_token_engine FROM conversations WHERE id=?1",
-                [&input.conversation_id],
-                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
-            ).ok().and_then(|(t, e)| if e.as_deref() == Some("claude-code") { t } else { None });
             let agent_sp = assemble_system_prompt(
                 input.agent_name.as_deref(), prep.project_path.as_deref(), input.system_prompt.as_deref(),
             );
-            let sp = match (prep.system_context.clone(), agent_sp) {
+            match (prep.system_context.clone(), agent_sp) {
                 (Some(c), Some(a)) => Some(format!("{}\n\n{}", c, a)),
                 (c @ Some(_), None) => c,
                 (None, a @ Some(_)) => a,
                 (None, None) => None,
-            };
-            (rt, sp)
+            }
         };
 
-        Ok((prep, resume_token, system_prompt))
+        Ok((prep, system_prompt))
     }).await.map_err(|_| AppError::Lock)??;
 
     let ret = prep.msg_id.clone();
@@ -148,7 +142,9 @@ pub async fn start_claude_stream(
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid.clone();
             let t0 = std::time::Instant::now();
             let rr = claude::stream_run(
-                claude::RunInput { prompt: pr, model: mo.clone(), system_prompt, resume_token, project_path },
+                // resume_token intentionally omitted: ContextPack includes full conversation history.
+                // PTY mode owns the resume_token for interactive session continuity.
+                claude::RunInput { prompt: pr, model: mo.clone(), system_prompt, resume_token: None, project_path },
                 move |t| { let _ = pa.emit("claude:progress", ChunkPayload { message_id: pi.clone(), conversation_id: pc.clone(), text: t }); },
                 move |t| { let _ = c2.emit("claude:chunk", ChunkPayload { message_id: ci.clone(), conversation_id: cc.clone(), text: t }); },
                 { let c = cid.clone(); let r = cancel_arc; move || { r.lock().remove(&c) } },

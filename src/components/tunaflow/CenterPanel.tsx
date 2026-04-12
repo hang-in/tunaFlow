@@ -258,11 +258,7 @@ export function CenterPanel() {
         </div>
 
         {effectiveTab === "artifacts" && (
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="max-w-4xl mx-auto">
-              <ArtifactsPanel />
-            </div>
-          </div>
+          <ArtifactsPanel />
         )}
 
         {effectiveTab === "plan" && (
@@ -290,12 +286,7 @@ export function CenterPanel() {
         )}
 
         {effectiveTab === "review" && (
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="max-w-4xl mx-auto">
-              <h3 className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-3">Review</h3>
-              <ReviewPanel />
-            </div>
-          </div>
+          <ReviewPanel />
         )}
 
         {effectiveTab === "insight" && (

@@ -548,3 +548,78 @@ export async function autoFixQuickWins(
 
   return { fixed, failed };
 }
+
+// ── Revalidate open findings ──────────────────────────────────────────────────
+
+interface RevalidateResult {
+  id: string;
+  status: "still_open" | "resolved" | "uncertain";
+  reason: string;
+}
+
+/**
+ * Ask the analysis agent to re-check which existing open findings are still
+ * present in the current codebase. Useful after code changes that may have
+ * incidentally fixed reported issues.
+ */
+export async function revalidateFindings(
+  findings: InsightFinding[],
+  projectKey: string,
+  onProgress?: (msg: string) => void,
+): Promise<RevalidateResult[]> {
+  const openFindings = findings.filter((f) => f.status === "open");
+  if (openFindings.length === 0) return [];
+
+  onProgress?.("코드베이스 재검토 중...");
+
+  const findingsSummary = openFindings.map((f) => ({
+    id: f.id,
+    title: f.title,
+    category: f.category,
+    severity: f.severity,
+    description: f.description,
+    filePath: f.filePath,
+    lineNumber: f.lineNumber,
+    snippet: f.snippet?.slice(0, 200),
+  }));
+
+  const prompt = `## Insight Findings 재검토
+
+아래 findings가 현재 코드베이스에 여전히 존재하는지 확인해주세요.
+각 finding의 filePath를 직접 읽고 판단해주세요.
+
+**판정 기준**:
+- \`still_open\`: 문제가 여전히 코드에 존재함
+- \`resolved\`: 이미 수정되어 더 이상 존재하지 않음
+- \`uncertain\`: 파일이 없거나 판단이 어려움
+
+**Findings**:
+\`\`\`json
+${JSON.stringify(findingsSummary, null, 2)}
+\`\`\`
+
+**출력 형식** (JSON 배열만 출력, 설명 없이):
+\`\`\`json
+[
+  { "id": "finding_id", "status": "still_open|resolved|uncertain", "reason": "한 줄 이유" }
+]
+\`\`\``;
+
+  const response = await sendAnalysisToAgent(projectKey, prompt);
+  if (!response) return [];
+
+  try {
+    const jsonMatch = response.match(/```json\s*([\s\S]*?)```/) || response.match(/(\[[\s\S]*\])/);
+    if (!jsonMatch) return [];
+    const parsed = JSON.parse(jsonMatch[1].trim());
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((r): r is RevalidateResult =>
+      typeof r.id === "string" &&
+      ["still_open", "resolved", "uncertain"].includes(r.status) &&
+      typeof r.reason === "string",
+    );
+  } catch {
+    console.error("[insight] revalidateFindings: JSON 파싱 실패", response.slice(0, 200));
+    return [];
+  }
+}

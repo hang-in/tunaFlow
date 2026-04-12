@@ -126,6 +126,20 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     const { getSetting: getAppSetting } = await import("@/lib/appStore");
     const ptyEnabled = await getAppSetting<boolean>("ptyEnabled", true);
     if (ptyEnabled && isPtyEngine(engine)) {
+      // If PTY is currently being spawned (project just switched), wait up to 2s for it to be ready
+      const { isPtySpawning } = await import("@/stores/slices/conversationSlice");
+      if (isPtySpawning()) {
+        console.log("[pty] spawn in progress, waiting up to 2s...");
+        const deadline = Date.now() + 2000;
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            if (!isPtySpawning() || Date.now() >= deadline) resolve();
+            else setTimeout(check, 100);
+          };
+          setTimeout(check, 100);
+        });
+      }
+
       const ptySession = usePtyStore.getState().getSession(engine);
       if (ptySession !== null) {
         try {
