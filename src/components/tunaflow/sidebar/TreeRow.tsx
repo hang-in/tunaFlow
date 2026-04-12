@@ -23,7 +23,7 @@ export function TreeRow({
         className,
       )}>
       <span className="shrink-0 w-4 flex items-center justify-center">{icon}</span>
-      <span className="flex-1 min-w-0 text-tf-caption font-medium truncate">{label}</span>
+      <span className="flex-1 min-w-0 text-tf-sm font-medium truncate">{label}</span>
       {suffix}
       {actions && (
         <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -42,7 +42,7 @@ export function SectionHeader({ title, expanded, onToggle, actions, className }:
       className={cn("group flex items-center h-7 px-3 mt-4 first:mt-1 cursor-pointer select-none hover:bg-sidebar-accent/50 transition-colors rounded-lg", className)}>
       {expanded ? <ChevronDown className="w-3 h-3 text-sidebar-foreground/40 shrink-0" />
         : <ChevronRight className="w-3 h-3 text-sidebar-foreground/40 shrink-0" />}
-      <span className="text-tf-caption font-semibold text-sidebar-foreground/60 pl-1.5 flex-1">{title}</span>
+      <span className="text-tf-sm font-semibold text-sidebar-foreground/60 pl-1.5 flex-1">{title}</span>
       {actions && <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">{actions}</span>}
     </div>
   );
