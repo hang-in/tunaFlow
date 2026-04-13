@@ -7,6 +7,20 @@ use crate::db::{migrations::now_epoch_ms, models::Message};
 use crate::db::DbState;
 use crate::errors::AppError;
 
+// ─── Embedding semaphore ─────────────────────────────────────────────────────
+
+/// Limits concurrent ONNX inference to 1 at a time.
+/// Without this, multiple agent completions spawn multiple threads each running
+/// bge-m3 Level3 inference, causing CPU spikes (observed: 558% on 6-core machine).
+static EMBED_SEMAPHORE: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+    std::sync::OnceLock::new();
+
+fn embed_semaphore() -> std::sync::Arc<tokio::sync::Semaphore> {
+    EMBED_SEMAPHORE
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone()
+}
+
 use super::super::trace_log::{insert_trace_log, insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
 use super::context_loading::{load_context_data, load_project_path};
 use super::prompt_assembly::assemble_prompt;
@@ -222,11 +236,22 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
         }
 
         // 3. Vector indexing (rawq embed — skip if daemon not ready)
+        // Semaphore ensures only 1 ONNX embedding job runs at a time, preventing CPU spikes
+        // when multiple agents complete concurrently (e.g. RT or rapid sequential sends).
         if crate::agents::rawq::is_daemon_ready() {
-            match crate::commands::vector_search::index_chunks_blocking(&db, &conversation_id) {
-                Ok(n) if n > 0 => eprintln!("[post-completion] indexed {} chunks for {}", n, cid_short),
-                Ok(_) => {}
-                Err(e) => eprintln!("[post-completion] vector indexing error: {}", e),
+            let sem = embed_semaphore();
+            // try_acquire — if another thread is already embedding, skip this cycle.
+            // The next agent completion will re-index anyway (incremental, low overhead).
+            let acquired = sem.try_acquire();
+            if acquired.is_ok() {
+                match crate::commands::vector_search::index_chunks_blocking(&db, &conversation_id) {
+                    Ok(n) if n > 0 => eprintln!("[post-completion] indexed {} new chunks for {}", n, cid_short),
+                    Ok(_) => {}
+                    Err(e) => eprintln!("[post-completion] vector indexing error: {}", e),
+                }
+                // acquired (SemaphorePermit) dropped here — releases semaphore
+            } else {
+                eprintln!("[post-completion] embed semaphore busy, skipping indexing for {} (will catch up next completion)", cid_short);
             }
         }
 

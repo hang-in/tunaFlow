@@ -176,10 +176,14 @@ export async function sendMessageViaPty(
     }
 
     await invoke("pty_write", { sessionId, data: `\x1b[200~${enrichedPrompt}\x1b[201~` });
-    // Scale delay with prompt size — large prompts need more time for bracket paste to flush
-    const pasteDelayMs = Math.max(200, Math.min(800, Math.floor(enrichedPrompt.length / 300)));
+    // Scale delay with prompt length — gives Claude CLI time to process bracket paste buffer
+    // Formula: ~1ms per 100 chars, min 300ms, max 1500ms
+    // Large prompts (ContextPack ~50KB+) need more headroom for rendering + CLI readline flush
+    const pasteDelayMs = Math.max(300, Math.min(1500, Math.ceil(enrichedPrompt.length / 100)));
     await new Promise((r) => setTimeout(r, pasteDelayMs));
-    await invoke("pty_write", { sessionId, data: "\r" });
+    await invoke("pty_write", { sessionId, data: "\r" }).catch((e) => {
+      console.error("[pty] Enter write failed:", e);
+    });
 
     // ── Delivery confirmation: check pty:screen for idle prompt disappearing ──
     let deliveryConfirmed = false;

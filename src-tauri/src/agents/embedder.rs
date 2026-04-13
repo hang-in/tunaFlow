@@ -63,11 +63,17 @@ impl BgeM3Embedder {
         let tokenizer = tokenizers::Tokenizer::from_file(&tokenizer_path)
             .map_err(|e| AppError::Agent(format!("tokenizer load failed: {e}")))?;
 
-        // Build first session and probe dimensions
+        // Build first session and probe dimensions.
+        // Thread limits: intra_op=2 (parallelism within a single op), inter_op=1 (sequential ops).
+        // Without these, ONNX Runtime claims all available cores per session.
         let first_session = ort::session::Session::builder()
             .map_err(|e| AppError::Agent(format!("ort session builder: {e}")))?
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| AppError::Agent(format!("ort optimization: {e}")))?
+            .with_intra_threads(2)
+            .map_err(|e| AppError::Agent(format!("ort intra_threads: {e}")))?
+            .with_inter_threads(1)
+            .map_err(|e| AppError::Agent(format!("ort inter_threads: {e}")))?
             .commit_from_file(&model_path)
             .map_err(|e| AppError::Agent(format!("ort load model: {e}")))?;
 
@@ -83,6 +89,10 @@ impl BgeM3Embedder {
                 .map_err(|e| AppError::Agent(format!("ort session builder: {e}")))?
                 .with_optimization_level(GraphOptimizationLevel::Level3)
                 .map_err(|e| AppError::Agent(format!("ort optimization: {e}")))?
+                .with_intra_threads(2)
+                .map_err(|e| AppError::Agent(format!("ort intra_threads: {e}")))?
+                .with_inter_threads(1)
+                .map_err(|e| AppError::Agent(format!("ort inter_threads: {e}")))?
                 .commit_from_file(&model_path)
                 .map_err(|e| AppError::Agent(format!("ort load model: {e}")))?;
             sessions.push(Arc::new(Mutex::new(sess)));

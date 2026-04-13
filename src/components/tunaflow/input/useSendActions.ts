@@ -336,7 +336,9 @@ export function useSendActions({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Skip send during IME composition (Korean/CJK input) — first Enter confirms the
+    // composed character; user needs a second Enter to actually send.
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }

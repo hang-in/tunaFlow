@@ -286,7 +286,11 @@ pub async fn index_conversation_chunks(
 }
 
 /// Blocking index function — callable from HTTP API without Tauri State.
+/// Incremental: only embeds chunks whose root_message_id is not yet in conversation_chunks.
+/// This mirrors index_conversation_chunks (the async Tauri command) to avoid full re-index
+/// on every agent completion, which caused large CPU spikes on long conversations.
 pub fn index_chunks_blocking(db: &crate::db::DbState, conversation_id: &str) -> Result<usize, AppError> {
+    // Phase 1: load messages + build chunk candidates (read lock)
     let (project_key, chunks) = {
         let conn = db.read.lock().map_err(|_| AppError::Lock)?;
         let pk: String = conn.query_row("SELECT project_key FROM conversations WHERE id = ?1", [conversation_id], |r| r.get(0))
@@ -298,19 +302,33 @@ pub fn index_chunks_blocking(db: &crate::db::DbState, conversation_id: &str) -> 
         (pk, build_sliding_window_chunks(&messages))
     };
     if chunks.is_empty() { return Ok(0); }
+
+    // Phase 1b: find already-indexed root_message_ids (read lock, incremental skip)
+    let already_indexed: std::collections::HashSet<String> = {
+        let conn = db.read.lock().map_err(|_| AppError::Lock)?;
+        conn.prepare("SELECT root_message_id FROM conversation_chunks WHERE conversation_id = ?1")
+            .and_then(|mut s| s.query_map([conversation_id], |r| r.get::<_, String>(0))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect()))
+            .unwrap_or_default()
+    };
+
+    // Phase 2: embed only NEW chunks (no lock held — ONNX inference is the slow part)
+    let new_chunks: Vec<_> = chunks.iter()
+        .filter(|(root_id, _, _)| !already_indexed.contains(root_id))
+        .collect();
+
+    if new_chunks.is_empty() { return Ok(0); }
+
     let mut embedded: Vec<(String, String, String, Vec<u8>)> = Vec::new();
-    for (root_id, kind, text) in &chunks {
+    for (root_id, kind, text) in &new_chunks {
         if let Ok(v) = crate::agents::embedder::embed_text(text, false) {
             embedded.push((root_id.clone(), kind.clone(), text.clone(), embedding_to_blob(&v)));
         }
     }
     if embedded.is_empty() { return Ok(0); }
+
+    // Phase 3: insert only new results (write lock — fast)
     let conn = db.write.lock().map_err(|_| AppError::Lock)?;
-    let rowids: Vec<i64> = conn.prepare("SELECT rowid FROM conversation_chunks WHERE conversation_id = ?1")
-        .and_then(|mut s| s.query_map([conversation_id], |r| r.get(0)).map(|rows| rows.filter_map(|r| r.ok()).collect()))
-        .unwrap_or_default();
-    for rid in &rowids { conn.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [rid]).ok(); }
-    conn.execute("DELETE FROM conversation_chunks WHERE conversation_id = ?1", [conversation_id])?;
     let now = now_epoch_ms();
     let mut indexed = 0;
     for (root_id, kind, text, blob) in &embedded {
@@ -322,6 +340,9 @@ pub fn index_chunks_blocking(db: &crate::db::DbState, conversation_id: &str) -> 
         let chunk_rowid: i64 = conn.query_row("SELECT rowid FROM conversation_chunks WHERE id = ?1", [&id], |r| r.get(0)).unwrap_or(0);
         if chunk_rowid > 0 { conn.execute("INSERT INTO vec_chunks(rowid, embedding) VALUES (?1, ?2)", rusqlite::params![chunk_rowid, blob]).ok(); }
         indexed += 1;
+    }
+    if indexed > 0 {
+        eprintln!("[vector] indexed {} new chunks for {} ({} already indexed)", indexed, conversation_id, already_indexed.len());
     }
     Ok(indexed)
 }

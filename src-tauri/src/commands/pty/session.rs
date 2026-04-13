@@ -110,11 +110,29 @@ pub fn pty_spawn(
         tauri::async_runtime::spawn(async move {
             while let Some(data) = write_rx.recv().await {
                 let mut w = writer_for_queue.lock();
-                if let Err(e) = w.write_all(&data) {
-                    eprintln!("[pty] write error for session {}: {}", write_sid, e);
-                    break;
+                // Chunk large writes to avoid blocking the PTY pipe buffer.
+                // The PTY kernel buffer on macOS is ~65 KB; writing more than that at once
+                // would block until the slave (Claude CLI) reads data. Chunking prevents
+                // starving the write queue and ensures \r (Enter) is delivered promptly.
+                const CHUNK: usize = 4096;
+                let mut offset = 0;
+                let mut write_ok = true;
+                while offset < data.len() {
+                    let end = (offset + CHUNK).min(data.len());
+                    if let Err(e) = w.write_all(&data[offset..end]) {
+                        eprintln!("[pty] write error for session {} (offset {}): {}", write_sid, offset, e);
+                        write_ok = false;
+                        break;
+                    }
+                    offset = end;
                 }
-                let _ = w.flush();
+                if write_ok {
+                    let _ = w.flush();
+                } else {
+                    // Write failed mid-way. Log and continue — subsequent small writes
+                    // (like \r) may still succeed and should not be silently dropped.
+                    eprintln!("[pty] write queue continuing after partial error for session {}", write_sid);
+                }
             }
             eprintln!("[pty] write queue closed for session {}", write_sid);
         });
