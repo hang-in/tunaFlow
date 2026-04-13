@@ -37,6 +37,7 @@ description: 세션별 전체 작업 이력. 새 세션 시작 시 또는 과거
 | 22 | 2026-04-12 | CPU 수정(bge-m3 증분), PTY 터미널 표시 수정, 사이드바 리사이즈 재설계 (5섹션 분리), ArtifactsPanel/ReviewPanel 마스터-디테일 전환, InsightPanel 재검토+Architect검토+summary strip, -p 모드 resume_token 제거 (PTY 충돌 수정), CLAUDE.md 경량화 |
 | 25 | 2026-04-12 | 버그 9건 수정 + UI 개선 4건 (MarkdownComponents h-tags/empty span/relative link, PTY persona+duration+label, PlanProposalCard reload, branch stale closure, Insight 이전분석 우측 패널, adopt 중 스트리밍 보존+결과 복원, 드로어 라운딩, 사이드바 가독성, 알림배지 오버랩) |
 | 26 | 2026-04-13 | 코드베이스 리팩토링 v3 Tier 1(부분)+Tier 2 — conversation_memory 3분리, vector_search 4분리, workflowOrchestration 5분리, InsightPanel 4분리, ptyTypes 추출. Rust/TS 테스트 전원 통과. |
+| 35 | 2026-04-13 | 구조개선 Sprint 2~3 (planWorkflowService 도메인 규칙, threadRtRunner 분리, silent catch 7건), PTY Enter 3중 수정, bge-m3 CPU 스파이크 수정(ONNX 스레드 제한+세마포어+점진적 인덱싱). 232 Rust + 188 TS tests. |
 
 ---
 
