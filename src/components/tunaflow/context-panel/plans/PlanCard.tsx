@@ -223,6 +223,32 @@ export function PlanCard({
               <DraftingActions plan={plan} subtasks={subtasks} onPlanUpdate={handlePlanUpdate} onSwitchToChat={onSwitchToChat} />
             )}
 
+            {/* Subtask review stage — user reviews subtasks, then advances to approval */}
+            {plan.phase === "subtask_review" && subtasks && (
+              <div className="mt-2 pt-2 border-t border-border/20 flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    await planApi.updatePlanPhase(plan.id, "approval");
+                    await planApi.createPlanEvent(plan.id, "subtask_review_approved", "user");
+                    handlePlanUpdate({ phase: "approval" });
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors"
+                >
+                  <Check className="w-3 h-3" />검토 완료 → Dev 승인
+                </button>
+                <button
+                  onClick={async () => {
+                    await planApi.updatePlanPhase(plan.id, "drafting");
+                    await planApi.createPlanEvent(plan.id, "reverted_to_drafting", "user");
+                    handlePlanUpdate({ phase: "drafting" });
+                  }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  수정 필요 → Drafting
+                </button>
+              </div>
+            )}
+
             {/* Approval gate (now simplified — Dev start only) */}
             {plan.phase === "approval" && (
               <ApprovalGate plan={plan} subtasks={subtasks} onPlanUpdate={handlePlanUpdate} />
