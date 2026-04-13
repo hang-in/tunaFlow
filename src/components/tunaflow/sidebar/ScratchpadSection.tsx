@@ -48,7 +48,7 @@ export function ScratchpadSection({
       <div className="flex items-center justify-between px-1 py-1">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider hover:text-muted-foreground/70 transition-colors"
+          className="flex items-center gap-1.5 text-tf-xs font-semibold text-muted-foreground/50 uppercase tracking-wider hover:text-muted-foreground/70 transition-colors"
         >
           <ChevronRight className={cn("w-3 h-3 transition-transform", expanded && "rotate-90")} />
           <Lightbulb className="w-3 h-3" />
@@ -67,7 +67,7 @@ export function ScratchpadSection({
       {expanded && (
         <div className="space-y-0.5 mt-0.5">
           {scratchpads.length === 0 && (
-            <p className="text-[10px] text-muted-foreground/30 px-3 py-1">No scratchpads yet</p>
+            <p className="text-tf-xs text-muted-foreground/30 px-3 py-1">No scratchpads yet</p>
           )}
           {scratchpads.map((sp) => {
             const isSelected = sp.id === selectedConversationId;
@@ -77,7 +77,7 @@ export function ScratchpadSection({
                 key={sp.id}
                 onClick={() => selectConversation(sp.id)}
                 className={cn(
-                  "group w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-[12px] transition-colors",
+                  "group w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-tf-sm transition-colors",
                   isSelected
                     ? "bg-accent/40 text-foreground"
                     : "text-foreground/60 hover:bg-accent/20 hover:text-foreground/80"
