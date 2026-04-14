@@ -11,6 +11,48 @@ priority: P1
 
 ---
 
+## 0. 배포 트랙
+
+의존성 번들 방식에 따라 두 트랙으로 배포. 사용자가 선택.
+
+| | **Lite** | **Full** |
+|---|---|---|
+| 앱 크기 | ~20MB | ~250MB |
+| rawq | ✅ 번들 | ✅ 번들 |
+| code-review-graph | 첫 실행 시 자동 설치 (`pip`) | ✅ 번들 (PyInstaller) |
+| context-hub (chub) | 첫 실행 시 자동 설치 (`npm`) | ✅ 번들 (`pkg`) |
+| 인터넷 필요 | 첫 실행 시 | 설치 후 불필요 |
+| 대상 | Python/Node 이미 있는 개발자 | 클린 환경, 오프라인 사용 |
+
+**Release asset 명명:**
+```
+tunaFlow-v0.1.0-lite-aarch64.dmg
+tunaFlow-v0.1.0-full-aarch64.dmg
+```
+
+### Lite 트랙 — 자동 설치 흐름
+```
+앱 첫 실행
+  → code-review-graph 없음 감지
+      → Python 있으면: pip install code-review-graph (백그라운드)
+      → Python 없으면: 앱 내 안내 ("brew install python3")
+  → context-hub 없음 감지
+      → Node 있으면: npm install -g @aisuite/chub (백그라운드)
+      → Node 없으면: 앱 내 안내 ("brew install node")
+  → 설치 완료 → 기능 활성화
+```
+
+### Full 트랙 — 번들 빌드
+```
+code-review-graph → PyInstaller → crg-{triple} 단일 바이너리
+context-hub       → pkg        → chub-{triple} 단일 바이너리
+rawq              → cargo build → rawq-{triple}
+  ↓
+모두 src-tauri/binaries/ 에 배치 → tauri build → 번들 포함
+```
+
+---
+
 ## 1. 현황
 
 현재 CI (`.github/workflows/ci.yml`):

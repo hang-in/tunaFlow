@@ -114,12 +114,12 @@ related: cicdReleasePlan.md, skillSelectorAgentPlan.md
 ## 5. 배포 전 체크리스트
 
 ### 🤖 Claude가 할 일 — 필수 (배포 불가 블로커)
-- [ ] `tauri.conf.json` 아이콘 경로 연결
-- [ ] `.github/workflows/build.yml` 작성 (rawq 빌드 포함)
-- [ ] `install.sh` 작성 (xattr 자동 실행 포함)
-- [ ] `INSTALL.md` 작성 (에이전트용 + 에이전트 설치 안내)
-- [ ] HTTP API 포트 변경 (충돌 없는 고정 포트)
-- [ ] 버전 태그 자동화 (workflow에서 tauri.conf.json 주입)
+- [x] `tauri.conf.json` 아이콘 경로 연결 — `icons/` 5개 경로 추가 완료
+- [x] `.github/workflows/build.yml` 작성 — 2트랙(Lite/Full) 완료
+- [x] `install.sh` 작성 — xattr 자동 실행, 트랙 선택(`--full` 플래그) 포함
+- [x] `INSTALL.md` 작성 — 에이전트용, 에이전트 CLI 설치 안내 포함
+- [x] HTTP API 포트 — 현재 `19840` (고유, 변경 불필요)
+- [x] 버전 태그 자동화 — `build.yml`에서 `GITHUB_REF_NAME#v` 파싱 후 `--config` 주입
 
 ### 👤 사용자가 할 일 — 필수
 - [ ] 샌드박스에서 빌드 버전 실행 + cold start 시간 측정

@@ -1,0 +1,318 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      track:
+        description: 'Release track (lite=rawq only, full=all bundled, both)'
+        required: true
+        default: 'lite'
+        type: choice
+        options: [lite, full, both]
+
+env:
+  RUST_BACKTRACE: 1
+
+# ─────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────
+# track_lite:  always true (lite runs on every tag push)
+# track_full:  true when input=full or input=both (manual dispatch)
+
+jobs:
+
+  # ── 1. rawq sidecar ──────────────────────────────────────────────────────────
+  build-rawq:
+    name: rawq (${{ matrix.triple }})
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            triple: aarch64-apple-darwin
+          - runner: macos-13
+            triple: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rawq-${{ matrix.triple }}
+
+      - name: Clone rawq source
+        run: git clone https://github.com/auyelbekov/rawq vendor/rawq
+
+      - name: Build rawq
+        run: |
+          cargo build \
+            --manifest-path vendor/rawq/Cargo.toml \
+            --release \
+            --target-dir vendor/rawq/target
+          mkdir -p src-tauri/binaries
+          cp vendor/rawq/target/release/rawq \
+             src-tauri/binaries/rawq-${{ matrix.triple }}
+          chmod +x src-tauri/binaries/rawq-${{ matrix.triple }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rawq-${{ matrix.triple }}
+          path: src-tauri/binaries/rawq-${{ matrix.triple }}
+          retention-days: 1
+
+  # ── 2. code-review-graph sidecar (Full track only) ───────────────────────────
+  build-crg:
+    name: code-review-graph (${{ matrix.triple }})
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.track == 'full' || inputs.track == 'both')
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            triple: aarch64-apple-darwin
+          - runner: macos-13
+            triple: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Clone code-review-graph
+        run: git clone https://github.com/tirth8205/code-review-graph vendor/crg
+
+      - name: Install & bundle with PyInstaller
+        run: |
+          cd vendor/crg
+          pip install --quiet . pyinstaller
+          # Find the CLI entry point (adjust if package structure differs)
+          ENTRY=$(python -c "
+          import subprocess, sys
+          r = subprocess.run(['python','-m','code_review_graph','--version'],
+                             capture_output=True)
+          # If above works, use module entry
+          print('-m code_review_graph')
+          " 2>/dev/null || echo "")
+          pyinstaller \
+            --onefile \
+            --name crg-${{ matrix.triple }} \
+            --distpath ../../src-tauri/binaries \
+            $(python -c "
+          import code_review_graph, os
+          pkg = os.path.dirname(code_review_graph.__file__)
+          for f in ['__main__.py','cli.py','main.py']:
+              p = os.path.join(pkg, f)
+              if os.path.exists(p): print(p); break
+          ")
+          chmod +x ../../src-tauri/binaries/crg-${{ matrix.triple }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crg-${{ matrix.triple }}
+          path: src-tauri/binaries/crg-${{ matrix.triple }}
+          retention-days: 1
+
+  # ── 3. context-hub (chub) sidecar (Full track only) ──────────────────────────
+  build-chub:
+    name: context-hub (${{ matrix.triple }})
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.track == 'full' || inputs.track == 'both')
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            triple: aarch64-apple-darwin
+            pkg_target: node18-macos-arm64
+          - runner: macos-13
+            triple: x86_64-apple-darwin
+            pkg_target: node18-macos-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Clone context-hub
+        run: git clone https://github.com/andrewyng/context-hub vendor/chub
+
+      - name: Build with pkg
+        run: |
+          npm install -g @vercel/pkg
+          cd vendor/chub
+          npm install --prefix cli
+          pkg cli \
+            --targets ${{ matrix.pkg_target }} \
+            --output ../../src-tauri/binaries/chub-${{ matrix.triple }}
+          chmod +x ../../src-tauri/binaries/chub-${{ matrix.triple }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chub-${{ matrix.triple }}
+          path: src-tauri/binaries/chub-${{ matrix.triple }}
+          retention-days: 1
+
+  # ── 4. Tauri Lite build ───────────────────────────────────────────────────────
+  build-tauri-lite:
+    name: Tauri Lite (${{ matrix.runner }})
+    needs: [build-rawq]
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            triple: aarch64-apple-darwin
+          - runner: macos-13
+            triple: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Download rawq sidecar
+        uses: actions/download-artifact@v4
+        with:
+          name: rawq-${{ matrix.triple }}
+          path: src-tauri/binaries
+
+      - name: Set sidecar permissions
+        run: chmod +x src-tauri/binaries/rawq-${{ matrix.triple }}
+
+      - name: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: Extract version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Build & release (Lite)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'tunaFlow ${{ github.ref_name }}'
+          releaseBody: |
+            ## Lite 트랙 (rawq 번들)
+
+            code-review-graph와 context-hub는 첫 실행 시 자동 설치됩니다.
+
+            ### 설치
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/hang-in/tunaFlow/main/install.sh | bash
+            ```
+
+            ### Gatekeeper 우회 (베타 서명 없음)
+            `install.sh`가 자동으로 처리합니다. 수동으로 하려면:
+            ```bash
+            xattr -cr /Applications/tunaFlow.app
+            ```
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          args: >-
+            --config '{
+              "version":"${{ env.VERSION }}",
+              "bundle":{
+                "macOS":{"signingIdentity":"-"},
+                "externalBin":["binaries/rawq"]
+              }
+            }'
+
+  # ── 5. Tauri Full build ───────────────────────────────────────────────────────
+  build-tauri-full:
+    name: Tauri Full (${{ matrix.runner }})
+    needs: [build-rawq, build-crg, build-chub]
+    if: |
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.track == 'full' || inputs.track == 'both')
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            triple: aarch64-apple-darwin
+          - runner: macos-13
+            triple: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Download sidecars
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-${{ matrix.triple }}'
+          path: src-tauri/binaries
+          merge-multiple: true
+
+      - name: Set sidecar permissions
+        run: |
+          chmod +x src-tauri/binaries/rawq-${{ matrix.triple }}
+          chmod +x src-tauri/binaries/crg-${{ matrix.triple }}
+          chmod +x src-tauri/binaries/chub-${{ matrix.triple }}
+
+      - name: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: Extract version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+      - name: Build & release (Full)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}-full
+          releaseName: 'tunaFlow ${{ github.ref_name }} (Full)'
+          releaseBody: |
+            ## Full 트랙 (모든 의존성 번들)
+
+            rawq, code-review-graph, context-hub 모두 번들. Python/Node 설치 불필요.
+
+            ### 설치
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/hang-in/tunaFlow/main/install.sh | bash -s -- --full
+            ```
+
+            ### Gatekeeper 우회 (베타 서명 없음)
+            `install.sh`가 자동으로 처리합니다.
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+          args: >-
+            --config '{
+              "version":"${{ env.VERSION }}",
+              "bundle":{
+                "macOS":{"signingIdentity":"-"},
+                "externalBin":["binaries/rawq","binaries/crg","binaries/chub"]
+              }
+            }'
