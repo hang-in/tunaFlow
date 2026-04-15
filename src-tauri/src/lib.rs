@@ -83,7 +83,19 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from(".tunaflow_data"));
             std::fs::create_dir_all(&data_dir)?;
-            let db_path = data_dir.join("tunaflow.db");
+            // Separate DB files for dev vs release:
+            // - `tauri dev` (debug build)  → tunaflow.db          (real working data)
+            // - `tauri build` (release)    → tunaflow-sandbox.db  (onboarding/install smoke test)
+            // Rationale: production build should not share the live dev DB so
+            // install-flow rehearsals and AppCleaner-style accidents don't clobber
+            // real conversations. settings.json / skills/ are still shared.
+            let db_filename = if cfg!(debug_assertions) {
+                "tunaflow.db"
+            } else {
+                "tunaflow-sandbox.db"
+            };
+            let db_path = data_dir.join(db_filename);
+            eprintln!("[startup] DB: {}", db_path.display());
             let (write_conn, read_conn) = db::init(db_path)?;
 
             // Cleanup stale streaming messages from previous crash/shutdown
