@@ -8,9 +8,28 @@ on:
 
 jobs:
   check:
-    runs-on: macos-latest
+    # Moved off GitHub-hosted macos-latest (10× cost multiplier) to a
+    # self-hosted Linux runner — CI budget was hitting the 2000-min warning.
+    # Build / release workflow (build.yml) still targets macos-latest because
+    # Tauri app + sidecars are cross-compiled for aarch64-apple-darwin.
+    runs-on: [self-hosted, Linux]
     steps:
       - uses: actions/checkout@v5
+
+      - name: Install Linux build deps (tauri webkit2gtk)
+        # Idempotent; apt is a no-op when packages are already installed.
+        # Keep runner sudoers (NOPASSWD) pre-configured for unattended CI.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            curl wget file pkg-config
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -30,6 +49,9 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Create sidecar placeholder
+        # aarch64-apple-darwin filename is retained so Tauri's bundleResource
+        # path resolution doesn't complain at config load. Content is a stub
+        # and never executed on this Linux-only check job.
         run: |
           mkdir -p src-tauri/binaries
           touch src-tauri/binaries/rawq-aarch64-apple-darwin
