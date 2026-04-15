@@ -147,3 +147,4 @@ related: cicdReleasePlan.md, skillSelectorAgentPlan.md
 | `docs/plans/cicdReleasePlan.md` | GitHub Actions 빌드/릴리즈 workflow 설계 |
 | `docs/plans/skillSelectorAgentPlan.md` | 스킬 자동 선택 메타에이전트 설계 |
 | `docs/ideas/onboardingMetaAgentIdea.md` | 온보딩 메타에이전트 아이디어 (설치 포함) |
+| `docs/reference/geminiCriticReview_2026-04-15.md` | **외부 LLM 리뷰 분석 (2026-04-15)** — 베타 전 P0 3건: README "2-agent 교차 검증" 문구 수정, 마커 파싱 실패 경고 UI, 위험 CLI 플래그 경고 배너 |

@@ -22,3 +22,4 @@
 - [codeQualityAudit_2026-04-05](./codeQualityAudit_2026-04-05.md)
 - [knownIssues_2026-04-04](./knownIssues_2026-04-04.md)
 - [planImplementationComparison_2026-04-11](./planImplementationComparison_2026-04-11.md)
+- [geminiCriticReview_2026-04-15](./geminiCriticReview_2026-04-15.md) — 외부 LLM 리뷰 분석, 베타 전 P0 3건
