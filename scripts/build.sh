@@ -7,9 +7,11 @@
 # trail so you can see every step.
 #
 # Usage:
-#   ./scripts/build.sh                    # full build
-#   ./scripts/build.sh --skip-sidecars    # skip sidecar rebuilds (use existing binaries)
-#   ./scripts/build.sh --no-bundle        # pass --no-bundle to tauri (skip .dmg packaging)
+#   ./scripts/build.sh                       # full build
+#   ./scripts/build.sh --skip-sidecars       # skip sidecar rebuilds (use existing binaries)
+#   ./scripts/build.sh --no-bundle           # pass --no-bundle to tauri (skip .dmg packaging)
+#   ./scripts/build.sh --wipe-sandbox        # wipe release DB before build (fresh onboarding)
+#   ./scripts/build.sh --remove-previous-app # rm /Applications/tunaFlow.app before build
 #
 # Env overrides (optional, autodetected if unset):
 #   RAWQ_SRC=<path>
@@ -44,16 +46,47 @@ run() {
 
 SKIP_SIDECARS=0
 NO_BUNDLE=0
+WIPE_SANDBOX=0
+REMOVE_PREVIOUS_APP=0
 for arg in "$@"; do
   case "$arg" in
-    --skip-sidecars) SKIP_SIDECARS=1 ;;
-    --no-bundle)     NO_BUNDLE=1 ;;
+    --skip-sidecars)        SKIP_SIDECARS=1 ;;
+    --no-bundle)            NO_BUNDLE=1 ;;
+    --wipe-sandbox)         WIPE_SANDBOX=1 ;;
+    --remove-previous-app)  REMOVE_PREVIOUS_APP=1 ;;
     -h|--help)
       awk 'NR==1{next} /^#!/{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "$0"
       exit 0 ;;
     *) die "Unknown argument: $arg  (try --help)" ;;
   esac
 done
+
+# ─── 0. Optional: wipe release sandbox (fresh onboarding surface) ───────────
+
+if [[ $WIPE_SANDBOX -eq 1 ]]; then
+  step "0/6  Wipe release DB sandbox (--wipe-sandbox)"
+  SANDBOX_DIR="$HOME/Library/Application Support/com.tunaflow.app"
+  if [[ -d "$SANDBOX_DIR" ]]; then
+    # Preserve settings.json + .window-state.json; only nuke DB + derived files.
+    for f in tunaflow.db tunaflow.db-wal tunaflow.db-shm tunaflow.db.bak \
+             "tunaflow-sandbox.db" "tunaflow-sandbox.db-wal" "tunaflow-sandbox.db-shm"; do
+      [[ -e "$SANDBOX_DIR/$f" ]] && rm -f "$SANDBOX_DIR/$f" && substep "removed $f"
+    done
+    ok "sandbox DB cleared — next install will run fresh onboarding"
+  else
+    substep "no sandbox dir yet (fresh install)"
+  fi
+fi
+
+if [[ $REMOVE_PREVIOUS_APP -eq 1 ]]; then
+  step "0b/6  Remove previous /Applications/tunaFlow.app (--remove-previous-app)"
+  if [[ -d "/Applications/tunaFlow.app" ]]; then
+    rm -rf "/Applications/tunaFlow.app"
+    ok "removed /Applications/tunaFlow.app"
+  else
+    substep "no previous installed app"
+  fi
+fi
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
 

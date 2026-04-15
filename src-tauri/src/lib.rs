@@ -130,23 +130,32 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             use tauri::Manager;
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from(".tunaflow_data"));
-            std::fs::create_dir_all(&data_dir)?;
-            // Separate DB files for dev vs release:
-            // - `tauri dev` (debug build)  → tunaflow.db          (real working data)
-            // - `tauri build` (release)    → tunaflow-sandbox.db  (onboarding/install smoke test)
-            // Rationale: production build should not share the live dev DB so
-            // install-flow rehearsals and AppCleaner-style accidents don't clobber
-            // real conversations. settings.json / skills/ are still shared.
-            let db_filename = if cfg!(debug_assertions) {
-                "tunaflow.db"
+            // DB storage strategy:
+            // - dev     (debug build):  ~/.tunaflow/db/tunaflow.db
+            //   AppCleaner searches by bundle id (com.tunaflow.app) so anything
+            //   under Application Support/<bundle-id>/ gets wiped when the .app
+            //   is deleted. We already lost a 37M DB this way. Moving the dev
+            //   DB under ~/.tunaflow/ (dotfile, not matched by AppCleaner)
+            //   keeps real work safe across app reinstalls.
+            // - release (release build): Application Support/<bundle-id>/tunaflow.db
+            //   Intentionally inside the bundle-id folder so that AppCleaner
+            //   (and scripts/build.sh --wipe-sandbox) can reset it on every
+            //   install, giving a fresh onboarding surface every build.
+            let db_path: std::path::PathBuf = if cfg!(debug_assertions) {
+                let home = std::env::var("HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                let dir = home.join(".tunaflow").join("db");
+                std::fs::create_dir_all(&dir)?;
+                dir.join("tunaflow.db")
             } else {
-                "tunaflow-sandbox.db"
+                let dir = app
+                    .path()
+                    .app_data_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from(".tunaflow_data"));
+                std::fs::create_dir_all(&dir)?;
+                dir.join("tunaflow.db")
             };
-            let db_path = data_dir.join(db_filename);
             eprintln!("[startup] DB: {}", db_path.display());
             let (write_conn, read_conn) = db::init(db_path)?;
 
