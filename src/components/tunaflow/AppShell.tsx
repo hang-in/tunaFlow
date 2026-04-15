@@ -86,15 +86,20 @@ export function AppShell() {
 
   // Plan completion auto-notify Architect
   useEffect(() => {
-    const handler = (e: Event) => {
+    const handler = async (e: Event) => {
+      const { restorePersonaForConversation } = await import("@/lib/personaRestore");
       const { planId: _planId, title, conversationId } = (e as CustomEvent).detail as {
         planId: string; title: string; conversationId: string;
       };
       const store = useChatStore.getState();
       const prompt = `Plan "${title}" 완료됐습니다. 결과를 확인하고 다음 우선순위를 알려주세요.`;
       if (store.selectedConversationId === conversationId) {
-        const engine = store.conversations.find((c) => c.id === conversationId)?.engine ?? "claude";
-        store.sendWithEngine(engine, prompt);
+        restorePersonaForConversation(conversationId);
+        const freshStore = useChatStore.getState();
+        const engine = freshStore.conversations.find((c) => c.id === conversationId)?.engine
+          ?? freshStore.getConversationEngine(conversationId)?.engine
+          ?? "claude";
+        freshStore.sendWithEngine(engine, prompt);
         window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "chat" }));
       } else {
         import("sonner").then(({ toast }) => {
@@ -104,8 +109,11 @@ export function AppShell() {
               label: "전달",
               onClick: async () => {
                 await store.selectConversation(conversationId);
+                restorePersonaForConversation(conversationId);
                 const freshStore = useChatStore.getState();
-                const engine = freshStore.conversations.find((c) => c.id === conversationId)?.engine ?? "claude";
+                const engine = freshStore.conversations.find((c) => c.id === conversationId)?.engine
+                  ?? freshStore.getConversationEngine(conversationId)?.engine
+                  ?? "claude";
                 setTimeout(() => useChatStore.getState().sendWithEngine(engine, prompt), 300);
                 window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "chat" }));
               },

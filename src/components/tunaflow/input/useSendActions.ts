@@ -208,6 +208,8 @@ export function useSendActions({
         const { invoke } = await import("@tauri-apps/api/core");
         const { usePtyStore } = await import("@/stores/ptyStore");
         const { toast } = await import("sonner");
+        const { getSetting: getAppSetting } = await import("@/lib/appStore");
+        const ptyOptIn = await getAppSetting<boolean>("ptyEnabled", false);
         // Kill current PTY
         const pty = usePtyStore.getState();
         const sid = pty.getSession("claude");
@@ -217,14 +219,16 @@ export function useSendActions({
         }
         // Clear resume_token in DB
         await invoke("update_resume_token", { conversationId: effectiveConvId, resumeToken: null });
-        // Spawn fresh PTY session (no --resume)
-        const projectKey = useChatStore.getState().selectedProjectKey;
-        if (projectKey) {
-          const project = await invoke<{ path?: string }>("get_project", { key: projectKey });
-          if (project.path) {
-            const conv = await invoke<import("@/types").Conversation>("get_conversation", { id: effectiveConvId });
-            const { spawnPtyForConversation } = await import("@/stores/slices/conversationSlice");
-            await spawnPtyForConversation({ ...conv, resumeToken: undefined }, project.path);
+        // Spawn fresh PTY session only if PTY mode is opted in.
+        if (ptyOptIn) {
+          const projectKey = useChatStore.getState().selectedProjectKey;
+          if (projectKey) {
+            const project = await invoke<{ path?: string }>("get_project", { key: projectKey });
+            if (project.path) {
+              const conv = await invoke<import("@/types").Conversation>("get_conversation", { id: effectiveConvId });
+              const { spawnPtyForConversation } = await import("@/stores/slices/conversationSlice");
+              await spawnPtyForConversation({ ...conv, resumeToken: undefined }, project.path);
+            }
           }
         }
         toast.success("PTY 세션 초기화 완료");

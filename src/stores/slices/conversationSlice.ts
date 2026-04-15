@@ -269,20 +269,9 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
         set({ messages, branches, memos, artifacts, error: null });
       }
 
-      // PTY: spawn Claude session for this conversation (chat = session 1:1)
-      const projectKey = get().selectedProjectKey;
-      if (projectKey) {
-        invoke<import("./types").Project>("get_project", { key: projectKey }).then(async (project) => {
-          if (!project.path) return;
-          // Get conversation with resume_token
-          try {
-            const conv = await invoke<Conversation>("get_conversation", { id });
-            await spawnPtyForConversation(conv, project.path!);
-          } catch (e) {
-            console.debug("[pty] spawn on selectConversation:", e);
-          }
-        }).catch((e) => console.debug("[pty]", e));
-      }
+      // PTY auto-spawn on conversation select is disabled. PTY is reserved for
+      // the interactive terminal panel (user triggers spawn there explicitly).
+      // Main chat send uses SDK (if API key) or `-p` CLI mode.
     } catch (e) {
       set({ error: errorMessage(e) });
     }

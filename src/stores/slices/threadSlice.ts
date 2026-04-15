@@ -183,9 +183,9 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       return;
     }
 
-    // PTY path: share parent conversation's PTY session (Branch reuses parent's CLI session)
+    // PTY path: opt-in only. See runtimeSlice.ts for rationale.
     const { getSetting: getAppSetting } = await import("@/lib/appStore");
-    const ptyEnabled = await getAppSetting<boolean>("ptyEnabled", true);
+    const ptyEnabled = await getAppSetting<boolean>("ptyEnabled", false);
     if (ptyEnabled && isPtyEngine(engineKey)) {
       const ptySession = usePtyStore.getState().getSession(engineKey);
       if (ptySession !== null) {
