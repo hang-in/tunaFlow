@@ -178,6 +178,7 @@ for f in ('__main__.py','cli.py','main.py'):
     fi
     substep "crg: pyinstaller --onefile  entry=$entry"
     ( cd "$src" && pyinstaller --onefile \
+        --log-level WARN \
         --name "crg-$TARGET_TRIPLE" \
         --distpath "$BIN_DIR" \
         "$entry" )
