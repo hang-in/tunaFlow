@@ -235,6 +235,7 @@
 - [evaluationUnderTestPlan_2026-03-30](./evaluationUnderTestPlan_2026-03-30.md)
 - [evaluationUsabilityPassPlan_2026-03-30](./evaluationUsabilityPassPlan_2026-03-30.md)
 - [betaReleaseReadinessPlan](./betaReleaseReadinessPlan.md)
+- [betaRtUpgradeSprintPlan_2026-04-15](./betaRtUpgradeSprintPlan_2026-04-15.md) — 베타 직전 RT 고도화 sprint (Quick/Deep 2트랙 + 루브릭 + Agent-as-Judge + README)
 - [cicdReleasePlan](./cicdReleasePlan.md)
 - [geminiSdkIntegrationPlan](./geminiSdkIntegrationPlan.md)
 - [gitAwareBranchModelPlan](./gitAwareBranchModelPlan.md)
