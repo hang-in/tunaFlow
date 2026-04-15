@@ -34,7 +34,39 @@ impl CancelRegistry {
     }
 }
 
+/// Inherit the user's login-shell PATH.
+///
+/// macOS .app bundles launched from Finder/Launchpad get a minimal PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`) and miss user-installed CLI agents such as
+/// `claude`, `codex`, `gemini` that live under `/opt/homebrew/bin`,
+/// `~/.npm-global/bin`, `~/.nvm/...`, or similar.
+/// `npm run tauri dev` works because the terminal already has a full PATH;
+/// the bundled app does not. Spawn the user's login shell once and adopt
+/// its PATH so every subsequent `Command::new("claude")` resolves correctly.
+fn inherit_shell_path() {
+    #[cfg(target_os = "macos")]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let output = std::process::Command::new(&shell)
+            .args(["-l", "-c", "echo -n $PATH"])
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                if let Ok(path) = String::from_utf8(out.stdout) {
+                    let trimmed = path.trim();
+                    if !trimmed.is_empty() && trimmed != std::env::var("PATH").unwrap_or_default() {
+                        eprintln!("[startup] PATH inherited from {} login shell", shell);
+                        std::env::set_var("PATH", trimmed);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn run() {
+    inherit_shell_path();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
