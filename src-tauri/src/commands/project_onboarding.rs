@@ -74,6 +74,99 @@ fn collect_md_files(
     }
 }
 
+// ─── Helper: scan project surface (README + top-level + manifests) ──────────
+
+/// Gather enough information that the meta-agent can identify the stack even
+/// when `detect_project_info` misses (e.g. Swift, Go, Zig, Elixir, Gleam,
+/// Haskell, Deno, custom Makefile projects).
+struct ProjectSurface {
+    top_entries: Vec<String>,       // 상위 디렉토리 파일/폴더 목록
+    readme_excerpt: Option<String>, // README.md 앞부분
+    manifest_samples: Vec<(String, String)>, // (filename, content excerpt)
+}
+
+fn scan_project_surface(project_path: &str) -> ProjectSurface {
+    let root = std::path::Path::new(project_path);
+    let mut surface = ProjectSurface {
+        top_entries: vec![],
+        readme_excerpt: None,
+        manifest_samples: vec![],
+    };
+
+    // 1) 상위 디렉토리 엔트리 (최대 40개). dotfile 대부분 제외 (signal 적음)
+    if let Ok(entries) = std::fs::read_dir(root) {
+        let mut names: Vec<(String, bool)> = entries
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                let is_dir = e.file_type().ok().map(|t| t.is_dir()).unwrap_or(false);
+                // Skip heavy noise dirs / hidden except a few meaningful ones
+                let skip = matches!(
+                    name.as_str(),
+                    "node_modules" | "target" | ".git" | ".next" | ".svelte-kit" |
+                    "dist" | "build" | ".venv" | "venv" | "__pycache__" | ".DS_Store"
+                );
+                if skip { return None; }
+                Some((name, is_dir))
+            })
+            .take(40)
+            .collect();
+        names.sort();
+        surface.top_entries = names.into_iter()
+            .map(|(n, d)| if d { format!("{}/", n) } else { n })
+            .collect();
+    }
+
+    // 2) README 탐지 (README.md → README.rst → README)
+    for cand in ["README.md", "Readme.md", "readme.md", "README.markdown", "README.rst", "README.txt", "README"] {
+        let p = root.join(cand);
+        if p.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                let excerpt = if content.chars().count() > 2000 {
+                    let mut end = 2000;
+                    while end > 0 && !content.is_char_boundary(end) { end -= 1; }
+                    format!("{}...\n(README truncated)", &content[..end])
+                } else {
+                    content
+                };
+                surface.readme_excerpt = Some(format!("## {}\n{}", cand, excerpt));
+                break;
+            }
+        }
+    }
+
+    // 3) 주요 manifest 샘플. 첫 600자 정도.
+    // Rust/TS/JS/Python/Go/Swift/Ruby/Elixir/Deno/Gleam/Haskell/Makefile/Nix 등.
+    let manifests = [
+        "Cargo.toml", "package.json", "pyproject.toml", "requirements.txt",
+        "setup.py", "go.mod", "Gemfile", "Gemfile.lock",
+        "Package.swift", "Podfile", "Cartfile", "project.pbxproj",
+        "mix.exs", "rebar.config",
+        "deno.json", "deno.jsonc", "bun.lockb", "pnpm-workspace.yaml",
+        "gleam.toml", "build.zig", "stack.yaml", "cabal.project",
+        "Makefile", "CMakeLists.txt", "flake.nix", "shell.nix", "default.nix",
+        "composer.json", "pubspec.yaml", ".tool-versions",
+    ];
+    for name in manifests {
+        let p = root.join(name);
+        if p.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                let mut end = content.len().min(600);
+                while end > 0 && !content.is_char_boundary(end) { end -= 1; }
+                let sample = if content.len() > end {
+                    format!("{}\n...(truncated)", &content[..end])
+                } else {
+                    content
+                };
+                surface.manifest_samples.push((name.to_string(), sample));
+            }
+            if surface.manifest_samples.len() >= 6 { break; }
+        }
+    }
+
+    surface
+}
+
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
 fn build_prompt(
@@ -115,18 +208,46 @@ fn build_prompt(
         docs_files.iter().map(|f| format!("- docs/{}", f)).collect::<Vec<_>>().join("\n")
     };
 
+    // Project surface — README + top-level entries + manifest samples.
+    // detect_project_info() only knows a short allow-list of stacks (Rust/TS/JS/...),
+    // so Swift/Go/Zig/Elixir 등이 "미확인"으로 나가는 문제를 보완.
+    let surface = scan_project_surface(project_path);
+    let top_entries_section = if surface.top_entries.is_empty() {
+        "(빈 디렉토리)".to_string()
+    } else {
+        surface.top_entries.join(", ")
+    };
+    let readme_section = surface.readme_excerpt
+        .map(|e| format!("\n\n## README\n{}", e))
+        .unwrap_or_default();
+    let manifest_section = if surface.manifest_samples.is_empty() {
+        String::new()
+    } else {
+        let mut s = String::from("\n\n## 매니페스트 파일 샘플 (각 상위 일부)");
+        for (name, content) in &surface.manifest_samples {
+            s.push_str(&format!("\n\n### {}\n```\n{}\n```", name, content));
+        }
+        s
+    };
+
     format!(
         r#"아래 프로젝트 정보를 분석하여 두 가지 파일의 내용을 생성해 주세요.
+감지 결과가 '미확인'이라도, **매니페스트 파일 샘플과 README, 디렉토리 구조**를
+참고해서 실제 언어/프레임워크/빌드 명령을 추론하세요. 추측이라면 근거를
+함께 적으세요.
 
-## 프로젝트 정보
+## 프로젝트 정보 (자동 감지 — 보조적)
 
 - 이름: {project_name}
-- 언어: {lang}
-- 프레임워크: {framework}
-- 스택: {stack_summary}
-- 테스트 명령: {test_cmd}
-- 빌드 명령: {build_cmd}
-- 타입 체크: {type_cmd}
+- 언어(감지): {lang}
+- 프레임워크(감지): {framework}
+- 스택(감지): {stack_summary}
+- 테스트 명령(감지): {test_cmd}
+- 빌드 명령(감지): {build_cmd}
+- 타입 체크(감지): {type_cmd}
+
+## 상위 디렉토리 엔트리
+{top_entries_section}{readme_section}{manifest_section}
 
 ## 기존 문서 목록
 {docs_section}{existing_section}
