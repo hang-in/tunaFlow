@@ -1,3 +1,4 @@
+pub mod agent_detect;
 pub mod agents;
 pub mod agents_helpers;
 pub mod artifacts;

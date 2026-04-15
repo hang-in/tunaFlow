@@ -254,6 +254,7 @@ pub fn run() {
             commands::project_tools::ensure_rawq_index,
             commands::project_tools::ensure_project_workflow_templates,
             commands::projects::refresh_project_stack_info,
+            commands::agent_detect::detect_available_agents,
             commands::project_onboarding::analyze_project_for_onboarding,
             commands::project_onboarding::cancel_project_onboarding,
             commands::project_onboarding::apply_project_onboarding,

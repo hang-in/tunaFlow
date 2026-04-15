@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Circle, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
+import { MetaAgentSelector } from "./MetaAgentSelector";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,10 +12,14 @@ interface StepPayload { step: number; label: string; done: boolean; }
 interface PreviewPayload { claude_md: string; ref_index: string; has_existing_claude_md: boolean; }
 interface ErrorPayload { message: string; }
 
-type ModalState = "loading" | "preview" | "cancel_confirm" | "skip_confirm" | "done";
+// Flow: agent_select → loading → preview → done
+// Overlays (cancel_confirm / skip_confirm) render on top of the host state.
+type ModalState = "agent_select" | "loading" | "preview" | "cancel_confirm" | "skip_confirm" | "done";
 type PreviewTab = "claude_md" | "ref_index";
 
 interface Step { label: string; done: boolean; active: boolean; }
+
+interface AgentConfig { engine: string; model: string; endpoint?: string; }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -22,7 +27,7 @@ export function ProjectOnboardingModal() {
   const onboardingProject = useChatStore((s) => s.onboardingProject);
   const clearOnboardingProject = useChatStore((s) => s.clearOnboardingProject);
 
-  const [modalState, setModalState] = useState<ModalState>("loading");
+  const [modalState, setModalState] = useState<ModalState>("agent_select");
   const [steps, setSteps] = useState<Step[]>([
     { label: "프로젝트 스캔 중...", done: false, active: true },
     { label: "기존 문서 분석 중...", done: false, active: false },
@@ -33,10 +38,10 @@ export function ProjectOnboardingModal() {
   const [error, setError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void)[]>([]);
 
+  // Reset to initial "agent_select" phase when a new project arrives.
   useEffect(() => {
     if (!onboardingProject) return;
-
-    setModalState("loading");
+    setModalState("agent_select");
     setSteps([
       { label: "프로젝트 스캔 중...", done: false, active: true },
       { label: "기존 문서 분석 중...", done: false, active: false },
@@ -44,39 +49,51 @@ export function ProjectOnboardingModal() {
     ]);
     setPreview(null);
     setError(null);
-
-    const setup = async () => {
-      const unlistenStep = await listen<StepPayload>("project:onboarding:step", (e) => {
-        const { step, label, done } = e.payload;
-        setSteps((prev) => prev.map((s, i) => {
-          if (i === step - 1) return { label, done, active: !done };
-          if (i === step && !done) return { ...s, active: false }; // next step not yet active
-          return s;
-        }));
-      });
-
-      const unlistenPreview = await listen<PreviewPayload>("project:onboarding:preview", (e) => {
-        setPreview(e.payload);
-        setModalState("preview");
-      });
-
-      const unlistenError = await listen<ErrorPayload>("project:onboarding:error", (e) => {
-        setError(e.payload.message);
-      });
-
-      cleanupRef.current = [unlistenStep, unlistenPreview, unlistenError];
-
-      // Start analysis
-      invoke("analyze_project_for_onboarding", {
-        projectPath: onboardingProject.path,
-        projectName: onboardingProject.name,
-      }).catch((e) => setError(String(e)));
-    };
-
-    setup();
-
-    return () => { cleanupRef.current.forEach((u) => u()); };
+    return () => { cleanupRef.current.forEach((u) => u()); cleanupRef.current = []; };
   }, [onboardingProject]);
+
+  // Kick off analysis once the user confirms a meta-agent selection.
+  const handleProceed = async (cfg: AgentConfig) => {
+    if (!onboardingProject) return;
+    setModalState("loading");
+    setError(null);
+
+    const unlistenStep = await listen<StepPayload>("project:onboarding:step", (e) => {
+      const { step, label, done } = e.payload;
+      setSteps((prev) => prev.map((s, i) => {
+        if (i === step - 1) return { label, done, active: !done };
+        if (i === step && !done) return { ...s, active: false };
+        return s;
+      }));
+    });
+
+    const unlistenPreview = await listen<PreviewPayload>("project:onboarding:preview", (e) => {
+      setPreview(e.payload);
+      setModalState("preview");
+    });
+
+    const unlistenError = await listen<ErrorPayload>("project:onboarding:error", (e) => {
+      setError(e.payload.message);
+    });
+
+    cleanupRef.current = [unlistenStep, unlistenPreview, unlistenError];
+
+    invoke("analyze_project_for_onboarding", {
+      projectPath: onboardingProject.path,
+      projectName: onboardingProject.name,
+      engine: cfg.engine,
+      model: cfg.model,
+      endpoint: cfg.endpoint,
+    }).catch((e) => setError(String(e)));
+  };
+
+  // Skip from the selector: default scaffolding (createProject) already ran,
+  // so we just dismiss the modal.
+  const handleSkipFromSelector = () => {
+    cleanupRef.current.forEach((u) => u());
+    setModalState("done");
+    clearOnboardingProject();
+  };
 
   const handleCancel = () => {
     invoke("cancel_project_onboarding").catch(() => {});
@@ -115,7 +132,16 @@ export function ProjectOnboardingModal() {
       <div className="absolute inset-0 bg-black/50" />
 
       {/* Modal */}
-      <div className="relative z-10 w-[520px] max-h-[80vh] bg-background border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="relative z-10 w-[560px] max-h-[85vh] bg-background border border-border rounded-xl shadow-2xl flex flex-col overflow-hidden">
+
+        {/* ── Agent select state (initial phase) ── */}
+        {modalState === "agent_select" && (
+          <MetaAgentSelector
+            projectName={onboardingProject.name}
+            onProceed={handleProceed}
+            onSkip={handleSkipFromSelector}
+          />
+        )}
 
         {/* ── Loading state ── */}
         {(modalState === "loading" || modalState === "cancel_confirm") && (

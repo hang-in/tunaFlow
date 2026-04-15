@@ -214,18 +214,14 @@ fn extract_between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str>
     Some(&text[s..e])
 }
 
-// ─── AI call ─────────────────────────────────────────────────────────────────
+// ─── AI call (engine-agnostic) ───────────────────────────────────────────────
 
-async fn call_claude(prompt: &str, cancel: &AtomicBool) -> Result<(String, String), String> {
-    let child = tokio::process::Command::new("claude")
-        .args(["-p", prompt, "--max-turns", "1", "--output-format", "text"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("claude CLI 실행 실패: {e}. claude가 설치되어 있고 로그인되어 있는지 확인하세요."))?;
-
-    // Spawn subprocess in a background task; communicate result via channel.
-    // If cancelled we return early — the background task finishes on its own and result is dropped.
+/// Poll an already-spawned CLI subprocess with cooperative cancellation.
+async fn await_cli_with_cancel(
+    child: tokio::process::Child,
+    cancel: &AtomicBool,
+    engine: &str,
+) -> Result<String, String> {
     let (tx, mut rx) = tokio::sync::oneshot::channel::<std::io::Result<std::process::Output>>();
     tokio::spawn(async move {
         let _ = tx.send(child.wait_with_output().await);
@@ -234,23 +230,203 @@ async fn call_claude(prompt: &str, cancel: &AtomicBool) -> Result<(String, Strin
     let poll = tokio::time::Duration::from_millis(300);
     loop {
         tokio::time::sleep(poll).await;
-
-        if is_cancelled(cancel) {
-            return Err("cancelled".into());
-        }
+        if is_cancelled(cancel) { return Err("cancelled".into()); }
 
         match rx.try_recv() {
             Ok(Ok(output)) => {
                 if !output.status.success() {
-                    return Err(format!("claude 분석 실패 (exit: {:?})", output.status.code()));
+                    return Err(format!("{engine} 분석 실패 (exit: {:?})", output.status.code()));
                 }
-                return parse_output(&String::from_utf8_lossy(&output.stdout));
+                return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
             }
-            Ok(Err(e)) => return Err(format!("claude 실행 오류: {e}")),
+            Ok(Err(e)) => return Err(format!("{engine} 실행 오류: {e}")),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty) => continue,
             Err(_) => return Err("프로세스 채널 오류".into()),
         }
     }
+}
+
+/// Run a CLI agent with (`bin`, model-args) convention. Prompt goes on argv
+/// for claude/gemini; for codex we hand it through stdin to match existing
+/// codex agent behavior.
+async fn call_cli_agent(
+    engine: &str,
+    bin: &str,
+    prompt: &str,
+    model: Option<&str>,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    use std::process::Stdio;
+
+    let mut cmd = tokio::process::Command::new(bin);
+    match engine {
+        "claude" => {
+            cmd.args(["-p", prompt, "--max-turns", "1", "--output-format", "text"]);
+            if let Some(m) = model { cmd.args(["--model", m]); }
+        }
+        "gemini" => {
+            cmd.args(["-p", prompt]);
+            if let Some(m) = model { cmd.args(["-m", m]); }
+        }
+        "codex" => {
+            cmd.args(["exec", "--full-auto", "-"]);
+            if let Some(m) = model { cmd.args(["--model", m]); }
+            cmd.stdin(Stdio::piped());
+        }
+        _ => return Err(format!("지원하지 않는 CLI 엔진: {engine}")),
+    }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+
+    let spawn_res = cmd.spawn();
+    let mut child = spawn_res
+        .map_err(|e| format!("{engine} CLI 실행 실패: {e}. {engine}가 설치되어 있는지 확인하세요."))?;
+
+    // codex만 stdin 파이프
+    if engine == "codex" {
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            let prompt_owned = prompt.to_string();
+            tokio::spawn(async move {
+                let _ = stdin.write_all(prompt_owned.as_bytes()).await;
+                drop(stdin);
+            });
+        }
+    }
+
+    await_cli_with_cancel(child, cancel, engine).await
+}
+
+/// Call an OpenAI-compatible HTTP chat completions endpoint (LMStudio default,
+/// or Ollama which also exposes /v1/chat/completions).
+async fn call_openai_compat(
+    prompt: &str,
+    model: &str,
+    endpoint: &str,   // e.g. http://localhost:1234/v1
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    let base = endpoint.trim_end_matches('/');
+    let url = format!("{}/chat/completions", base);
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": prompt }],
+        "temperature": 0.2,
+        "stream": false,
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("HTTP 클라이언트 오류: {e}"))?;
+
+    // Spawn HTTP call in a task so we can poll cancel flag.
+    let url_c = url.clone();
+    let (tx, mut rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    tokio::spawn(async move {
+        let res = async {
+            let resp = client.post(&url_c).json(&body).send().await
+                .map_err(|e| format!("요청 실패: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            let v: serde_json::Value = resp.json().await.map_err(|e| format!("응답 파싱 실패: {e}"))?;
+            v.get("choices").and_then(|c| c.get(0)).and_then(|c| c.get("message"))
+                .and_then(|m| m.get("content")).and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| "choices[0].message.content 필드 누락".into())
+        }.await;
+        let _ = tx.send(res);
+    });
+
+    let poll = tokio::time::Duration::from_millis(300);
+    loop {
+        tokio::time::sleep(poll).await;
+        if is_cancelled(cancel) { return Err("cancelled".into()); }
+        match rx.try_recv() {
+            Ok(Ok(text)) => return Ok(text),
+            Ok(Err(e)) => return Err(e),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => continue,
+            Err(_) => return Err("HTTP 채널 오류".into()),
+        }
+    }
+}
+
+/// Ollama-specific native endpoint (non-OpenAI-compat) /api/chat.
+async fn call_ollama(
+    prompt: &str,
+    model: &str,
+    endpoint: &str,   // e.g. http://localhost:11434
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    let base = endpoint.trim_end_matches('/');
+    let url = format!("{}/api/chat", base);
+
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{ "role": "user", "content": prompt }],
+        "stream": false,
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("HTTP 클라이언트 오류: {e}"))?;
+
+    let url_c = url.clone();
+    let (tx, mut rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    tokio::spawn(async move {
+        let res = async {
+            let resp = client.post(&url_c).json(&body).send().await
+                .map_err(|e| format!("요청 실패: {e}"))?;
+            if !resp.status().is_success() {
+                return Err(format!("HTTP {}", resp.status()));
+            }
+            let v: serde_json::Value = resp.json().await.map_err(|e| format!("응답 파싱 실패: {e}"))?;
+            v.get("message").and_then(|m| m.get("content")).and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| "message.content 필드 누락".into())
+        }.await;
+        let _ = tx.send(res);
+    });
+
+    let poll = tokio::time::Duration::from_millis(300);
+    loop {
+        tokio::time::sleep(poll).await;
+        if is_cancelled(cancel) { return Err("cancelled".into()); }
+        match rx.try_recv() {
+            Ok(Ok(text)) => return Ok(text),
+            Ok(Err(e)) => return Err(e),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => continue,
+            Err(_) => return Err("HTTP 채널 오류".into()),
+        }
+    }
+}
+
+/// Top-level dispatcher: pick CLI vs HTTP path by engine name.
+async fn call_agent(
+    engine: &str,
+    model: Option<&str>,
+    endpoint: Option<&str>,
+    prompt: &str,
+    cancel: &AtomicBool,
+) -> Result<(String, String), String> {
+    let text = match engine {
+        "claude" | "codex" | "gemini" => {
+            call_cli_agent(engine, engine, prompt, model, cancel).await?
+        }
+        "ollama" => {
+            let ep = endpoint.unwrap_or("http://localhost:11434");
+            let m = model.ok_or("Ollama 모델이 지정되지 않았습니다")?;
+            call_ollama(prompt, m, ep, cancel).await?
+        }
+        "lmstudio" => {
+            let ep = endpoint.unwrap_or("http://localhost:1234/v1");
+            let m = model.ok_or("LM Studio 모델이 지정되지 않았습니다")?;
+            call_openai_compat(prompt, m, ep, cancel).await?
+        }
+        other => return Err(format!("지원하지 않는 엔진: {other}")),
+    };
+    parse_output(&text)
 }
 
 // ─── Tauri commands ──────────────────────────────────────────────────────────
@@ -259,10 +435,14 @@ async fn call_claude(prompt: &str, cancel: &AtomicBool) -> Result<(String, Strin
 pub async fn analyze_project_for_onboarding(
     project_path: String,
     project_name: String,
+    engine: Option<String>,            // default "claude" for backward compat
+    model: Option<String>,
+    endpoint: Option<String>,          // for ollama/lmstudio
     app: AppHandle,
 ) -> Result<(), String> {
     let cancel = Arc::new(AtomicBool::new(false));
     set_cancel_flag(cancel.clone());
+    let engine = engine.unwrap_or_else(|| "claude".into());
 
     let emit_step = |step: u8, label: &str, done: bool| {
         app.emit("project:onboarding:step", OnboardingStepPayload {
@@ -295,7 +475,15 @@ pub async fn analyze_project_for_onboarding(
 
     let prompt = build_prompt(&project_name, &project_path, &docs_files, &existing_claude_md);
 
-    match call_claude(&prompt, &cancel).await {
+    let agent_result = call_agent(
+        &engine,
+        model.as_deref(),
+        endpoint.as_deref(),
+        &prompt,
+        &cancel,
+    ).await;
+
+    match agent_result {
         Ok((claude_md, ref_index)) => {
             if is_cancelled(&cancel) { clear_cancel_flag(); return Ok(()); }
             emit_step(3, "분석 완료", true);

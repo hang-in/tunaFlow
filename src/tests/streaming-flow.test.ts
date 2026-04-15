@@ -401,8 +401,8 @@ describe("Streaming flow — sendWithEngine", () => {
     ["claude", "start_claude_stream", "claude-code"],
     ["codex", "start_codex_run", "codex"],
     ["gemini", "start_gemini_stream", "gemini"],
-    ["opencode", "start_opencode_run", "opencode"],
     ["ollama", "start_openai_compat_stream", "ollama"],
+    ["lmstudio", "start_openai_compat_stream", "lmstudio"],
   ])("routes %s to command %s with engineKey %s", async (engine, command, engineKey) => {
     vi.mocked(invoke).mockResolvedValue({ messageId: "m1" });
 
