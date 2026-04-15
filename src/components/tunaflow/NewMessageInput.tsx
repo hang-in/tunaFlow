@@ -313,8 +313,11 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                       if (target) {
                         saveConversationEngine(target, { profileId: selectedProfileId, engine, model: m || undefined });
                       }
-                      // Respawn PTY session so the model change takes effect immediately
-                      if (!threadMode && isPtyEngine(engine) && selectedConversationId) {
+                      // Respawn PTY session on model change — only if PTY mode is enabled.
+                      // Main chat routes through SDK / `-p` CLI by default.
+                      const { getSetting: getAppSettingPty } = await import("@/lib/appStore");
+                      const ptyOptIn = await getAppSettingPty<boolean>("ptyEnabled", false);
+                      if (ptyOptIn && !threadMode && isPtyEngine(engine) && selectedConversationId) {
                         const conv = useChatStore.getState().conversations.find((c) => c.id === selectedConversationId);
                         const project = useChatStore.getState().projects.find((p) => p.key === useChatStore.getState().selectedProjectKey);
                         if (conv && project?.path) {

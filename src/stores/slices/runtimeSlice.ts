@@ -124,34 +124,15 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       return;
     }
 
-    // PTY shortcut: if enabled and a PTY session is active, route through it
+    // PTY shortcut: opt-in only. PTY is now reserved for the interactive terminal
+    // panel (VTE). Main chat send routes through SDK (if API key) or `-p` CLI to
+    // avoid Enter-queue hangs under load (e.g. bge-m3 IO contention).
     const { getSetting: getAppSetting } = await import("@/lib/appStore");
-    const ptyEnabled = await getAppSetting<boolean>("ptyEnabled", true);
+    const ptyEnabled = await getAppSetting<boolean>("ptyEnabled", false);
     if (ptyEnabled && isPtyEngine(engine)) {
-      // If PTY is currently being spawned (project just switched), wait until it's ready (max 20s)
       const { waitForPtyReady } = await import("@/stores/slices/conversationSlice");
       await waitForPtyReady(selectedConversationId, 20_000);
-
-      let ptySession = usePtyStore.getState().getSession(engine);
-      // Re-spawn if model changed since last spawn
-      if (ptySession !== null && model) {
-        const ptyModel = usePtyStore.getState().getModel(engine);
-        if (ptyModel && model !== ptyModel) {
-          console.log(`[pty] model mismatch: spawned=${ptyModel}, requested=${model} — re-spawning`);
-          import("sonner").then(({ toast }) => toast.info(`모델 변경 (${ptyModel} → ${model}) — PTY 재시작 중...`)).catch(() => {});
-          const { invoke: tauriInvoke } = await import("@tauri-apps/api/core");
-          await tauriInvoke("pty_kill_all").catch(() => {});
-          usePtyStore.getState().clearAllSessions();
-          const convObj = get().conversations.find((c) => c.id === selectedConversationId);
-          const projectInfo = await tauriInvoke<{ path?: string }>("get_project", { key: selectedProjectKey }).catch(() => null);
-          if (convObj && projectInfo?.path) {
-            const { spawnPtyForConversation, waitForPtyReady: waitReady } = await import("@/stores/slices/conversationSlice");
-            await spawnPtyForConversation(convObj, projectInfo.path);
-            await waitReady(selectedConversationId, 20_000);
-          }
-          ptySession = usePtyStore.getState().getSession(engine);
-        }
-      }
+      const ptySession = usePtyStore.getState().getSession(engine);
       if (ptySession !== null) {
         try {
           await sendMessageViaPty(set, get, prompt, ptySession, selectedConversationId, engine, {
