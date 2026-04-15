@@ -102,8 +102,11 @@ pub fn needs_compression(conn: &Connection, conversation_id: &str) -> bool {
 
     match existing {
         Some(prev_count) => {
-            // Re-compress if significantly more messages since last compression
-            msg_count - prev_count >= COMPRESSION_THRESHOLD / 2
+            // Re-compress only when a full compression window's worth of new
+            // messages has accumulated. Previously `/ 2` caused re-compression
+            // too frequently on active conversations, multiplying the Opus
+            // quota burn (see compress_memory_blocking call below).
+            msg_count - prev_count >= COMPRESSION_THRESHOLD
         }
         None => true,
     }
@@ -495,8 +498,16 @@ pub fn compress_memory_blocking(db: &crate::db::DbState, conversation_id: &str) 
         t
     };
     let prompt = format!("{}{}", SUMMARY_PROMPT, transcript);
+    // Use Haiku for memory compression — this is a background summarization
+    // task that runs after EVERY user completion. Defaulting to the user's
+    // selected chat model (often Opus) doubled quota consumption. Haiku is
+    // ~15× cheaper and fully capable of the JSON topic-extraction task here.
     let result = crate::agents::claude::run(crate::agents::claude::RunInput {
-        prompt, model: None, system_prompt: None, resume_token: None, project_path: None,
+        prompt,
+        model: Some("claude-haiku-4-5".into()),
+        system_prompt: None,
+        resume_token: None,
+        project_path: None,
     });
     let raw_output = match result {
         Ok(out) if !out.content.trim().is_empty() => out.content.trim().to_string(),
