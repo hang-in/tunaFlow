@@ -135,24 +135,61 @@ else
     warn "scripts/build-rawq.sh missing; rawq sidecar not built."
   fi
 
-  # ── 3b. crg (code-review-graph) ──
+  # ── 3b. crg (code-review-graph) — Python + PyInstaller ──
+  # (CI 레퍼런스: .github/workflows/build.yml의 build-crg job)
   build_crg() {
     local src="$1"
     local dest="$BIN_DIR/crg-$TARGET_TRIPLE"
-    local target_dir="$ROOT_DIR/src-tauri/target/crg-sidecar"
-    substep "Building crg from $src …"
-    cargo build --manifest-path "$src/Cargo.toml" --release --target-dir "$target_dir"
-    # crate binary name may be `crg` or `code-review-graph`; pick whichever exists.
-    if [[ -f "$target_dir/release/crg" ]]; then
-      cp "$target_dir/release/crg" "$dest"
-    elif [[ -f "$target_dir/release/code-review-graph" ]]; then
-      cp "$target_dir/release/code-review-graph" "$dest"
-    else
-      fail "crg binary not produced under $target_dir/release/"
+    local venv="$ROOT_DIR/src-tauri/target/crg-venv"
+    substep "Building crg from $src (Python/PyInstaller) …"
+
+    # Python 3 확인
+    if ! command -v python3 >/dev/null 2>&1; then
+      fail "python3 not found; skip crg build (install Python 3.11+ or set CRG_SRC to skip)"
       return 1
     fi
-    chmod +x "$dest"
-    ok "crg sidecar built: $dest"
+    substep "crg: python3 $(python3 --version 2>&1)"
+
+    # 격리된 venv 사용 (사용자 전역 site-packages 오염 방지)
+    if [[ ! -d "$venv" ]]; then
+      substep "crg: python3 -m venv $venv"
+      python3 -m venv "$venv"
+    fi
+    # shellcheck disable=SC1091
+    source "$venv/bin/activate"
+
+    substep "crg: pip install . + pyinstaller"
+    ( cd "$src" && pip install --quiet --upgrade pip && pip install --quiet . pyinstaller )
+
+    # CI와 동일: code_review_graph 모듈의 진입점 파일(__main__.py 등)을 찾아 pyinstaller에 전달
+    local entry
+    entry=$(python3 -c "
+import code_review_graph, os, sys
+pkg = os.path.dirname(code_review_graph.__file__)
+for f in ('__main__.py','cli.py','main.py'):
+    p = os.path.join(pkg, f)
+    if os.path.exists(p):
+        print(p); sys.exit(0)
+" 2>/dev/null || true)
+    if [[ -z "$entry" ]]; then
+      fail "crg: could not locate code_review_graph entry (__main__.py / cli.py / main.py)"
+      deactivate || true
+      return 1
+    fi
+    substep "crg: pyinstaller --onefile  entry=$entry"
+    ( cd "$src" && pyinstaller --onefile \
+        --name "crg-$TARGET_TRIPLE" \
+        --distpath "$BIN_DIR" \
+        "$entry" )
+
+    deactivate || true
+    if [[ -f "$dest" ]]; then
+      chmod +x "$dest"
+      ok "crg sidecar built: $dest"
+    else
+      fail "crg: PyInstaller did not produce $dest"
+      return 1
+    fi
   }
   if [[ -f "$BIN_DIR/crg-$TARGET_TRIPLE" ]]; then
     ok "crg sidecar already present (skip)."
@@ -164,35 +201,42 @@ else
     )
     CRG_PICKED=""
     for c in "${CRG_CANDIDATES[@]}"; do
-      [[ -n "$c" && -f "$c/Cargo.toml" ]] && { CRG_PICKED="$c"; break; }
+      # Python source → pyproject.toml 기준으로 탐색
+      [[ -n "$c" && -f "$c/pyproject.toml" ]] && { CRG_PICKED="$c"; break; }
     done
     if [[ -n "$CRG_PICKED" ]]; then
-      build_crg "$CRG_PICKED"
+      build_crg "$CRG_PICKED" || warn "crg build failed (계속 진행)"
     else
-      warn "crg source not found. Set CRG_SRC=<path> or clone the repo. Skipping."
+      warn "crg source not found. Set CRG_SRC=<path> to a dir with pyproject.toml. Skipping."
     fi
   fi
 
-  # ── 3c. context-hub (chub) ──
+  # ── 3c. context-hub (chub) — Node, pkg targets cli/ subdir ──
+  # (CI 레퍼런스: npm install --prefix cli ; pkg cli --targets ... --output ...)
   build_chub() {
-    local src="$1"
+    local src="$1"          # repo root (has package.json + cli/)
+    local cli_dir="$src/cli"
     local dest="$BIN_DIR/chub-$TARGET_TRIPLE"
-    substep "Building chub from $src …"
-    pushd "$src" >/dev/null
-    if [[ ! -d node_modules ]]; then
-      substep "chub: npm install"
-      npm install --no-audit --no-fund
+
+    if [[ ! -d "$cli_dir" || ! -f "$cli_dir/package.json" ]]; then
+      fail "chub: $cli_dir/package.json not found (repo layout changed?)"
+      return 1
     fi
-    npm run build 2>/dev/null || true   # build step optional
+
+    substep "Building chub from $src (pkg cli/) …"
+    if [[ ! -d "$cli_dir/node_modules" ]]; then
+      substep "chub: npm install --prefix $cli_dir"
+      npm install --prefix "$cli_dir" --no-audit --no-fund
+    fi
+
     # pkg target triple mapping
     local pkg_target="node18-macos-arm64"
     if [[ "$TARGET_TRIPLE" == "x86_64-apple-darwin" ]]; then
       pkg_target="node18-macos-x64"
     fi
-    substep "chub: npx pkg → $pkg_target"
-    npx --yes pkg . --targets "$pkg_target" --output "$dest"
+    substep "chub: npx pkg \"$cli_dir\" → $pkg_target"
+    npx --yes pkg "$cli_dir" --targets "$pkg_target" --output "$dest"
     chmod +x "$dest"
-    popd >/dev/null
     ok "chub sidecar built: $dest"
   }
   if [[ -f "$BIN_DIR/chub-$TARGET_TRIPLE" ]]; then
@@ -205,12 +249,13 @@ else
     )
     CHUB_PICKED=""
     for c in "${CHUB_CANDIDATES[@]}"; do
-      [[ -n "$c" && -f "$c/package.json" ]] && { CHUB_PICKED="$c"; break; }
+      # context-hub 레이아웃: 루트 package.json + cli/package.json
+      [[ -n "$c" && -f "$c/cli/package.json" ]] && { CHUB_PICKED="$c"; break; }
     done
     if [[ -n "$CHUB_PICKED" ]]; then
-      build_chub "$CHUB_PICKED"
+      build_chub "$CHUB_PICKED" || warn "chub build failed (계속 진행)"
     else
-      warn "chub source not found. Set CHUB_SRC=<path> or clone the repo. Skipping."
+      warn "chub source not found. Set CHUB_SRC=<path> to a dir with cli/package.json. Skipping."
     fi
   fi
 
