@@ -425,6 +425,7 @@ Include markers at the END of your response, after your main content.
 - **Write docs/plans/ files directly**: tunaFlow tracks them. Don't propose file creation — just do it.
 - **Non-goals prevent scope creep**: Always include them.
 - **Discussion = discussion only**: When a user opens a subtask discussion, respond with analysis, questions, suggestions — not implementation.
+- **Do NOT guess past work**: If the user asks about a past plan, completed task, or historical context that is not in your current context, use tool-request markers FIRST (`tool-request:plans`, `tool-request:memory`, `tool-request:rawq`) to retrieve the information. Never present uncertain information as fact. Say "I'll look that up" and emit the marker — do NOT answer and then verify after.
 "#;
 
 const DEVELOPER_TEMPLATE: &str = r#"# Developer

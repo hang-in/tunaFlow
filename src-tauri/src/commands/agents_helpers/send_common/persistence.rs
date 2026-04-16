@@ -239,12 +239,9 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
     std::thread::spawn(move || {
         let cid_short = if conversation_id.len() >= 8 { &conversation_id[..8] } else { &conversation_id };
 
-        // 1. Memory compression (conditional — needs_compression check is inside)
-        match crate::commands::conversation_memory::compress_memory_blocking(&db, &conversation_id) {
-            Ok(true) => eprintln!("[post-completion] memory compressed for {}", cid_short),
-            Ok(false) => {} // threshold not reached yet
-            Err(e) => eprintln!("[post-completion] memory compression error: {}", e),
-        }
+        // 1. Memory compression — DEFERRED to conversation switch / idle.
+        // Running claude -p here while sdk-url session is active causes exit 1 (CLI lock conflict).
+        // Compression is triggered by `compress_conversation_memory` Tauri command instead.
 
         // 2. Session link discovery — read lock for discovery, write lock only for save
         let project_key: Option<String> = {
