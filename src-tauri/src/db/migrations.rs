@@ -127,6 +127,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 34 {
         apply_v34(conn)?;
     }
+    if current < 35 {
+        apply_v35(conn)?;
+    }
     Ok(())
 }
 
@@ -817,6 +820,15 @@ fn apply_v34(conn: &Connection) -> Result<(), AppError> {
     // Enables auto-resolve when the branch is adopted/archived.
     add_column_if_missing(conn, "insight_findings", "review_branch_id", "TEXT")?;
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (34, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+fn apply_v35(conn: &Connection) -> Result<(), AppError> {
+    // Cache token classification for accurate cost calculation.
+    // Claude API returns cache_read_input_tokens and cache_creation_input_tokens.
+    add_column_if_missing(conn, "trace_log", "cache_read_tokens", "INTEGER DEFAULT 0")?;
+    add_column_if_missing(conn, "trace_log", "cache_creation_tokens", "INTEGER DEFAULT 0")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (35, ?1)", [now_epoch()])?;
     Ok(())
 }
 
