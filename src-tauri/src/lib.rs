@@ -191,18 +191,23 @@ pub fn run() {
             app.manage(commands::pty::PtyState::new());
             app.manage(commands::projects::RawqIndexing(std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashSet::new()))));
 
-            // Center window on primary monitor if no saved window state
+            // Window state restoration debug + fallback centering
             if let Some(window) = app.get_webview_window("main") {
-                // window-state plugin restores position before setup runs.
-                // If position is (0,0) or negative, assume no saved state → center on primary monitor.
-                let needs_center = match window.outer_position() {
-                    Ok(pos) => pos.x == 0 && pos.y == 0,
-                    Err(_) => true,
-                };
-                if needs_center {
+                // window-state plugin restores position/size BEFORE setup runs.
+                // Log actual state to diagnose restoration issues.
+                let pos = window.outer_position().unwrap_or_default();
+                let size = window.outer_size().unwrap_or_default();
+                let scale = window.scale_factor().unwrap_or(1.0);
+                eprintln!(
+                    "[window-state] restored: pos=({},{}) size={}x{} scale={:.1}",
+                    pos.x, pos.y, size.width, size.height, scale
+                );
+
+                // Only center if position is clearly unset (0,0)
+                if pos.x == 0 && pos.y == 0 {
+                    eprintln!("[window-state] no saved position — centering on primary monitor");
                     if let Some(monitor) = window.primary_monitor().ok().flatten() {
                         let screen = monitor.size();
-                        let scale = monitor.scale_factor();
                         let mon_pos = monitor.position();
                         let win_w = 1200.0;
                         let win_h = 800.0;
