@@ -1,6 +1,8 @@
 pub mod anthropic_sdk;
 pub mod claude;
+pub mod claude_sdk_session;
 pub mod codex;
+pub mod codex_app_server;
 pub mod context_hub;
 pub mod crg;
 pub mod embedder;

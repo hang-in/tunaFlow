@@ -6,6 +6,7 @@ pub mod branches;
 pub mod capabilities;
 pub mod context_hub;
 pub mod context_queries;
+pub mod conventions_sync;
 pub mod conversation_memory;
 pub mod memory_topics;
 pub mod memory_compression;

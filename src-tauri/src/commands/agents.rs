@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
-use crate::agents::{anthropic_sdk, claude, codex, gemini, gemini_sdk, openai_compat, openai_sdk, opencode};
+use crate::agents::{anthropic_sdk, claude, claude_sdk_session, codex, codex_app_server, gemini, gemini_sdk, openai_compat, openai_sdk, opencode};
 use crate::db::DbState;
 use crate::errors::AppError;
 use crate::guardrail;
@@ -58,6 +58,53 @@ fn identity_fragment(input: &SendWithClaudeInput, engine: &str) -> Option<String
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Mode query
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 현재 conversation에 적용될 claude 전송 모드를 반환한다.
+/// - "sdk-url" : --sdk-url WS 세션 (기본)
+/// - "cli"     : -p stream-json (TUNAFLOW_DISABLE_SDK_URL=1 시)
+/// - "sdk"     : Anthropic SDK 직접 (API 키 + branch)
+fn resolve_claude_mode(conversation_id: &str) -> &'static str {
+    let is_branch = conversation_id.starts_with("branch:");
+    if anthropic_sdk::is_available() && is_branch {
+        "sdk"
+    } else if std::env::var("TUNAFLOW_DISABLE_SDK_URL").as_deref() != Ok("1") {
+        "sdk-url"
+    } else {
+        "cli"
+    }
+}
+
+#[tauri::command]
+pub fn get_claude_mode(conversation_id: String) -> String {
+    resolve_claude_mode(&conversation_id).to_string()
+}
+
+#[tauri::command]
+pub fn restart_sdk_session(conversation_id: String) {
+    if resolve_claude_mode(&conversation_id) == "sdk-url" {
+        claude_sdk_session::kill_session_clear_resume(&conversation_id);
+    }
+}
+
+#[tauri::command]
+pub async fn prewarm_sdk_session(conversation_id: String, project_path: Option<String>, model: Option<String>) {
+    if resolve_claude_mode(&conversation_id) == "sdk-url" {
+        claude_sdk_session::prewarm_session(
+            &conversation_id,
+            project_path.as_deref(),
+            model.as_deref(),
+        ).await;
+    }
+}
+
+#[tauri::command]
+pub fn has_active_sdk_session(conversation_id: String) -> bool {
+    claude_sdk_session::has_active_session(&conversation_id)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Background start_* commands — async, DB work runs off main thread
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -111,12 +158,16 @@ pub async fn start_claude_stream(
     }).await.map_err(|_| AppError::Lock)??;
 
     let ret = prep.msg_id.clone();
+    let ep = prep.enriched_prompt.clone();
     let PreparedRun { msg_id, job_id, project_path, ctx_meta, .. } = prep;
     let plen = pr.len() + system_prompt.as_ref().map_or(0, |s| s.len());
 
-    // Claude: CLI preferred (file editing, MCP, terminal).
-    // SDK only when ANTHROPIC_API_KEY is set AND conversation is a branch (Developer/Reviewer).
+    // Claude 실행 경로 선택:
+    // 1. ANTHROPIC_API_KEY + branch → Anthropic SDK 직접 호출
+    // 2. 기본 → --sdk-url WS 세션 (슬래시 커맨드 + 구조화 JSON)
+    // 3. TUNAFLOW_DISABLE_SDK_URL=1 → CLI -p stream-json (fallback)
     let use_sdk = anthropic_sdk::is_available() && cid.starts_with("branch:");
+    let use_sdk_url = !use_sdk && std::env::var("TUNAFLOW_DISABLE_SDK_URL").as_deref() != Ok("1");
 
     if use_sdk {
         let sp = system_prompt;
@@ -138,15 +189,35 @@ pub async fn start_claude_stream(
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
         });
+    } else if use_sdk_url {
+        // --sdk-url WS 세션: 구조화 JSON + 슬래시 커맨드 지원
+        let cid2 = cid.clone();
+        let db_p = db_post.clone();
+        tokio::spawn(async move {
+            let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
+            let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
+            let t0 = std::time::Instant::now();
+            let rr = claude_sdk_session::stream_run_sdk(
+                &cid2,
+                claude::RunInput { prompt: ep, model: mo.clone(), system_prompt: None, resume_token: None, project_path },
+                move |t| { let _ = pa.emit("claude:progress", ChunkPayload { message_id: pi.clone(), conversation_id: pc.clone(), text: t }); },
+                move |t| { let _ = c2.emit("claude:chunk", ChunkPayload { message_id: ci.clone(), conversation_id: cc.clone(), text: t }); },
+                { let c = cid2.clone(); let r = cancel_arc; move || { r.lock().remove(&c) } },
+            ).await;
+            let dur = t0.elapsed().as_millis();
+            guardrail::log_run("claude-sdk-url", mo.as_deref(), dur, plen, rr.is_ok());
+            if let Ok(conn) = write_arc.lock() {
+                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+            }
+            if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
+        });
     } else {
-        // CLI path — full Claude Code features
+        // CLI -p fallback (TUNAFLOW_DISABLE_SDK_URL=1)
         std::thread::spawn(move || {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid.clone();
             let t0 = std::time::Instant::now();
             let rr = claude::stream_run(
-                // resume_token intentionally omitted: ContextPack includes full conversation history.
-                // PTY mode owns the resume_token for interactive session continuity.
                 claude::RunInput { prompt: pr, model: mo.clone(), system_prompt, resume_token: None, project_path },
                 move |t| { let _ = pa.emit("claude:progress", ChunkPayload { message_id: pi.clone(), conversation_id: pc.clone(), text: t }); },
                 move |t| { let _ = c2.emit("claude:chunk", ChunkPayload { message_id: ci.clone(), conversation_id: cc.clone(), text: t }); },
@@ -264,6 +335,26 @@ pub async fn start_codex_run(
                 finalize_engine_run(&conn, "codex", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
+        });
+    } else if codex_app_server::is_available() {
+        // Codex app-server 지속 세션 (매번 재스폰 없음)
+        let cid2 = cid.clone();
+        tokio::spawn(async move {
+            let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
+            let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
+            let t0 = std::time::Instant::now();
+            let rr = codex_app_server::stream_run_app_server(
+                &cid,
+                claude::RunInput { prompt: enriched_prompt, model: mo.clone(), system_prompt: None, resume_token: None, project_path },
+                move |t| { let _ = pa.emit("codex:progress", ChunkPayload { message_id: pi.clone(), conversation_id: pc.clone(), text: t }); },
+                move |t| { let _ = c2.emit("codex:chunk", ChunkPayload { message_id: ci.clone(), conversation_id: cc.clone(), text: t }); },
+                || false,
+            ).await;
+            let dur = t0.elapsed().as_millis();
+            if let Ok(conn) = write_arc.lock() {
+                finalize_engine_run(&conn, "codex", &msg_id, &cid2, &job_id, &rr, dur, &ctx_meta, &app);
+            }
+            if rr.is_ok() { spawn_post_completion_tasks(db_post, cid2); }
         });
     } else {
         // Codex CLI fallback
