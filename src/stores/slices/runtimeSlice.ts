@@ -254,10 +254,25 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
             const { executeToolRequests } = await import("@/lib/toolRequestHandler");
             const followUp = await executeToolRequests(requests);
             if (followUp) {
-              // sendWithEngine calls _startRun internally, so _endRun first to reset
+              // Persist as system message (not user) — avoids polluting user chat history
+              try {
+                const { invoke } = await import("@tauri-apps/api/core");
+                await invoke("persist_system_msg", {
+                  conversationId: selectedConversationId,
+                  content: followUp,
+                });
+                // Refresh messages to show the system message
+                const msgs = await invoke<import("@/types").Message[]>("list_messages", {
+                  conversationId: selectedConversationId,
+                });
+                set({ messages: msgs });
+              } catch (e) {
+                console.warn("[system-msg] persist failed, falling back to sendWithEngine:", e);
+              }
+              // Send follow-up to agent via normal path
               get()._endRun(selectedConversationId);
               get().sendWithEngine(engine, followUp, model);
-              return; // _endRun will be called by the new sendWithEngine's completion
+              return;
             }
           }
         } catch (err) {

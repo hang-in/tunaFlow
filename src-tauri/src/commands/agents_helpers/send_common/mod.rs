@@ -9,7 +9,7 @@ pub use context_loading::{ContextData, load_context_data, load_project_path, bui
 #[allow(unused_imports)]
 pub use prompt_assembly::{assemble_prompt, build_normalized_prompt, build_normalized_prompt_with_budget};
 #[allow(unused_imports)]
-pub use persistence::{persist_user_message, PreparedRun, prepare_engine_run, finalize_engine_run, spawn_post_completion_tasks, AgentRunResult, persist_assistant_message, persist_assistant_message_with_id};
+pub use persistence::{persist_user_message, persist_system_message, PreparedRun, prepare_engine_run, finalize_engine_run, spawn_post_completion_tasks, AgentRunResult, persist_assistant_message, persist_assistant_message_with_id};
 
 pub use super::identity::*;
 #[allow(unused_imports)]

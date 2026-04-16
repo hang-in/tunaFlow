@@ -57,7 +57,7 @@ pub fn discard_pending(msg_id: &str) {
 /// 이 경우 호출자는 항상 full ContextPack 경로를 사용해야 한다.
 pub fn current_session_key(conv_id: &str, engine: &str) -> Option<String> {
     match engine {
-        "claude" => crate::agents::claude_sdk_session::current_session_key(conv_id),
+        "claude" | "claude-code" => crate::agents::claude_sdk_session::current_session_key(conv_id),
         "codex" => {
             // codex는 OpenAI SDK > app-server > CLI 순으로 fallback.
             // app-server 모드일 때만 thread key 존재.

@@ -26,6 +26,23 @@ use super::context_loading::{load_context_data, load_project_path};
 use super::prompt_assembly::assemble_prompt;
 use super::session_freshness;
 
+/// Persist a system message (tool-request results, workflow triggers, etc.)
+/// Returns the message ID.
+pub fn persist_system_message(
+    conn: &Connection,
+    conversation_id: &str,
+    content: &str,
+) -> Result<String, AppError> {
+    let id = Uuid::new_v4().to_string();
+    let now = now_epoch_ms();
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
+         VALUES (?1, ?2, 'system', ?3, ?4, 'done')",
+        params![id, conversation_id, content, now],
+    )?;
+    Ok(id)
+}
+
 /// Persist a user message if no pre-existing user_message_id was provided.
 pub fn persist_user_message(
     conn: &Connection,

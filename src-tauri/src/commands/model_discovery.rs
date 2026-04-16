@@ -192,8 +192,15 @@ fn discover_lmstudio() -> Option<Vec<String>> {
         .build()
         .ok()?;
 
-    let resp = client.get(&url).send().ok()?;
-    if !resp.status().is_success() { return None; }
+    let mut req = client.get(&url);
+    if let Ok(token) = std::env::var("LMSTUDIO_API_KEY") {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+    let resp = req.send().ok()?;
+    if !resp.status().is_success() {
+        eprintln!("[model_discovery] lmstudio {} → {}", url, resp.status());
+        return None;
+    }
 
     let body: serde_json::Value = resp.json().ok()?;
     let data = body.get("data")?.as_array()?;

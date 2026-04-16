@@ -502,16 +502,45 @@ pub fn compress_memory_blocking(db: &crate::db::DbState, conversation_id: &str) 
     // task that runs after EVERY user completion. Defaulting to the user's
     // selected chat model (often Opus) doubled quota consumption. Haiku is
     // ~15× cheaper and fully capable of the JSON topic-extraction task here.
-    let result = crate::agents::claude::run(crate::agents::claude::RunInput {
-        prompt,
-        model: Some("claude-haiku-4-5".into()),
-        system_prompt: None,
-        resume_token: None,
-        project_path: None,
-    });
+    // Try Anthropic SDK first (no CLI process conflict), fall back to CLI -p
+    let run_compression = || {
+        if crate::agents::anthropic_sdk::is_available() {
+            // SDK path: blocking wrapper around async stream_run
+            let rt = tokio::runtime::Handle::try_current()
+                .or_else(|_| {
+                    // No runtime — create a minimal one for this blocking call
+                    tokio::runtime::Runtime::new().map(|rt| rt.handle().clone())
+                        .map_err(|e| crate::errors::AppError::Agent(e.to_string()))
+                });
+            if let Ok(handle) = rt {
+                let input = crate::agents::claude::RunInput {
+                    prompt: prompt.clone(),
+                    model: Some("claude-haiku-4-5-20251001".into()),
+                    system_prompt: None,
+                    resume_token: None,
+                    project_path: None,
+                };
+                return std::thread::scope(|_| {
+                    handle.block_on(async {
+                        crate::agents::anthropic_sdk::stream_run(input, |_| {}, |_| {}).await
+                    })
+                });
+            }
+        }
+        // Fallback: CLI -p (may conflict with sdk-url session)
+        crate::agents::claude::run(crate::agents::claude::RunInput {
+            prompt: prompt.clone(),
+            model: Some("claude-haiku-4-5".into()),
+            system_prompt: None,
+            resume_token: None,
+            project_path: None,
+        })
+    };
+    let result = run_compression();
     let raw_output = match result {
         Ok(out) if !out.content.trim().is_empty() => out.content.trim().to_string(),
-        _ => { eprintln!("[memory] compression failed for {}", conversation_id); return Ok(false); }
+        Ok(_) => { eprintln!("[memory] compression returned empty content for {} (model: haiku)", conversation_id); return Ok(false); }
+        Err(ref e) => { eprintln!("[memory] compression failed for {}: {}", conversation_id, e); return Ok(false); }
     };
     let topics = parse_topics(&raw_output);
     {

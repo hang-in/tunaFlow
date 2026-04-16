@@ -127,6 +127,7 @@ interface MessageItemProps {
 
 export const MessageItem = memo(function MessageItem({ message, onBranch, onBranchRT, onMemo, onFollowup, onDeletePair, onSaveArtifact, threadBranches, onOpenThread, showActions = true, variant = "default", grouped = false }: MessageItemProps) {
   const isUser = message.role === "user";
+  const isSystem = message.role === "system";
   const isStreaming = message.status === "streaming";
   const isCompact = variant === "compact";
 
@@ -199,7 +200,9 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
 
           {/* Body */}
           <div className={cn("text-foreground leading-relaxed overflow-x-auto", isCompact ? "text-xs" : "text-sm")}>
-            {isUser ? (
+            {isSystem ? (
+              <ToolResultCollapsible content={message.content} conversationId={message.conversationId} />
+            ) : isUser ? (
               message.content.startsWith("### 🛠️ 도구 호출 결과") ? (
                 <ToolResultCollapsible content={message.content} conversationId={message.conversationId} />
               ) : (

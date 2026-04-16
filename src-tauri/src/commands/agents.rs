@@ -451,6 +451,24 @@ pub async fn start_openai_compat_stream(
     Ok(StartRunResult { message_id: ret })
 }
 
+/// Persist a system message (tool-request result, workflow trigger) and return its ID.
+/// Unlike sendWithEngine, this does NOT trigger an agent run — the caller
+/// is responsible for sending the next agent message separately.
+#[tauri::command]
+pub fn persist_system_msg(
+    conversation_id: String,
+    content: String,
+    state: State<DbState>,
+    app: AppHandle,
+) -> Result<String, AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let msg_id = super::agents_helpers::send_common::persist_system_message(&conn, &conversation_id, &content)?;
+    let _ = app.emit("message:new", serde_json::json!({
+        "conversationId": conversation_id, "messageId": msg_id, "role": "system",
+    }));
+    Ok(msg_id)
+}
+
 /// Helper: clone write Arc from state for background thread use.
 fn db_write_arc(state: &State<DbState>) -> std::sync::Arc<std::sync::Mutex<rusqlite::Connection>> {
     std::sync::Arc::clone(&state.write)

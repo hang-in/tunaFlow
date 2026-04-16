@@ -300,6 +300,11 @@ pub fn run() {
             commands::agents::start_opencode_run,
             commands::agents::start_openai_compat_stream,
             commands::agents::run_eval_agent,
+            commands::agents::get_claude_mode,
+            commands::agents::restart_sdk_session,
+            commands::agents::prewarm_sdk_session,
+            commands::agents::has_active_sdk_session,
+            commands::agents::persist_system_msg,
             // Jobs
             commands::jobs::list_active_jobs,
             commands::jobs::cleanup_stale_jobs,
