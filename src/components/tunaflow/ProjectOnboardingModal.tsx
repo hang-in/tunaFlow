@@ -2,9 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Circle, Loader2, AlertCircle } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { MetaAgentSelector } from "./MetaAgentSelector";
+import { markdownComponents } from "./chat/MarkdownComponents";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -252,11 +258,14 @@ export function ProjectOnboardingModal() {
               ))}
             </div>
 
-            {/* Content */}
+            {/* Content — render as Markdown so the preview matches how the
+                 file will actually look in the editor / Docs viewer. */}
             <div className="flex-1 overflow-y-auto min-h-0">
-              <pre className="px-6 py-4 text-[10px] leading-relaxed text-foreground/80 whitespace-pre-wrap font-mono">
-                {activeTab === "claude_md" ? preview.claude_md : preview.ref_index}
-              </pre>
+              <div className="prose prose-invert prose-chat prose-sm max-w-none px-6 py-4 text-[12px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
+                  {activeTab === "claude_md" ? preview.claude_md : preview.ref_index}
+                </ReactMarkdown>
+              </div>
             </div>
 
             <div className="px-6 py-4 border-t border-border">

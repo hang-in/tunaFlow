@@ -10,7 +10,9 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
 
-const PROBE_TIMEOUT_MS: u64 = 1500;
+// LMStudio / Ollama 첫 응답이 모델 스캔 때문에 느릴 수 있으므로 3s 로 넉넉히.
+// CLI(`which`) 쪽은 여전히 가볍기 때문에 동일 상수로 충분.
+const PROBE_TIMEOUT_MS: u64 = 3000;
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -150,18 +152,30 @@ async fn probe_lmstudio(endpoint: &str) -> AgentDetection {
         Err(e) => { det.note = Some(format!("reqwest build error: {e}")); return det; }
     };
 
+    eprintln!("[agent-detect] probe lmstudio: GET {}", url);
     match client.get(&url).send().await {
         Ok(resp) if resp.status().is_success() => {
             match resp.json::<OpenAiModelsResponse>().await {
                 Ok(body) => {
                     det.installed = true;
                     det.models = body.data.into_iter().map(|m| m.id).collect();
+                    eprintln!("[agent-detect] lmstudio ok — {} models", det.models.len());
                 }
-                Err(e) => det.note = Some(format!("parse error: {e}")),
+                Err(e) => {
+                    eprintln!("[agent-detect] lmstudio parse error: {e}");
+                    det.note = Some(format!("응답 파싱 실패: {e}"));
+                }
             }
         }
-        Ok(resp) => det.note = Some(format!("status {}", resp.status())),
-        Err(_) => det.note = Some("not reachable".into()),
+        Ok(resp) => {
+            let status = resp.status();
+            eprintln!("[agent-detect] lmstudio status {}", status);
+            det.note = Some(format!("HTTP {status}"));
+        }
+        Err(e) => {
+            eprintln!("[agent-detect] lmstudio unreachable: {e}");
+            det.note = Some(if e.is_timeout() { "timeout".into() } else { "not reachable".into() });
+        }
     }
     det
 }

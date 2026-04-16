@@ -321,6 +321,25 @@ else
   run npm run tauri build
 fi
 
+# ─── 5b. Stamp build number into .app Info.plist ───────────────────────────
+
+# Persistent build counter, incremented every successful build. CFBundleVersion
+# in macOS bundles accepts any numeric string, so we tack it onto the release
+# version ("0.1.0" → "0.1.0.<N>"). CFBundleShortVersionString stays clean.
+BUILD_COUNTER_FILE="$ROOT_DIR/scripts/.build-number"
+if [[ -f "$ROOT_DIR/src-tauri/target/release/bundle/macos/tunaFlow.app/Contents/Info.plist" ]]; then
+  step "5b/6  Stamp build number"
+  BN=$(cat "$BUILD_COUNTER_FILE" 2>/dev/null || echo 0)
+  BN=$((BN + 1))
+  PLIST="$ROOT_DIR/src-tauri/target/release/bundle/macos/tunaFlow.app/Contents/Info.plist"
+  SHORT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$PLIST" 2>/dev/null || echo "0.1.0")
+  NEW_VER="${SHORT}.${BN}"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NEW_VER}" "$PLIST" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${NEW_VER}" "$PLIST" 2>/dev/null
+  echo "$BN" > "$BUILD_COUNTER_FILE"
+  ok "CFBundleVersion = ${NEW_VER}  (short=${SHORT}, build=#${BN})"
+fi
+
 # ─── 6. Verify output ───────────────────────────────────────────────────────
 
 step "6/6  Build output"

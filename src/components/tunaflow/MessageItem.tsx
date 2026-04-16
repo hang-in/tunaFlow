@@ -29,9 +29,30 @@ function hasMarkdownSignal(content: string): boolean {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
 
+/**
+ * Hide partially-arrived HTML comments during streaming so the raw
+ * `<!-- tunaflow:... -->` marker text does not flash on screen before the
+ * closing `-->` token arrives and react-markdown collapses it out.
+ * Only applied while isStreaming=true; the final render goes through
+ * the normal pipeline (PlanProposalCard / vizMarkers).
+ */
+function hideTrailingIncompleteComment(text: string): string {
+  const lastOpen = text.lastIndexOf("<!--");
+  const lastClose = text.lastIndexOf("-->");
+  if (lastOpen > lastClose) {
+    // There is an unclosed comment at the tail; trim it so it never renders.
+    return text.slice(0, lastOpen);
+  }
+  return text;
+}
+
 function MarkdownBody({ content, className, conversationId, isStreaming, isUser }: { content: string; className?: string; conversationId?: string; isStreaming?: boolean; isUser?: boolean }) {
-  // Skip expensive marker processing during streaming — apply only on final render
-  const processed = useMemo(() => isStreaming ? content : vizMarkers(content), [content, isStreaming]);
+  // Skip expensive marker processing during streaming — apply only on final render.
+  // Also suppress in-flight HTML-comment markers so they don't flash as plain text.
+  const processed = useMemo(() => {
+    if (!isStreaming) return vizMarkers(content);
+    return hideTrailingIncompleteComment(content);
+  }, [content, isStreaming]);
   // Plan proposal markers are only valid in assistant messages — never parse user messages
   // (user feedback text may quote marker strings which would falsely trigger PlanProposalCard)
   const segments = useMemo(

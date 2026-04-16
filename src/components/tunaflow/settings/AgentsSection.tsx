@@ -6,7 +6,16 @@ import { DEFAULT_PERSONAS } from "@/lib/defaultPersonas";
 import { AgentAvatar } from "../AgentAvatar";
 import type { AgentProfile } from "@/types";
 
-const ENGINES = ["claude", "codex", "gemini", "opencode", "ollama"] as const;
+// Keep in sync with ENGINE_CONFIGS (src/lib/engineConfig.ts). OpenCode removed;
+// Ollama + LMStudio share the openai-compatible runtime.
+const ENGINES = ["claude", "codex", "gemini", "ollama", "lmstudio"] as const;
+const ENGINE_LABELS: Record<(typeof ENGINES)[number], string> = {
+  claude: "Claude",
+  codex: "Codex",
+  gemini: "Gemini",
+  ollama: "Ollama",
+  lmstudio: "LM Studio",
+};
 
 export function AgentsSection() {
   const profiles = useChatStore((s) => s.agentProfiles);
@@ -86,24 +95,26 @@ export function AgentsSection() {
 
             <div>
               <label className="text-tf-sm text-muted-foreground mb-1 block">Engine</label>
-              <div className="flex gap-1.5">
-                {ENGINES.map((eng) => (
-                  <button key={eng}
-                    onClick={() => {
-                      if (!selectedId) return;
-                      // Find recommended model for the new engine
-                      const recommendedModel = engineModels.find((m) => m.engine === eng && m.recommended)?.id
-                        ?? engineModels.find((m) => m.engine === eng)?.id;
-                      save(profiles.map((p) => p.id === selectedId ? { ...p, engine: eng, model: recommendedModel } : p));
-                    }}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-tf-caption font-medium transition-colors border",
-                      selected.engine === eng ? "border-primary/40 bg-primary/8 text-foreground" : "border-border/20 text-muted-foreground hover:border-border/40"
-                    )}>
-                    <AgentAvatar engine={eng} size="xs" />
-                    {eng}
-                  </button>
-                ))}
+              {/* Dropdown instead of icon row — more obvious what is selected
+                   when 5+ engines share the strip. AgentAvatar next to the
+                   select mirrors the active engine. */}
+              <div className="flex items-center gap-2">
+                <AgentAvatar engine={selected.engine} size="sm" />
+                <select
+                  value={selected.engine}
+                  onChange={(e) => {
+                    if (!selectedId) return;
+                    const eng = e.target.value as (typeof ENGINES)[number];
+                    const recommendedModel = engineModels.find((m) => m.engine === eng && m.recommended)?.id
+                      ?? engineModels.find((m) => m.engine === eng)?.id;
+                    save(profiles.map((p) => p.id === selectedId ? { ...p, engine: eng, model: recommendedModel } : p));
+                  }}
+                  className="flex-1 bg-background rounded-lg px-3 py-2 text-tf-caption outline-none border border-border/30 focus:border-ring/40 cursor-pointer"
+                >
+                  {ENGINES.map((eng) => (
+                    <option key={eng} value={eng}>{ENGINE_LABELS[eng]}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
