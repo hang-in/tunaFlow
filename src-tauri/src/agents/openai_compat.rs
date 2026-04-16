@@ -232,6 +232,11 @@ where
 }
 
 /// Parse SSE stream from OpenAI-compatible endpoint.
+///
+/// Handles standard SSE format:
+/// - `data: {json}` — normal chunk
+/// - `data: [DONE]` — stream end
+/// - `event: error` + `data: {json}` — server-side error (LM Studio pattern)
 async fn parse_sse_stream<F, G>(
     response: reqwest::Response,
     input: &RunInput,
@@ -247,46 +252,65 @@ where
     let mut input_tokens: i64 = 0;
     let mut output_tokens: i64 = 0;
 
-    // Tool call accumulation (OpenAI streams tool calls in fragments)
     let mut tool_name_buf = String::new();
     let mut tool_args_buf = String::new();
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut sse_error: Option<String> = None;
 
-    let mut first_chunk_logged = false;
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result
             .map_err(|e| AppError::Agent(format!("Stream read error: {}", e)))?;
         let chunk_str = String::from_utf8_lossy(&chunk);
-        if !first_chunk_logged {
-            eprintln!("[openai-compat] first SSE chunk ({}B): {}", chunk.len(), &chunk_str[..chunk_str.len().min(200)]);
-            first_chunk_logged = true;
-        }
         buffer.push_str(&chunk_str);
 
-        while let Some(data_pos) = buffer.find("data: ") {
-            let json_start = data_pos + 6;
-            if let Some(end_pos) = buffer[json_start..].find("\n") {
-                let data_str = buffer[json_start..json_start + end_pos].trim();
+        // Process complete lines
+        while let Some(newline_pos) = buffer.find('\n') {
+            let line = buffer[..newline_pos].trim().to_string();
+            buffer = buffer[newline_pos + 1..].to_string();
 
-                if data_str == "[DONE]" {
-                    buffer = buffer[json_start + end_pos..].to_string();
+            if line.is_empty() { continue; }
+
+            // SSE event type (e.g., "event: error")
+            if line.starts_with("event:") {
+                let event_type = line["event:".len()..].trim();
+                if event_type == "error" {
+                    // Next data: line will contain the error payload
+                    sse_error = Some(String::new());
+                }
+                continue;
+            }
+
+            // SSE data line
+            if line.starts_with("data:") {
+                let data_str = line["data:".len()..].trim();
+
+                if data_str == "[DONE]" { continue; }
+
+                // Check if this is an error event payload
+                if sse_error.is_some() {
+                    let err_msg = if let Ok(v) = serde_json::from_str::<serde_json::Value>(data_str) {
+                        v.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str())
+                            .unwrap_or(data_str).to_string()
+                    } else {
+                        data_str.to_string()
+                    };
+                    sse_error = Some(err_msg);
                     continue;
                 }
 
+                // Normal data chunk
                 if let Ok(chunk) = serde_json::from_str::<StreamChunk>(data_str) {
                     for choice in &chunk.choices {
                         if let Some(content) = &choice.delta.content {
                             full_text.push_str(content);
                             on_chunk(full_text.clone());
                         }
-                        // Accumulate tool call fragments
                         if let Some(tool_calls) = &choice.delta.tool_calls {
                             for tc in tool_calls {
                                 if let Some(func) = &tc.function {
                                     if let Some(name) = &func.name {
-                                        // New tool call — flush previous if any
                                         if !tool_name_buf.is_empty() {
                                             execute_accumulated_tool(
                                                 &tool_name_buf, &tool_args_buf,
@@ -303,7 +327,6 @@ where
                                 }
                             }
                         }
-                        // Check if this choice is finished
                         if choice.finish_reason.as_deref() == Some("tool_calls") {
                             if !tool_name_buf.is_empty() {
                                 execute_accumulated_tool(
@@ -321,11 +344,14 @@ where
                         output_tokens = usage.completion_tokens;
                     }
                 }
-
-                buffer = buffer[json_start + end_pos..].to_string();
-            } else {
-                break;
             }
+        }
+    }
+
+    // Check for SSE error
+    if let Some(err) = sse_error {
+        if !err.is_empty() {
+            return Err(AppError::Agent(format!("Server error ({}): {}", model, err)));
         }
     }
 
@@ -340,7 +366,7 @@ where
 
     if full_text.is_empty() {
         return Err(AppError::Agent(format!(
-            "OpenAI-compatible model ({}) returned empty response.",
+            "Model ({}) returned empty response.",
             model
         )));
     }
