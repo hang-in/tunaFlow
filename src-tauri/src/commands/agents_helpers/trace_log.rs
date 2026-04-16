@@ -21,6 +21,10 @@ pub struct ContextPackMeta {
     pub length: usize,
     pub hash: String,
     pub truncated: bool,
+    /// Cache read tokens (prompt cache hits — discounted rate)
+    pub cache_read_tokens: i64,
+    /// Cache creation tokens (new cache entries — premium rate)
+    pub cache_creation_tokens: i64,
 }
 
 impl ContextPackMeta {
@@ -44,7 +48,7 @@ impl ContextPackMeta {
             s.hash(&mut h);
             format!("{:016x}", h.finish())
         });
-        Self { mode: mode.to_string(), sections, length, hash, truncated: was_truncated }
+        Self { mode: mode.to_string(), sections, length, hash, truncated: was_truncated, cache_read_tokens: 0, cache_creation_tokens: 0 }
     }
 
     /// JSON-encoded sections list for DB storage.
@@ -125,8 +129,9 @@ pub fn insert_trace_log_with_context(
         "INSERT INTO trace_log
          (conversation_id, input_tokens, output_tokens, cost_usd, recorded_at,
           trace_id, span_id, parent_span_id, operation, engine, duration_ms, status,
-          context_mode, context_sections, context_length, context_hash, context_truncated, usage_status, message_id)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+          context_mode, context_sections, context_length, context_hash, context_truncated,
+          usage_status, message_id, cache_read_tokens, cache_creation_tokens)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
         params![
             conversation_id, input_tokens, output_tokens, cost_usd, recorded_at,
             span.trace_id, span.span_id, span.parent_span_id,
@@ -134,6 +139,7 @@ pub fn insert_trace_log_with_context(
             ctx.mode, ctx.sections_json(), ctx.length as i64, ctx.hash,
             if ctx.truncated { 1 } else { 0 },
             usage_status, message_id,
+            ctx.cache_read_tokens, ctx.cache_creation_tokens,
         ],
     );
 }

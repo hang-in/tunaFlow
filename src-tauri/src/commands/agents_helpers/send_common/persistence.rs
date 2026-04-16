@@ -218,12 +218,12 @@ pub fn finalize_engine_run(
             );
             // Record error span too — without this, trace history is blind to
             // every failed run (observed: trace_log status=err = 0 across 1058 rows).
-            insert_trace_log(conn, conversation_id, 0, 0, 0.0, now,
+            insert_trace_log_with_context(conn, conversation_id, 0, 0, 0.0, now,
                 &SpanInfo {
                     trace_id: &new_trace_id(), span_id: new_span_id(), parent_span_id: None,
                     operation: "agent.stream", engine: engine_key,
                     duration_ms: duration_ms as i64, status: "error",
-                });
+                }, ctx_meta, Some(msg_id));
             let _ = super::super::super::jobs::complete_job(conn, job_id, "error", Some(&em));
             let _ = app.emit("agent:error", serde_json::json!({
                 "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key, "error": em

@@ -88,6 +88,7 @@ export function RuntimeStatusBar() {
   const [lastSkippedLayers, setLastSkippedLayers] = useState(0);
   const [lastContextPct, setLastContextPct] = useState<number | null>(null);
   const [gitStatus, setGitStatus] = useState<{ branch: string | null; dirty: boolean; added: number; modified: number; untracked: number } | null>(null);
+  const [rateLimit, setRateLimit] = useState<{ fiveHourPct: number | null; weeklyPct: number | null; source: string; stale: boolean } | null>(null);
   const [traceOpen, setTraceOpen] = useState(false);
   const terminalOpen = usePtyStore((s) => s.terminalOpen);
   const toggleTerminal = usePtyStore((s) => s.toggleTerminal);
@@ -188,6 +189,20 @@ export function RuntimeStatusBar() {
     const timer = setInterval(poll, 10000);
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedProjectKey]);
+
+  // Rate limit — slow poll (60s), reads cached files only (no API calls)
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const info = await invoke<{ fiveHourPct: number | null; weeklyPct: number | null; source: string; stale: boolean } | null>("get_rate_limit_info");
+        if (!cancelled) setRateLimit(info && !info.stale ? info : null);
+      } catch { if (!cancelled) setRateLimit(null); }
+    };
+    poll();
+    const timer = setInterval(poll, 60000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
 
   // Aggregate cost + last context mode from conversation
   useEffect(() => {
@@ -308,6 +323,33 @@ export function RuntimeStatusBar() {
               {(gitStatus.added > 0 || gitStatus.modified > 0 || gitStatus.untracked > 0) && (
                 <span className="text-tf-micro text-prose-disabled">
                   {gitStatus.added > 0 && `+${gitStatus.added}`}{gitStatus.added > 0 && gitStatus.modified > 0 && " "}{gitStatus.modified > 0 && `~${gitStatus.modified}`}{(gitStatus.added > 0 || gitStatus.modified > 0) && gitStatus.untracked > 0 && " "}{gitStatus.untracked > 0 && `?${gitStatus.untracked}`}
+                </span>
+              )}
+            </span>
+          </>
+        )}
+
+        {/* Rate limit */}
+        {rateLimit && (
+          <>
+            <span className="w-px h-3 bg-border/30" />
+            <span className="flex items-center gap-1.5 px-2 text-muted-foreground/40 text-tf-micro">
+              {rateLimit.fiveHourPct != null && (
+                <span className={cn(
+                  "font-mono",
+                  rateLimit.fiveHourPct >= 90 ? "text-red-400/70" :
+                  rateLimit.fiveHourPct >= 70 ? "text-amber-400/70" : ""
+                )}>
+                  5h:{rateLimit.fiveHourPct.toFixed(0)}%
+                </span>
+              )}
+              {rateLimit.weeklyPct != null && (
+                <span className={cn(
+                  "font-mono",
+                  rateLimit.weeklyPct >= 90 ? "text-red-400/70" :
+                  rateLimit.weeklyPct >= 70 ? "text-amber-400/70" : ""
+                )}>
+                  7d:{rateLimit.weeklyPct.toFixed(0)}%
                 </span>
               )}
             </span>

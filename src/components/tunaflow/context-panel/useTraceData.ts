@@ -72,8 +72,22 @@ export function useTraceData(convId: string | null) {
   const threadRunning = convId ? runningThreadIds.includes(convId) : false;
   useEffect(() => {
     if (!threadRunning) return;
-    const interval = setInterval(() => { loadJobs(); setTick((t) => t + 1); }, 1000);
+    let traceTickCount = 0;
+    const interval = setInterval(() => {
+      loadJobs();
+      setTick((t) => t + 1);
+      // Traces: refresh every 5 ticks (5s) during active run
+      traceTickCount++;
+      if (traceTickCount >= 5) { traceTickCount = 0; loadTraces(); }
+    }, 1000);
     return () => clearInterval(interval);
+  }, [threadRunning]);
+
+  // Auto-refresh traces when a run completes (threadRunning goes false)
+  const prevRunning = useState(false);
+  useEffect(() => {
+    if (prevRunning[0] && !threadRunning) { loadTraces(); loadMemoryStatus(); }
+    prevRunning[1](threadRunning);
   }, [threadRunning]);
 
   return {

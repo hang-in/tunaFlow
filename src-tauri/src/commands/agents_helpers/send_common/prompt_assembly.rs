@@ -522,6 +522,8 @@ pub fn assemble_prompt(
         length: total_len,
         hash: sizes_json,
         truncated,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
     };
 
     (assembled, system_context, meta)

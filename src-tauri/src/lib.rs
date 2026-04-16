@@ -310,6 +310,7 @@ pub fn run() {
             commands::agents::prewarm_sdk_session,
             commands::agents::has_active_sdk_session,
             commands::agents::persist_system_msg,
+            commands::diagnostics::get_rate_limit_info,
             // Jobs
             commands::jobs::list_active_jobs,
             commands::jobs::cleanup_stale_jobs,
