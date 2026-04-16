@@ -159,8 +159,8 @@ where
         let error_text = response.text().await.unwrap_or_default();
         // If tools aren't supported, retry without tools (one-shot, no further retry)
         if status.as_u16() == 400 && error_text.to_lowercase().contains("tool") {
-            eprintln!("[openai_compat] Model {} does not support tools, retrying without (once)", model);
-            return stream_run_no_tools(input, on_progress, on_chunk).await;
+            eprintln!("[openai_compat] Model {} does not support tools, retrying without tools (base={})", model, base);
+            return stream_run_no_tools_with_base(input, base, on_progress, on_chunk).await;
         }
         return Err(AppError::Agent(format!(
             "OpenAI-compatible API error {}: {}",
@@ -173,8 +173,9 @@ where
 }
 
 /// Fallback: stream without tool definitions (for models that don't support function calling).
-async fn stream_run_no_tools<F, G>(
+async fn stream_run_no_tools_with_base<F, G>(
     input: RunInput,
+    base: String,
     mut on_progress: G,
     mut on_chunk: F,
 ) -> Result<RunOutput, AppError>
@@ -182,7 +183,6 @@ where
     F: FnMut(String) + Send,
     G: FnMut(String) + Send,
 {
-    let base = ollama_base_url();
     let model = input.model.as_deref().unwrap_or("qwen3:8b");
     let url = format!("{}/v1/chat/completions", base);
 
@@ -198,21 +198,24 @@ where
         stream: true,
         max_tokens: None,
         temperature: Some(0.7),
-        tools: None, // No tools
+        tools: None,
     };
 
-    on_progress(format!("Ollama ({}) running (no tools)...", model));
+    let engine_name = if base.contains(":1234") { "LM Studio" } else { "Ollama" };
+    on_progress(format!("{} ({}) running (no tools)...", engine_name, model));
 
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| AppError::Agent(format!("HTTP client build failed: {}", e)))?;
 
-    let response = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
+    let mut req = client.post(&url).json(&body);
+    if let Ok(token) = std::env::var("LMSTUDIO_API_KEY") {
+        if engine_name == "LM Studio" {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+    }
+    let response = req.send().await
         .map_err(|e| AppError::Agent(format!("OpenAI-compatible API 요청 실패: {}", e)))?;
 
     if !response.status().is_success() {
