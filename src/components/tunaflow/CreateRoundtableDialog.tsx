@@ -13,7 +13,7 @@ const RT_MODES: { id: RtMode; label: string; desc: string }[] = [
   { id: "deliberative", label: "Deliberative", desc: "Round 1 independent, Round 2+ reflects on all" },
 ];
 
-const ENGINES = ["claude", "codex", "gemini", "opencode", "ollama"] as const;
+const ENGINES = ["claude", "codex", "gemini", "ollama", "lmstudio"] as const;
 
 interface CreateRoundtableDialogProps {
   open: boolean;
@@ -187,6 +187,18 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
         </div>
 
         <div className="p-4 space-y-4">
+          {/* Order: Title → Parent chat → Mode → Participants.
+              Title 먼저 — 사용자가 이 RT 의 주제를 먼저 명확히 하고
+              구조(채팅/모드/참여자) 는 그 뒤에 배치. */}
+
+          {/* Title */}
+          <div>
+            <label className="text-[11px] text-sidebar-foreground/60 mb-1 block">Title</label>
+            <input value={label} onChange={(e) => setLabel(e.target.value)}
+              placeholder="Roundtable title (optional)"
+              className="w-full bg-input rounded-md px-3 py-1.5 text-[12px] outline-none text-foreground placeholder:text-muted-foreground/40 border border-border/30 focus:border-ring/40" />
+          </div>
+
           {/* Parent conversation selector — shown when creating from sidebar with multiple chats */}
           {!checkpointId && chatConvs.length > 1 && (
             <div>
@@ -208,14 +220,6 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
               채팅이 없습니다. 먼저 채팅을 생성하세요.
             </div>
           )}
-
-          {/* Label */}
-          <div>
-            <label className="text-[11px] text-sidebar-foreground/60 mb-1 block">Title</label>
-            <input value={label} onChange={(e) => setLabel(e.target.value)}
-              placeholder="Roundtable title (optional)"
-              className="w-full bg-input rounded-md px-3 py-1.5 text-[12px] outline-none text-foreground placeholder:text-muted-foreground/40 border border-border/30 focus:border-ring/40" />
-          </div>
 
           {/* Mode */}
           <div>

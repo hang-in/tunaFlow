@@ -5,7 +5,8 @@ import { useChatStore } from "@/stores/chatStore";
 import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileText } from "lucide-react";
 import type { Plan, PlanPhase, PlanSubtask } from "@/types";
 import * as planApi from "@/lib/api/plans";
-import { getPlanSlug, syncResultReport } from "@/lib/workflowOrchestration";
+import { getPlanSlug, syncResultReport, startReviewRT } from "@/lib/workflowOrchestration";
+import { runProjectTests } from "@/lib/api/testRunner";
 import type { Branch, Message } from "@/types";
 import { PlanDocumentModal } from "./PlanDocumentModal";
 import { useSubtaskProgress } from "./useSubtaskProgress";
@@ -38,6 +39,21 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
     const reviewer = profiles.find((p) => p.label.toLowerCase().includes("review"));
     return reviewer?.id ?? profiles[0]?.id ?? "";
   });
+
+  // S3: Quick vs Deep RT review track. Quick = 단일 chat, Deep = RT (≥2 reviewers).
+  const [reviewTrack, setReviewTrack] = useState<"quick" | "deep">("quick");
+  const [selectedDeepIds, setSelectedDeepIds] = useState<Set<string>>(() => {
+    // 기본값: "review" 라벨 포함 프로필 두 개 이상 있으면 자동 선택, 없으면 빈 set.
+    const reviewers = profiles.filter((p) => p.label.toLowerCase().includes("review")).slice(0, 2);
+    return new Set(reviewers.map((p) => p.id));
+  });
+  const toggleDeepReviewer = (id: string) => {
+    setSelectedDeepIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const handleOpenBranch = () => {
     if (plan.implementationBranchId) openThread(plan.implementationBranchId);
@@ -121,6 +137,40 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
 
       await sendThreadMessage(prompt, selectedProfile.engine);
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
+    } catch (e) { console.warn("[tunaflow]", e); }
+    setBusy(false);
+    setReviewMode("idle");
+  };
+
+  // Deep RT track — multi-engine review. Uses the existing startReviewRT flow
+  // (roundtable with ≥2 reviewer engines) and auto-runs project tests first so
+  // reviewers see real verification output instead of trusting Developer's self-report.
+  const handleStartReviewRT = async () => {
+    if (!plan.implementationBranchId) return;
+    const chosenProfiles = profiles.filter((p) => selectedDeepIds.has(p.id));
+    if (chosenProfiles.length < 2) return;
+    setBusy(true);
+    try {
+      const implShadow = `branch:${plan.implementationBranchId}`;
+      const msgs = await invoke<Message[]>("list_messages", { conversationId: implShadow });
+      // S2 Agent-as-Judge: run project tests, pass output to reviewers.
+      let testOutput: string | undefined;
+      try {
+        const projectKey = useChatStore.getState().selectedProjectKey;
+        if (projectKey) {
+          const project = await invoke<{ path?: string }>("get_project", { key: projectKey });
+          if (project?.path) {
+            const result = await runProjectTests(project.path);
+            testOutput = result.output;
+          }
+        }
+      } catch (e) { console.debug("[test-before-review-rt]", e); }
+
+      const engines = chosenProfiles.map((p) => p.engine);
+      const { branch } = await startReviewRT(plan, msgs, testOutput, engines);
+      onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
+      await loadBranches(plan.conversationId);
+      await openThread(branch.id);
     } catch (e) { console.warn("[tunaflow]", e); }
     setBusy(false);
     setReviewMode("idle");
@@ -434,18 +484,60 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                 <span className="text-muted-foreground/40">나머지는 이전 pass</span>
               </div>
             )}
-            <div className="flex items-center gap-2">
-              <select value={selectedReviewerId} onChange={(e) => setSelectedReviewerId(e.target.value)}
-                className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
-                {profiles.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.engine})</option>)}
-              </select>
-              <button onClick={handleStartReview} disabled={busy}
-                className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
-                {busy ? "시작 중..." : reviewVerdict ? "Re-review 시작" : "Review 시작"}
-              </button>
-              <button onClick={() => setReviewMode("idle")}
-                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
+            {/* Track selector: Quick = single reviewer chat / Deep = RT with ≥2 engines */}
+            <div className="flex items-center gap-3 text-[10px]">
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name="review-track" checked={reviewTrack === "quick"}
+                  onChange={() => setReviewTrack("quick")} className="accent-primary" />
+                <span>Quick <span className="text-muted-foreground/60">(단일)</span></span>
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name="review-track" checked={reviewTrack === "deep"}
+                  onChange={() => setReviewTrack("deep")} className="accent-primary" />
+                <span>Deep RT <span className="text-muted-foreground/60">(다명 합의)</span></span>
+              </label>
             </div>
+
+            {reviewTrack === "quick" ? (
+              <div className="flex items-center gap-2">
+                <select value={selectedReviewerId} onChange={(e) => setSelectedReviewerId(e.target.value)}
+                  className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
+                  {profiles.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.engine})</option>)}
+                </select>
+                <button onClick={handleStartReview} disabled={busy}
+                  className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
+                  {busy ? "시작 중..." : reviewVerdict ? "Re-review 시작" : "Review 시작"}
+                </button>
+                <button onClick={() => setReviewMode("idle")}
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap gap-2">
+                  {profiles.map((p) => (
+                    <label key={p.id} className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer text-[10px]",
+                      selectedDeepIds.has(p.id) ? "border-primary/50 bg-primary/5" : "border-border/40 text-muted-foreground"
+                    )}>
+                      <input type="checkbox" checked={selectedDeepIds.has(p.id)}
+                        onChange={() => toggleDeepReviewer(p.id)} className="accent-primary" />
+                      <span>{p.label} <span className="text-muted-foreground/50">({p.engine})</span></span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] text-muted-foreground/60">
+                    {selectedDeepIds.size}명 선택{selectedDeepIds.size < 2 ? " — 최소 2명 필요" : ""}
+                  </span>
+                  <button onClick={handleStartReviewRT} disabled={busy || selectedDeepIds.size < 2}
+                    className="ml-auto px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                    {busy ? "시작 중..." : reviewVerdict ? "Re-review RT 시작" : "Review RT 시작"}
+                  </button>
+                  <button onClick={() => setReviewMode("idle")}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -19,7 +19,7 @@
         "minHeight": 480,
         "visible": false,
         "theme": "Dark",
-        "titleBarStyle": "Overlay",
+        "titleBarStyle": "Transparent",
         "hiddenTitle": true
       }
     ],
