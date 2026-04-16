@@ -112,7 +112,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     await get().sendWithEngine("claude", prompt, model, systemPrompt);
   },
 
-  sendWithEngine: async (engine: string, prompt: string, model?: string, systemPrompt?: string) => {
+  sendWithEngine: async (engine: string, prompt: string, model?: string, systemPrompt?: string, opts?: { userMessageId?: string }) => {
     const { selectedProjectKey, selectedConversationId, runningThreadIds } = get();
     if (!selectedProjectKey || !selectedConversationId) return;
 
@@ -154,12 +154,15 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     get()._startRun(selectedConversationId);
     const now = Date.now();
     const persona = get().personaLabel ?? undefined;
+    const isSystemFollowup = !!opts?.userMessageId;
     set((state) => ({
-      error: null, // Clear previous error banner on new send
+      error: null,
       messages: [
         ...state.messages,
-        { id: `temp-user-${now}`, conversationId: selectedConversationId, role: "user", content: prompt, timestamp: now, status: "done" },
-        { id: `temp-thinking-${now}`, conversationId: selectedConversationId, role: "assistant", content: "", timestamp: now, status: "streaming", engine: config.engineKey, model, persona },
+        ...(isSystemFollowup
+          ? [{ id: opts!.userMessageId!, conversationId: selectedConversationId, role: "system" as const, content: prompt, timestamp: now, status: "done" as const }]
+          : [{ id: `temp-user-${now}`, conversationId: selectedConversationId, role: "user" as const, content: prompt, timestamp: now, status: "done" as const }]),
+        { id: `temp-thinking-${now}`, conversationId: selectedConversationId, role: "assistant" as const, content: "", timestamp: now, status: "streaming" as const, engine: config.engineKey, model, persona },
       ],
     }));
 
@@ -254,12 +257,15 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
             const { executeToolRequests } = await import("@/lib/toolRequestHandler");
             const followUp = await executeToolRequests(requests);
             if (followUp) {
-              // Send tool-request result to agent as a regular message.
-              // UI renders it as collapsible card (ToolResultCollapsible in MessageItem).
-              // System message separation requires a dedicated "send without persist" path
-              // which will be implemented when sdk-url session stabilizes.
+              // Persist as system message, then send to agent with that ID
+              // → Rust skips user message creation (userMessageId already exists)
+              // → UI shows system message as collapsible card
+              const sysMsgId = await invoke<string>("persist_system_msg", {
+                conversationId: selectedConversationId,
+                content: followUp,
+              });
               get()._endRun(selectedConversationId);
-              get().sendWithEngine(engine, followUp, model);
+              get().sendWithEngine(engine, followUp, model, undefined, { userMessageId: sysMsgId });
               return;
             }
           }
@@ -310,6 +316,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         personaFragment: get().personaFragment ?? undefined,
         personaLabel: get().personaLabel ?? undefined,
         userProfileJson: userProfile ? JSON.stringify(userProfile) : undefined,
+        ...(opts?.userMessageId ? { userMessageId: opts.userMessageId } : {}),
         ...bo,
       };
       await invoke<{ messageId: string }>(config.command, { input });

@@ -132,7 +132,7 @@ export interface ChatState {
   deleteConversation: (id: string) => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
   sendMessage: (prompt: string, model?: string, systemPrompt?: string) => Promise<void>;
-  sendWithEngine: (engine: string, prompt: string, model?: string, systemPrompt?: string) => Promise<void>;
+  sendWithEngine: (engine: string, prompt: string, model?: string, systemPrompt?: string, opts?: { userMessageId?: string }) => Promise<void>;
   sendFollowup: (engine: string, sourceType: string, sourceContent: string, goal?: string) => Promise<void>;
   sendRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
   sendRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
