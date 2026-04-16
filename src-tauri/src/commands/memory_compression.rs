@@ -551,3 +551,4 @@ pub fn compress_memory_blocking(db: &crate::db::DbState, conversation_id: &str) 
     }
     Ok(true)
 }
+

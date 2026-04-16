@@ -233,8 +233,8 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
     // Save current conversation's engine state before switching
     const prevConvId = get().selectedConversationId;
     if (prevConvId) {
-      // Engine state will be saved by NewMessageInput via saveConversationEngine
-      // (already handled on profile/engine change — no action needed here)
+      // Deferred memory compression for the conversation we're leaving
+      invoke("compress_conversation_memory", { conversationId: prevConvId }).catch(() => {});
     }
 
     // Close drawer/thread if open — conversation is the primary view
