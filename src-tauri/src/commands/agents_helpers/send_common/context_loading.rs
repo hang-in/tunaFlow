@@ -362,7 +362,13 @@ pub fn load_context_data(
                             row.get::<_, String>(2)?,
                             1.0_f32 - row.get::<_, f32>(3)?, // distance → similarity
                         ))
-                    }).map(|rows| rows.filter_map(|r| r.ok()).filter(|r| r.3 > 0.5).take(5).collect())
+                    // Threshold dropped 0.5 → 0.35 (matches conversation-vec
+                    // threshold 0.3 scale). bge-m3 document matches typically
+                    // sit in the 0.4–0.5 band; the old 0.5 gate filtered out
+                    // every real hit, so document chunks never reached the
+                    // ContextPack even after the v32→v36 re-embed. See
+                    // docs/reference/knownIssues_2026-04-15.md I10.
+                    }).map(|rows| rows.filter_map(|r| r.ok()).filter(|r| r.3 > 0.35).take(5).collect())
                         .unwrap_or_default()
                 }).unwrap_or_default()
             } else { Vec::new() }
