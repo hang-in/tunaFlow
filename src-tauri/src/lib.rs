@@ -243,6 +243,10 @@ pub fn run() {
             // Backfill NULL-embedding chunks left over from v32 (bge-m3 migration).
             // Sleeps 15s before starting to let embedder/rawq settle, then processes
             // one conversation/project at a time with throttling.
+            // Kill orphaned sdk-url/app-server processes from previous runs.
+            // These can silently consume rate limit quota if left alive.
+            crate::agents::claude_sdk_session::kill_orphan_sdk_processes();
+
             crate::commands::vector_search::spawn_startup_backfill(
                 app.state::<DbState>().inner().clone(),
             );
@@ -460,6 +464,10 @@ pub fn run() {
                 use tauri::Manager;
                 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
                 let _ = window.app_handle().save_window_state(StateFlags::all());
+                // Kill all sdk-url/app-server sessions to prevent orphan processes
+                crate::agents::claude_sdk_session::shutdown_all_sessions();
+                crate::agents::claude_sdk_session::kill_orphan_sdk_processes();
+                eprintln!("[shutdown] all agent sessions terminated");
             }
         })
         .run(tauri::generate_context!())

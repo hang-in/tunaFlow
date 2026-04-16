@@ -760,6 +760,43 @@ fn build_user_message(content: &str) -> String {
 /// 모든 활성 SDK 세션을 종료한다 (앱 종료 시 호출).
 #[allow(dead_code)]
 pub fn shutdown_all_sessions() {
-    SESSIONS.lock().clear();
+    let sessions: Vec<_> = SESSIONS.lock().drain().collect();
+    for (conv_id, _session) in &sessions {
+        eprintln!("[sdk-session] shutting down session for conv: {}", conv_id);
+    }
+    drop(sessions); // Drop triggers _monitor_abort → kill_on_drop
     RESUME_IDS.lock().clear();
+}
+
+/// Kill any orphaned `claude --sdk-url` processes from previous app runs.
+/// Called on app startup to prevent zombie processes that consume rate limit quota.
+pub fn kill_orphan_sdk_processes() {
+    use std::process::Command;
+    let output = match Command::new("pgrep").args(["-f", "claude.*--sdk-url"]).output() {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let current_pid = std::process::id();
+    let mut killed = 0;
+    for line in stdout.lines() {
+        if let Ok(pid) = line.trim().parse::<u32>() {
+            if pid == current_pid { continue; }
+            // Check if this process is orphaned (PPID=1) or belongs to a dead parent
+            if let Ok(ppid_out) = Command::new("ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output() {
+                let ppid_str = String::from_utf8_lossy(&ppid_out.stdout).trim().to_string();
+                if let Ok(ppid) = ppid_str.parse::<u32>() {
+                    // PPID=1 means orphaned (parent died)
+                    if ppid == 1 {
+                        eprintln!("[sdk-session] killing orphan claude --sdk-url process PID={}", pid);
+                        let _ = Command::new("kill").arg(pid.to_string()).output();
+                        killed += 1;
+                    }
+                }
+            }
+        }
+    }
+    if killed > 0 {
+        eprintln!("[sdk-session] cleaned up {} orphan sdk-url process(es)", killed);
+    }
 }
