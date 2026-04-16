@@ -254,22 +254,10 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
             const { executeToolRequests } = await import("@/lib/toolRequestHandler");
             const followUp = await executeToolRequests(requests);
             if (followUp) {
-              // Persist as system message (not user) — avoids polluting user chat history
-              try {
-                const { invoke } = await import("@tauri-apps/api/core");
-                await invoke("persist_system_msg", {
-                  conversationId: selectedConversationId,
-                  content: followUp,
-                });
-                // Refresh messages to show the system message
-                const msgs = await invoke<import("@/types").Message[]>("list_messages", {
-                  conversationId: selectedConversationId,
-                });
-                set({ messages: msgs });
-              } catch (e) {
-                console.warn("[system-msg] persist failed, falling back to sendWithEngine:", e);
-              }
-              // Send follow-up to agent via normal path
+              // Send tool-request result to agent as a regular message.
+              // UI renders it as collapsible card (ToolResultCollapsible in MessageItem).
+              // System message separation requires a dedicated "send without persist" path
+              // which will be implemented when sdk-url session stabilizes.
               get()._endRun(selectedConversationId);
               get().sendWithEngine(engine, followUp, model);
               return;
