@@ -82,6 +82,23 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
 
   const isActionable = plan.phase === "subtask_review";
 
+  // Gating (s37) — 승인 버튼은 아래 두 조건 모두 만족해야 활성:
+  //   (A) 메인 chat 에서 Architect 가 응답 생성 중이 아님
+  //   (B) 모든 subtask 에 details 가 채워져 있음
+  // "Plan 문서 반영" 은 (A) 만 검사 (subtask 수정 후 반영 목적이라 details 조건 불필요).
+  const runningThreadIds = useChatStore((s) => s.runningThreadIds);
+  const mainConvBusy = !!selectedConversationId && runningThreadIds.includes(selectedConversationId);
+  const missingDetailsCount = subtasks.filter((s) => !s.details?.trim()).length;
+  const approveDisabledReason: string | null = busy
+    ? null  // 로컬 busy 는 disable 이지만 별도 안내 불필요
+    : mainConvBusy
+      ? "메인 chat 에서 Architect 가 작업 중입니다. 완료 후 활성화됩니다."
+      : missingDetailsCount > 0
+        ? `미완성 task 지시서 ${missingDetailsCount}건 — 전체 지시서 작성을 먼저 완료하세요.`
+        : null;
+  const approveBlocked = busy || mainConvBusy || missingDetailsCount > 0;
+  const syncBlocked = busy || mainConvBusy;
+
   // Resolve main chat's agent engine + model (not hardcoded "claude")
   const mainSaved = selectedConversationId ? getConversationEngine(selectedConversationId) : null;
   const mainEngine = mainSaved?.engine ?? "claude";
@@ -390,21 +407,43 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
               <ArrowLeft className="w-3.5 h-3.5" />Architect에게 재설계 요청
             </button>
           )}
-          <button onClick={handleApprove} disabled={busy}
+          <button onClick={handleApprove} disabled={approveBlocked}
             className={cn(
               "flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium disabled:opacity-50 transition-colors",
               isDoomLoop
                 ? "bg-muted text-muted-foreground/50 hover:text-muted-foreground"
                 : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20"
             )}
-            title={isDoomLoop ? "Architect 재설계 후 승인을 권장합니다" : undefined}
+            title={
+              isDoomLoop ? "Architect 재설계 후 승인을 권장합니다"
+              : approveDisabledReason ?? undefined
+            }
           >
-            <Check className="w-3.5 h-3.5" />{isDoomLoop ? "그대로 승인 (비권장)" : "승인 → Approved"}
+            <Check className="w-3.5 h-3.5" />
+            {isDoomLoop ? "그대로 승인 (비권장)" : "승인 → Approved"}
+            {/* 상태 뱃지 — 왜 비활성인지 한 눈에 보이도록 */}
+            {mainConvBusy && (
+              <span className="ml-1 text-[9px] px-1 rounded bg-amber-500/15 text-amber-600">🔒 작성 중</span>
+            )}
+            {!mainConvBusy && missingDetailsCount > 0 && (
+              <span className="ml-1 text-[9px] px-1 rounded bg-muted text-muted-foreground/70">⚠ 지시서 {missingDetailsCount}건 미완</span>
+            )}
           </button>
           {!isDoomLoop && (
-            <button onClick={handleSyncToMainPlan} disabled={busy}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
-              <FileText className="w-3.5 h-3.5" />Plan 문서 반영
+            /* Plan 문서 반영 — 일반 flow 에서 거의 안 쓰는 부가 기능.
+               아이콘 전용 버튼으로 축소해 승인 버튼과의 시각적 경쟁 제거. (s37) */
+            <button
+              onClick={handleSyncToMainPlan}
+              disabled={syncBlocked}
+              className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent disabled:opacity-40 transition-colors"
+              title={
+                mainConvBusy
+                  ? "메인 chat 에서 Architect 가 작업 중입니다. 완료 후 사용 가능."
+                  : "Plan 문서 반영 — task 지시서(task-NN.md) 를 직접 편집한 경우 메인 plan.md 에 역반영합니다. 일반 flow 에서는 불필요."
+              }
+              aria-label="Plan 문서 반영"
+            >
+              <FileText className="w-3.5 h-3.5" />
             </button>
           )}
           {/* Debug: 전체 작업지시서 일괄 요청 — details 없는 subtask가 있을 때만 */}
