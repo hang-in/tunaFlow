@@ -34,6 +34,65 @@ export interface SavedAttachmentResponse {
 }
 
 export const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20MB
+/** 이미지가 이 크기 초과하면 JPEG q85 로 리사이즈. */
+export const RESIZE_THRESHOLD = 2 * 1024 * 1024; // 2MB
+/** 리사이즈 시 긴 변 최대. 일반적인 스크린샷 수준은 보존. */
+export const RESIZE_MAX_DIMENSION = 2048;
+
+// ─── Image resize ──────────────────────────────────────────────────────────
+
+/** 이미지 bytes 를 Canvas 로 디코드 → JPEG q85 로 재인코딩.
+ *  GIF/SVG 는 지원하지 않고 원본 반환. 리사이즈 실패 시에도 원본 반환. */
+export async function maybeResizeImage(
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<{ bytes: Uint8Array; mimeType: string; resized: boolean }> {
+  if (!mimeType.startsWith("image/")) return { bytes, mimeType, resized: false };
+  // 애니메이션/vector 는 건드리지 않음 (canvas 변환 시 손실)
+  if (mimeType === "image/gif" || mimeType === "image/svg+xml") {
+    return { bytes, mimeType, resized: false };
+  }
+  if (bytes.byteLength <= RESIZE_THRESHOLD) return { bytes, mimeType, resized: false };
+
+  try {
+    const blob = new Blob([bytes as unknown as BlobPart], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = (e) => reject(e);
+      el.src = url;
+    });
+    const { width, height } = img;
+    const longest = Math.max(width, height);
+    const scale = longest > RESIZE_MAX_DIMENSION ? RESIZE_MAX_DIMENSION / longest : 1;
+    const targetW = Math.round(width * scale);
+    const targetH = Math.round(height * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      URL.revokeObjectURL(url);
+      return { bytes, mimeType, resized: false };
+    }
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    URL.revokeObjectURL(url);
+
+    const jpegBlob: Blob = await new Promise((resolve) => {
+      canvas.toBlob((b) => resolve(b ?? new Blob()), "image/jpeg", 0.85);
+    });
+    if (jpegBlob.size === 0) return { bytes, mimeType, resized: false };
+    // 리사이즈가 오히려 더 크게 나오면 (이미 압축된 작은 이미지) 원본 유지
+    if (jpegBlob.size >= bytes.byteLength) return { bytes, mimeType, resized: false };
+    const resizedBytes = new Uint8Array(await jpegBlob.arrayBuffer());
+    return { bytes: resizedBytes, mimeType: "image/jpeg", resized: true };
+  } catch (e) {
+    console.warn("[attachments] resize failed, using original:", e);
+    return { bytes, mimeType, resized: false };
+  }
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -62,6 +121,7 @@ async function fileToBase64(bytes: Uint8Array): Promise<string> {
 // ─── Save / Delete ──────────────────────────────────────────────────────────
 
 /** Save a file to `<project>/.tunaflow/attachments/` via Rust command.
+ *  이미지가 2MB 초과면 canvas JPEG q85 로 리사이즈 후 저장 (토큰 비용 절감).
  *  Throws if projectPath missing, file oversized, or disk write fails. */
 export async function saveAttachment(
   projectPath: string,
@@ -72,22 +132,34 @@ export async function saveAttachment(
   if (bytes.byteLength > MAX_ATTACHMENT_SIZE) {
     throw new Error(`파일 크기가 너무 큽니다 (${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB, 최대 20MB)`);
   }
-  const base64 = await fileToBase64(bytes);
+
+  // 이미지면 자동 리사이즈 시도. 리사이즈가 성공해 JPEG 로 변환된 경우 파일명
+  // 확장자도 `.jpg` 로 교체 (뷰어/에이전트가 MIME 혼동하지 않도록).
+  const resizeResult = await maybeResizeImage(bytes, mimeType);
+  const finalBytes = resizeResult.bytes;
+  const finalMime = resizeResult.mimeType;
+  let finalName = name;
+  if (resizeResult.resized) {
+    // 확장자 교체
+    finalName = name.replace(/\.[^.]+$/, "") + ".jpg";
+  }
+
+  const base64 = await fileToBase64(finalBytes);
   const saved = await invoke<SavedAttachmentResponse>("save_attachment", {
     projectPath,
-    name,
+    name: finalName,
     dataBase64: extractBase64Payload(base64),
   });
-  const isImage = isImageMime(mimeType);
+  const isImage = isImageMime(finalMime);
   return {
     id: crypto.randomUUID(),
     absPath: saved.absPath,
     relPath: saved.relPath,
-    name,
+    name: finalName,
     size: saved.size,
-    mimeType,
+    mimeType: finalMime,
     isImage,
-    previewUrl: isImage ? URL.createObjectURL(new Blob([bytes as unknown as BlobPart], { type: mimeType })) : undefined,
+    previewUrl: isImage ? URL.createObjectURL(new Blob([finalBytes as unknown as BlobPart], { type: finalMime })) : undefined,
   };
 }
 
