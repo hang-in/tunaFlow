@@ -627,7 +627,9 @@ export function RuntimeSection() {
         </div>
       </div>
 
-      <PtyModeToggle />
+      {/* PtyModeToggle 숨김 (s37): PTY 는 현재 메인/브랜치 send 경로에서
+          기본 off 이고 내부 터미널(VTE) 패널 전용. 설정 토글은 혼선만 줌.
+          메인 send 가 PTY 로 복귀하면 다시 노출. */}
       <ContextBudgetControl />
       <WorkflowSkillsConfig />
       <InsightAgentConfig />
