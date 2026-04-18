@@ -317,9 +317,9 @@ fn build_prompt(
 [INITIAL_SETUP_START]
 {{
   "agent_profiles": [
-    {{ "role": "architect", "engine": "claude", "model": "claude-opus-4-6", "persona_id": "persona_architect" }},
-    {{ "role": "developer", "engine": "codex",  "model": "gpt-5-codex",     "persona_id": "persona_implementer" }},
-    {{ "role": "reviewer",  "engine": "gemini", "model": "gemini-2.5-pro",  "persona_id": "persona_reviewer" }}
+    {{ "role": "architect", "engine": "claude", "model": "opus",          "persona_id": "persona_architect" }},
+    {{ "role": "developer", "engine": "codex",  "model": "gpt-5-codex",    "persona_id": "persona_implementer" }},
+    {{ "role": "reviewer",  "engine": "gemini", "model": "gemini-2.5-pro", "persona_id": "persona_reviewer" }}
   ],
   "skills": ["rust-review", "cargo-test"],
   "workflow": {{
