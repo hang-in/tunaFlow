@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Circle, Loader2, AlertCircle } from "lucide-react";
@@ -8,6 +8,12 @@ import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { MetaAgentSelector } from "./MetaAgentSelector";
 import { markdownComponents } from "./chat/MarkdownComponents";
+import {
+  applyInitialSetup,
+  normalizeInitialSetup,
+  type InitialSetupPayload,
+  type InitialSetupSelection,
+} from "@/lib/initialSetupApply";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
@@ -15,13 +21,18 @@ const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface StepPayload { step: number; label: string; done: boolean; }
-interface PreviewPayload { claude_md: string; ref_index: string; has_existing_claude_md: boolean; }
+interface PreviewPayload {
+  claude_md: string;
+  ref_index: string;
+  has_existing_claude_md: boolean;
+  initial_setup?: unknown;
+}
 interface ErrorPayload { message: string; }
 
 // Flow: agent_select → loading → preview → done
 // Overlays (cancel_confirm / skip_confirm) render on top of the host state.
 type ModalState = "agent_select" | "loading" | "preview" | "cancel_confirm" | "skip_confirm" | "done";
-type PreviewTab = "claude_md" | "ref_index";
+type PreviewTab = "claude_md" | "ref_index" | "initial_setup";
 
 interface Step { label: string; done: boolean; active: boolean; }
 
@@ -43,6 +54,38 @@ export function ProjectOnboardingModal() {
   const [activeTab, setActiveTab] = useState<PreviewTab>("claude_md");
   const [error, setError] = useState<string | null>(null);
   const cleanupRef = useRef<(() => void)[]>([]);
+
+  // Initial-setup selections (only populated when preview.initial_setup parses)
+  const [profileSelection, setProfileSelection] = useState<Set<number>>(new Set());
+  const [skillSelection, setSkillSelection] = useState<Set<string>>(new Set());
+  const [applyWorkflow, setApplyWorkflow] = useState(true);
+
+  // Store access — needed by applyInitialSetup
+  const agentProfiles = useChatStore((s) => s.agentProfiles);
+  const activeSkills = useChatStore((s) => s.activeSkills);
+  const skills = useChatStore((s) => s.skills);
+  const saveProfiles = useChatStore((s) => s.saveProfiles);
+  const acceptRecommendedSkills = useChatStore((s) => s.acceptRecommendedSkills);
+
+  const normalizedInitialSetup = useMemo<InitialSetupPayload | null>(() => {
+    if (!preview?.initial_setup) return null;
+    return normalizeInitialSetup(preview.initial_setup);
+  }, [preview]);
+
+  // When a new preview arrives, pre-check everything that looks valid — users
+  // can uncheck to opt out. Matches plan §4 UX expectation.
+  useEffect(() => {
+    if (!normalizedInitialSetup) {
+      setProfileSelection(new Set());
+      setSkillSelection(new Set());
+      setApplyWorkflow(true);
+      return;
+    }
+    const installedSkillNames = new Set(skills.map((s) => s.name));
+    setProfileSelection(new Set(normalizedInitialSetup.agent_profiles?.map((_, i) => i) ?? []));
+    setSkillSelection(new Set((normalizedInitialSetup.skills ?? []).filter((n) => installedSkillNames.has(n))));
+    setApplyWorkflow(!!normalizedInitialSetup.workflow);
+  }, [normalizedInitialSetup, skills]);
 
   // Reset to initial "agent_select" phase when a new project arrives.
   useEffect(() => {
@@ -122,6 +165,26 @@ export function ProjectOnboardingModal() {
         claudeMdContent: preview.claude_md,
         refIndexContent: preview.ref_index,
       });
+      // Apply initial-setup selections (best effort — individual failures are
+      // logged but don't block the onboarding).
+      if (normalizedInitialSetup) {
+        const selection: InitialSetupSelection = {
+          profileIndices: profileSelection,
+          skills: skillSelection,
+          applyWorkflow,
+        };
+        try {
+          await applyInitialSetup(normalizedInitialSetup, selection, {
+            currentProfiles: agentProfiles,
+            saveProfiles,
+            currentActiveSkills: activeSkills,
+            setActiveSkills: (names) => acceptRecommendedSkills(names),
+            availableSkillNames: new Set(skills.map((s) => s.name)),
+          });
+        } catch (e) {
+          console.error("[onboarding] initialSetup apply failed:", e);
+        }
+      }
     } catch (e) {
       setError(String(e));
       return;
@@ -256,16 +319,42 @@ export function ProjectOnboardingModal() {
                   {tab === "claude_md" ? "CLAUDE.md" : "docs/reference/index.md"}
                 </button>
               ))}
+              {normalizedInitialSetup && (
+                <button
+                  onClick={() => setActiveTab("initial_setup")}
+                  className={cn(
+                    "px-3 py-2 text-[11px] font-medium border-b-2 transition-colors -mb-px",
+                    activeTab === "initial_setup"
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  초기 구성
+                </button>
+              )}
             </div>
 
             {/* Content — render as Markdown so the preview matches how the
                  file will actually look in the editor / Docs viewer. */}
             <div className="flex-1 overflow-y-auto min-h-0">
-              <div className="prose prose-invert prose-chat prose-sm max-w-none px-6 py-4 text-[12px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
-                  {activeTab === "claude_md" ? preview.claude_md : preview.ref_index}
-                </ReactMarkdown>
-              </div>
+              {activeTab === "initial_setup" && normalizedInitialSetup ? (
+                <InitialSetupPanel
+                  payload={normalizedInitialSetup}
+                  installedSkillNames={new Set(skills.map((s) => s.name))}
+                  profileSelection={profileSelection}
+                  setProfileSelection={setProfileSelection}
+                  skillSelection={skillSelection}
+                  setSkillSelection={setSkillSelection}
+                  applyWorkflow={applyWorkflow}
+                  setApplyWorkflow={setApplyWorkflow}
+                />
+              ) : (
+                <div className="prose prose-invert prose-chat prose-sm max-w-none px-6 py-4 text-[12px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
+                    {activeTab === "claude_md" ? preview.claude_md : preview.ref_index}
+                  </ReactMarkdown>
+                </div>
+              )}
             </div>
 
             <div className="px-6 py-4 border-t border-border">
@@ -349,6 +438,133 @@ function CancelConfirmOverlay({ onBack, onConfirm }: { onBack: () => void; onCon
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function InitialSetupPanel({
+  payload,
+  installedSkillNames,
+  profileSelection,
+  setProfileSelection,
+  skillSelection,
+  setSkillSelection,
+  applyWorkflow,
+  setApplyWorkflow,
+}: {
+  payload: InitialSetupPayload;
+  installedSkillNames: Set<string>;
+  profileSelection: Set<number>;
+  setProfileSelection: (s: Set<number>) => void;
+  skillSelection: Set<string>;
+  setSkillSelection: (s: Set<string>) => void;
+  applyWorkflow: boolean;
+  setApplyWorkflow: (v: boolean) => void;
+}) {
+  const toggleProfile = (i: number) => {
+    const next = new Set(profileSelection);
+    if (next.has(i)) next.delete(i);
+    else next.add(i);
+    setProfileSelection(next);
+  };
+  const toggleSkill = (name: string) => {
+    const next = new Set(skillSelection);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setSkillSelection(next);
+  };
+
+  return (
+    <div className="px-6 py-4 space-y-4 text-[12px]">
+      {payload.rationale && (
+        <div className="rounded-md border border-border/60 bg-accent/30 p-2.5 text-[11px] text-muted-foreground leading-relaxed">
+          <span className="font-medium text-foreground">추천 근거: </span>
+          {payload.rationale}
+        </div>
+      )}
+
+      {/* Agent Profiles */}
+      {payload.agent_profiles && payload.agent_profiles.length > 0 && (
+        <section>
+          <h3 className="text-[11px] font-semibold text-foreground mb-1.5">Agent Profiles</h3>
+          <ul className="space-y-1">
+            {payload.agent_profiles.map((p, i) => (
+              <li key={i}>
+                <label className="flex items-center gap-2 cursor-pointer hover:bg-accent/50 rounded px-1.5 py-1">
+                  <input
+                    type="checkbox"
+                    checked={profileSelection.has(i)}
+                    onChange={() => toggleProfile(i)}
+                    className="w-3.5 h-3.5"
+                  />
+                  <span className="capitalize font-medium text-foreground">{p.role}</span>
+                  <span className="text-muted-foreground">{p.engine}</span>
+                  {p.model && <span className="text-[10px] text-muted-foreground/60">({p.model})</span>}
+                  {p.persona_id && <span className="text-[10px] text-muted-foreground/50 ml-auto">{p.persona_id}</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Skills */}
+      {payload.skills && payload.skills.length > 0 && (
+        <section>
+          <h3 className="text-[11px] font-semibold text-foreground mb-1.5">Recommended Skills</h3>
+          <ul className="space-y-1">
+            {payload.skills.map((name) => {
+              const installed = installedSkillNames.has(name);
+              return (
+                <li key={name}>
+                  <label className={cn(
+                    "flex items-center gap-2 rounded px-1.5 py-1",
+                    installed ? "cursor-pointer hover:bg-accent/50" : "opacity-50 cursor-not-allowed",
+                  )}>
+                    <input
+                      type="checkbox"
+                      disabled={!installed}
+                      checked={skillSelection.has(name)}
+                      onChange={() => installed && toggleSkill(name)}
+                      className="w-3.5 h-3.5"
+                    />
+                    <span className={installed ? "text-foreground" : "text-muted-foreground"}>{name}</span>
+                    {!installed && (
+                      <span className="text-[10px] text-muted-foreground/60 ml-auto">not installed</span>
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {/* Workflow */}
+      {payload.workflow && Object.keys(payload.workflow).length > 0 && (
+        <section>
+          <h3 className="text-[11px] font-semibold text-foreground mb-1.5">Workflow Defaults</h3>
+          <label className="flex items-start gap-2 cursor-pointer hover:bg-accent/50 rounded px-1.5 py-1">
+            <input
+              type="checkbox"
+              checked={applyWorkflow}
+              onChange={(e) => setApplyWorkflow(e.target.checked)}
+              className="w-3.5 h-3.5 mt-0.5"
+            />
+            <div className="space-y-0.5 text-[11px]">
+              {payload.workflow.review_track && (
+                <div><span className="text-muted-foreground">Review track:</span> <span className="text-foreground">{payload.workflow.review_track}</span></div>
+              )}
+              {payload.workflow.context_mode && (
+                <div><span className="text-muted-foreground">ContextPack:</span> <span className="text-foreground">{payload.workflow.context_mode}</span></div>
+              )}
+              {payload.workflow.rt_participants && payload.workflow.rt_participants.length > 0 && (
+                <div><span className="text-muted-foreground">RT 참가자:</span> <span className="text-foreground">{payload.workflow.rt_participants.join(", ")}</span></div>
+              )}
+            </div>
+          </label>
+        </section>
+      )}
     </div>
   );
 }
