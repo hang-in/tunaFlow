@@ -440,6 +440,11 @@ pub fn run() {
             commands::conventions_sync::sync_project_conventions,
             commands::conventions_sync::get_project_conventions_sync,
             commands::conventions_sync::set_project_conventions_sync,
+            // Secrets (OS keychain)
+            commands::secrets::secret_set,
+            commands::secrets::secret_get,
+            commands::secrets::secret_has,
+            commands::secrets::secret_delete,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

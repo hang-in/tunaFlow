@@ -47,6 +47,9 @@ alacritty_terminal = "0.26.0"
 ort = "=2.0.0-rc.10"
 tokenizers = { version = "0.21", default-features = false, features = ["fancy-regex"] }
 ndarray = "0.16"
+# OS keychain access (macOS Keychain, Windows Credential Vault, Linux Secret Service).
+# Used for persisting user-supplied secrets (future API keys etc.) outside the SQLite DB.
+keyring = "3"
 
 [profile.release]
 panic = "abort"

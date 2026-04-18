@@ -35,3 +35,4 @@ pub mod vector_search;
 pub mod document_index;
 pub mod mobile;
 pub mod pty;
+pub mod secrets;
