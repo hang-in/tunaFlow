@@ -168,6 +168,8 @@ export async function processReviewVerdict(
     await planApi.updatePlanPhase(plan.id, "done");
     await planApi.updatePlanStatus(plan.id, "done");
     await planApi.createPlanEvent(plan.id, "review_passed", "reviewer", detail);
+    // Notify Meta — plan cycle finished, user may want next-priority suggestion.
+    window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
     try {
       await failureLessonsApi.resolveFailureLessonsByPlan(
         plan.id,
@@ -245,6 +247,8 @@ export async function processReviewVerdict(
       // Baton has moved to Architect — review branch is no longer active.
       const { archiveReviewBranchForHandoff } = await import("./implementWorkflow");
       await archiveReviewBranchForHandoff(plan);
+      // Meta notification — escalation requires user attention.
+      window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
     } else if (failCount >= 3) {
       await planApi.createPlanEvent(
         plan.id,
@@ -252,6 +256,8 @@ export async function processReviewVerdict(
         "system",
         `Review 실패 ${failCount}회 — 설계 재검토를 권장합니다. Architect 재설계 또는 Developer 계속 rework 중 선택하세요.`,
       );
+      // Meta notification — user should review whether to keep iterating or redesign.
+      window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
     }
   } else {
     await planApi.createPlanEvent(plan.id, "review_conditional", "reviewer", detail);

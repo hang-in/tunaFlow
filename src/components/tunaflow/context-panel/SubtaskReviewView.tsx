@@ -377,6 +377,8 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
                   // Baton moved to Architect — review branch is no longer active.
                   const { archiveReviewBranchForHandoff } = await import("@/lib/workflowOrchestration");
                   await archiveReviewBranchForHandoff(plan);
+                  // Meta notification — Architect-led redesign cycle started.
+                  window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
                   onPlanUpdate(plan.id, { phase: "drafting" as PlanPhase });
                   onSwitchToChat?.();
                 } catch (e) { console.warn("[tunaflow]", e); }
