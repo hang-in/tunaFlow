@@ -21,6 +21,9 @@ interface TraceSpan {
   contextHash: string | null;
   contextTruncated: number | null;
   messageId: string | null;
+  /** Cache tokens (v35) — may be null on legacy rows or unpopulated by current pipeline. */
+  cacheReadTokens?: number | null;
+  cacheCreationTokens?: number | null;
 }
 
 // ─── Formatting utilities (shared with TracePanel) ─────────────────────────
@@ -231,19 +234,54 @@ export function TraceSpanCard({ span: sp, model }: TraceSpanCardProps) {
           {sp.contextHash && sp.contextHash.startsWith("[") && (() => {
             try {
               const sizes = JSON.parse(sp.contextHash) as { name: string; chars: number }[];
-              if (sizes.length === 0) return null;
-              const sorted = [...sizes].sort((a, b) => b.chars - a.chars);
+              const nonZero = sizes.filter((s) => s.chars > 0);
+              if (nonZero.length === 0) return null;
+              const total = nonZero.reduce((a, s) => a + s.chars, 0);
+              // Stacked horizontal bar — proportional to total length. Top 4 by
+              // share get a readable color; rest grouped as "other".
+              const sorted = [...nonZero].sort((a, b) => b.chars - a.chars);
               const top = sorted.slice(0, 4);
+              const otherChars = sorted.slice(4).reduce((a, s) => a + s.chars, 0);
+              const segments = otherChars > 0
+                ? [...top, { name: "other", chars: otherChars }]
+                : top;
+              // Consistent color per section name (hash-based pick from palette).
+              const palette = [
+                "bg-primary/60", "bg-blue-500/60", "bg-emerald-500/60",
+                "bg-amber-500/60", "bg-fuchsia-500/60", "bg-muted-foreground/40",
+              ];
+              const colorFor = (name: string) => {
+                let h = 0;
+                for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+                return palette[h % palette.length];
+              };
               return (
-                <div className="flex items-center gap-1.5 text-[7px] text-muted-foreground/30 pl-[18px] flex-wrap">
-                  {top.map((s) => (
-                    <span key={s.name} className={cn(
-                      "font-mono",
-                      s.chars > 8000 ? "text-amber-500/50" : ""
-                    )}>
-                      {s.name}:{(s.chars / 1000).toFixed(1)}k
-                    </span>
-                  ))}
+                <div className="pl-[18px] space-y-0.5">
+                  <div className="flex h-1 rounded overflow-hidden" title={`total ${total} chars`}>
+                    {segments.map((s) => (
+                      <div
+                        key={s.name}
+                        className={colorFor(s.name)}
+                        style={{ width: `${(s.chars / total) * 100}%` }}
+                        title={`${s.name}: ${s.chars} chars (${((s.chars / total) * 100).toFixed(0)}%)`}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[7px] text-muted-foreground/30 flex-wrap">
+                    {top.map((s) => (
+                      <span key={s.name} className={cn(
+                        "font-mono",
+                        s.chars > 8000 ? "text-amber-500/50" : ""
+                      )}>
+                        {s.name}:{(s.chars / 1000).toFixed(1)}k
+                      </span>
+                    ))}
+                    {otherChars > 0 && (
+                      <span className="font-mono text-muted-foreground/20">
+                        +other:{(otherChars / 1000).toFixed(1)}k
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             } catch { return null; }
