@@ -516,6 +516,31 @@ export function extractReviewVerdict(content: string): ParsedReviewVerdict | nul
   return reviewResult;
 }
 
+/**
+ * Scan assistant messages in a RT review transcript and return every verdict
+ * that parses. Used by vote-aggregation path when `auto_synthesize` is on.
+ *
+ * - Only `assistant` messages are considered.
+ * - The Synthesizer message is skipped (per role_guidance it must not emit a
+ *   fresh verdict, but defensive guard in case it does). The synthesizer is
+ *   identified by persona === "Synthesizer" (see `run_synthesizer_after_round`
+ *   in roundtable.rs).
+ * - Each returned item includes the `reviewerName` for UI display.
+ */
+export function scanAllReviewerVerdicts(
+  messages: import("@/types").Message[],
+): Array<ParsedReviewVerdict & { reviewerName?: string }> {
+  const out: Array<ParsedReviewVerdict & { reviewerName?: string }> = [];
+  for (const m of messages) {
+    if (m.role !== "assistant") continue;
+    if (m.persona === "Synthesizer") continue;
+    if (!hasReviewVerdict(m.content)) continue;
+    const v = extractReviewVerdict(m.content);
+    if (v) out.push({ ...v, reviewerName: m.persona });
+  }
+  return out;
+}
+
 // ─── Tool request markers ──────────────────────────────────────────────────
 
 export interface ToolRequest {

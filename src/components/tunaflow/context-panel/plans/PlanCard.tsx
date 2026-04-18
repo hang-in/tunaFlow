@@ -296,7 +296,7 @@ export function PlanCard({
                         handlePlanUpdate({ phase: "review", reviewBranchId: branch.id });
                         await loadBranches(plan.conversationId);
                         await openThread(branch.id);
-                        await sendThreadRoundtable(prompt, participants, mode);
+                        await sendThreadRoundtable(prompt, participants, mode, { autoSynthesize: true });
                       }}
                       className="ml-auto px-2 py-0.5 rounded text-[9px] font-medium bg-status-approved/20 hover:bg-status-approved/30 transition-colors"
                     >

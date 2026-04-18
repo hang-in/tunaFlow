@@ -19,14 +19,15 @@ import type { RtParticipantStatus } from "./threadSlice";
 export async function runThreadRoundtable(
   set: SetState, get: GetState, command: string,
   prompt: string, participants: RoundtableParticipant[], mode?: RtMode,
+  opts?: { autoSynthesize?: boolean },
 ): Promise<void> {
   const { threadBranchConvId } = get();
   if (!threadBranchConvId) return;
   if (get().runningThreadIds.includes(threadBranchConvId)) {
     get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () =>
       command === "start_roundtable_run"
-        ? get().sendThreadRoundtable(prompt, participants, mode)
-        : get().sendThreadRoundtableFollowup(prompt, participants, mode),
+        ? get().sendThreadRoundtable(prompt, participants, mode, opts)
+        : get().sendThreadRoundtableFollowup(prompt, participants, mode, opts),
     );
     return;
   }
@@ -139,7 +140,7 @@ export async function runThreadRoundtable(
   });
 
   try {
-    await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode } });
+    await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode, autoSynthesize: opts?.autoSynthesize } });
   } catch (e) {
     cleanup();
     set({ error: errorMessage(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null });

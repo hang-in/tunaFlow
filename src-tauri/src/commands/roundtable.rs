@@ -30,6 +30,12 @@ pub struct RoundtableRunInput {
     #[allow(dead_code)]
     pub rounds: Option<u32>,
     pub mode: Option<String>,
+    /// When true AND there are ≥2 reviewer participants, an additional
+    /// synthesizer participant runs after the main round completes. Defaults to
+    /// false to preserve existing behavior; callers opt in explicitly.
+    /// See `docs/ideas/rtAlgorithmEnhancementIdeas.md` P1 for rationale.
+    #[serde(default)]
+    pub auto_synthesize: Option<bool>,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -43,6 +49,120 @@ fn parse_strategy(mode: &str) -> (RoundStrategy, &'static str) {
 
 fn participant_names(participants: &[RoundtableParticipant]) -> String {
     participants.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
+}
+
+/// Build a single-participant synthesizer "round" to summarize reviewers'
+/// verdicts. Returns (messages, responses) so callers can append them to the
+/// main round's output and persist them uniformly.
+///
+/// Gating:
+///  - Requires ≥2 participants with role == "reviewer" | "critic" in the
+///    prior round. Otherwise returns None (nothing to synthesize).
+///  - Picks synthesizer engine from the first reviewer's engine for cost
+///    parity. Model is left None so the engine picks its own default.
+#[allow(clippy::too_many_arguments)]
+async fn run_synthesizer_after_round(
+    original_participants: &[RoundtableParticipant],
+    round_responses: &[(String, String)],
+    prior_round_refs: &[String],
+    topic: &str,
+    rt_mode: &str,
+    round_num: u32,
+    conversation_id: &str,
+    state: &crate::db::DbState,
+    app: &tauri::AppHandle,
+    cancel: &crate::CancelRegistry,
+    trace_id: &str,
+    root_span_id: &str,
+    project_path: Option<&str>,
+    session_map: &mut SessionMap,
+) -> Option<(Vec<Message>, Vec<(String, String)>)> {
+    let reviewer_count = original_participants
+        .iter()
+        .filter(|p| matches!(p.role.as_deref(), Some("reviewer" | "critic")))
+        .count();
+    if reviewer_count < 2 {
+        eprintln!("[rt-synth] skipped: only {} reviewer(s)", reviewer_count);
+        return None;
+    }
+
+    // Inherit engine from first reviewer. Keep model=None so we don't accidentally
+    // pin a reviewer's fine-tuned model as the synthesizer.
+    let engine = original_participants
+        .iter()
+        .find(|p| matches!(p.role.as_deref(), Some("reviewer" | "critic")))
+        .and_then(|p| p.engine.clone())
+        .unwrap_or_else(|| "claude".into());
+
+    let synthesizer = RoundtableParticipant {
+        name: "Synthesizer".into(),
+        model: None,
+        engine: Some(engine),
+        blind: false,
+        role: Some("synthesizer".into()),
+        max_tokens: None,
+    };
+
+    // Emit a header message to delimit the synthesizer output in the transcript.
+    let header_content = format!("--- Synthesizer · {} reviewer verdicts ---", round_responses.len());
+    let _ = {
+        let conn = state.write.lock().ok()?;
+        super::roundtable_helpers::persist::persist_header(&conn, conversation_id, &header_content)
+            .ok()
+            .map(|h| {
+                let _ = app.emit("roundtable:progress", &h);
+                h
+            })
+    };
+
+    // Prepend a structured directive so the synthesizer knows *what* to produce.
+    // The existing role_guidance (types.rs `synthesizer`) already requests
+    // consensus / contested / dissent sections — we add the vote-tally instruction.
+    let directive = format!(
+        "## Synthesizer Task\n\
+         The {} reviewer verdicts above are the input. Do NOT overwrite them.\n\
+         Produce a summary with these required sections:\n\
+         1. **Vote tally** — count pass/fail/conditional verdicts.\n\
+         2. **Consensus** — points where all reviewers agreed.\n\
+         3. **Contested** — points where reviewers disagreed (cite which reviewer said what).\n\
+         4. **Dissent** — any minority position worth preserving.\n\
+         5. **Final recommendation** — one of: accept / revise / reject. Justify briefly.\n\n\
+         If the tally is split (e.g. 2 pass / 1 fail), do not rubber-stamp the majority —\n\
+         state the reasoning for your final recommendation.",
+        round_responses.len()
+    );
+    let synth_topic = format!("{}\n\n---\n\n{}", topic, directive);
+
+    // The synthesizer is in its own "round" (round_num + 1) but sees the prior
+    // round's responses as transcript. Use Sequential strategy (1 participant).
+    let result = super::roundtable_helpers::executor::execute_round(
+        std::slice::from_ref(&synthesizer),
+        round_responses,
+        round_num + 1,
+        round_num + 1,
+        &synth_topic,
+        crate::commands::roundtable_helpers::executor::RoundStrategy::Sequential,
+        rt_mode,
+        conversation_id,
+        state,
+        app,
+        cancel,
+        trace_id,
+        root_span_id,
+        project_path,
+        session_map,
+    )
+    .await;
+
+    let _ = prior_round_refs; // Reserved for future deliberative-mode integration.
+
+    match result {
+        Ok((msgs, responses)) => Some((msgs, responses)),
+        Err(e) => {
+            eprintln!("[rt-synth] synthesizer run failed: {e}");
+            None
+        }
+    }
 }
 
 /// Count existing round headers to determine the next round number.
@@ -323,12 +443,44 @@ pub async fn start_roundtable_run(
         let root_span_id = new_span_id();
         let t0 = std::time::Instant::now();
         let mut session_map = SessionMap::new();
+        let auto_synth = input.auto_synthesize.unwrap_or(false);
 
         let result = execute_round(
             &input.participants, &[], 1, 1, &enriched_prompt, strategy, &rt_mode,
             &cid, &bg_state, &app, &bg_cancel, &trace_id, &root_span_id, project_path.as_deref(),
             &mut session_map,
         ).await;
+
+        // Optionally run a synthesizer participant after the main round succeeds.
+        // Scope: only when caller opted in AND the main round ran to completion.
+        // Failures inside the synthesizer are logged but do not fail the whole RT.
+        let (result, synth_responses): (Result<_, AppError>, Vec<(String, String)>) = match result {
+            Ok((msgs, round_responses)) if auto_synth => {
+                let extra = run_synthesizer_after_round(
+                    &input.participants,
+                    &round_responses,
+                    &[],
+                    &prompt,
+                    &rt_mode,
+                    1,
+                    &cid,
+                    &bg_state,
+                    &app,
+                    &bg_cancel,
+                    &trace_id,
+                    &root_span_id,
+                    project_path.as_deref(),
+                    &mut session_map,
+                )
+                .await;
+                let mut all_responses = round_responses;
+                let extra_responses = extra.map(|(_, r)| r).unwrap_or_default();
+                all_responses.extend(extra_responses.iter().cloned());
+                (Ok((msgs, all_responses)), extra_responses)
+            }
+            other => (other, Vec::new()),
+        };
+        let _ = synth_responses;
 
         if let Ok(conn) = write_arc.lock() {
             let now = now_epoch_ms();
@@ -405,12 +557,40 @@ pub async fn start_roundtable_followup(
         let root_span_id = new_span_id();
         let t0 = std::time::Instant::now();
         let mut session_map = SessionMap::new();
+        let auto_synth = input.auto_synthesize.unwrap_or(false);
 
         let result = execute_round(
             &input.participants, &prior_transcript, round_num, round_num, &prompt, strategy, &rt_mode,
             &cid, &bg_state, &app, &bg_cancel, &trace_id, &root_span_id, project_path.as_deref(),
             &mut session_map,
         ).await;
+
+        // Optional synthesizer pass — see run_synthesizer_after_round for gating.
+        let result: Result<_, AppError> = match result {
+            Ok((msgs, responses)) if auto_synth => {
+                let extra = run_synthesizer_after_round(
+                    &input.participants,
+                    &responses,
+                    &[],
+                    &prompt,
+                    &rt_mode,
+                    round_num,
+                    &cid,
+                    &bg_state,
+                    &app,
+                    &bg_cancel,
+                    &trace_id,
+                    &root_span_id,
+                    project_path.as_deref(),
+                    &mut session_map,
+                )
+                .await;
+                let mut all_responses = responses;
+                if let Some((_, r)) = extra { all_responses.extend(r); }
+                Ok((msgs, all_responses))
+            }
+            other => other,
+        };
 
         if let Ok(conn) = write_arc.lock() {
             let now = now_epoch_ms();

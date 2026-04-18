@@ -42,8 +42,8 @@ export interface ThreadSlice {
   closeThread: () => void;
   toggleDrawerPin: () => void;
   sendThreadMessage: (prompt: string, engine?: string, model?: string) => Promise<void>;
-  sendThreadRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
-  sendThreadRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => Promise<void>;
+  sendThreadRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => Promise<void>;
+  sendThreadRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => Promise<void>;
 }
 
 export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => ({
@@ -361,11 +361,11 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
     }
   },
 
-  sendThreadRoundtable: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => {
-    await runThreadRoundtable(set, get, "start_roundtable_run", prompt, participants, mode);
+  sendThreadRoundtable: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => {
+    await runThreadRoundtable(set, get, "start_roundtable_run", prompt, participants, mode, opts);
   },
 
-  sendThreadRoundtableFollowup: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode) => {
-    await runThreadRoundtable(set, get, "start_roundtable_followup", prompt, participants, mode);
+  sendThreadRoundtableFollowup: async (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => {
+    await runThreadRoundtable(set, get, "start_roundtable_followup", prompt, participants, mode, opts);
   },
 });
