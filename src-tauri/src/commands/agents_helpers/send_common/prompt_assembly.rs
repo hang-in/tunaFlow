@@ -127,32 +127,54 @@ pub fn assemble_prompt(
         included_sections.push("project".into());
     }
 
+    // Phase 2 — when conventions are synced into the project's CLAUDE.md /
+    // AGENTS.md / GEMINI.md, the static layers are prepended automatically by
+    // the CLI and live in the prompt-cache window. Skip them here to avoid
+    // sending the same text twice (and invalidating the cache).
+    // Identity stays in-line because it's RT-specific and not persisted.
+    let skip_static = data.conventions_synced;
+
     // Tier 0: tunaFlow platform instructions (always injected, minimal footprint)
-    sections.push(PLATFORM_TIER0.to_string());
-    included_sections.push("platform".into());
+    if !skip_static {
+        sections.push(PLATFORM_TIER0.to_string());
+        included_sections.push("platform".into());
+    } else {
+        included_sections.push("platform:skipped".into());
+    }
 
     // Agent role document (docs/agents/{role}.md) — injected right after platform
     if let Some(role_doc) = &data.agent_role_doc {
-        sections.push(format!("## Agent Role Instructions\n\n{}", role_doc));
-        included_sections.push("agent-role".into());
+        if !skip_static {
+            sections.push(format!("## Agent Role Instructions\n\n{}", role_doc));
+            included_sections.push("agent-role".into());
+        } else {
+            included_sections.push("agent-role:skipped".into());
+        }
     }
 
     // Identity + Persona section
     {
         let (identity_block, persona_block) = parse_identity_and_persona(identity_fragment);
         if let Some(id) = &identity_block {
+            // Identity is RT-specific and always needed (not synced to file).
             sections.push(id.clone());
             included_sections.push("identity".into());
         }
         if let Some(p) = &persona_block {
-            sections.push(p.clone());
-            included_sections.push("persona".into());
+            if !skip_static {
+                sections.push(p.clone());
+                included_sections.push("persona".into());
+            } else {
+                included_sections.push("persona:skipped".into());
+            }
         }
     }
 
     // User profile section — injected right after identity/persona
     if let Some(profile_json) = &data.user_profile {
-        if let Ok(p) = serde_json::from_str::<serde_json::Value>(profile_json) {
+        if skip_static {
+            included_sections.push("user-profile:skipped".into());
+        } else if let Ok(p) = serde_json::from_str::<serde_json::Value>(profile_json) {
             let mut lines: Vec<String> = Vec::new();
             if let Some(v) = p.get("name").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
                 lines.push(format!("Name: {}", v));

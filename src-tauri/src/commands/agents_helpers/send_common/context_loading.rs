@@ -83,6 +83,12 @@ pub struct ContextData {
     /// Serialized user profile JSON (from frontend settings store).
     /// Contains name, title, bio, preferredLanguages, gitName, gitEmail, githubOrg.
     pub user_profile: Option<String>,
+
+    /// Conventions Sync Phase 2 — when true, the ContextPack skips the static
+    /// layers (platform / agent-role / persona / user-profile) because they've
+    /// been synced into CLAUDE.md/AGENTS.md/GEMINI.md. Default false.
+    /// Toggled per-project via `set_project_conventions_sync` Tauri command.
+    pub conventions_synced: bool,
 }
 
 /// Phase A: Load all data needed for ContextPack assembly from DB.
@@ -439,6 +445,13 @@ pub fn load_context_data(
         None
     };
 
+    // Phase 2 — conventions sync per-project toggle. We already fetched
+    // `project_key` above for retrieval; reuse it here instead of re-querying.
+    let conventions_synced = project_key
+        .as_deref()
+        .map(|pk| crate::commands::conventions_sync::is_conventions_sync_enabled(conn, pk))
+        .unwrap_or(false);
+
     ContextData {
         conversation_id: conversation_id.to_string(),
         project_path: project_path.map(|s| s.to_string()),
@@ -463,6 +476,7 @@ pub fn load_context_data(
         context_mode_override: context_mode_override.map(|s| s.to_string()),
         context_budget_cap,
         user_profile: user_profile_json.map(|s| s.to_string()),
+        conventions_synced,
     }
 }
 

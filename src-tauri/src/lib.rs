@@ -433,6 +433,13 @@ pub fn run() {
             commands::insight::export_insight_to_files,
             commands::insight_extract::run_insight_extraction,
             commands::insight_extract::run_insight_analysis,
+            // Conventions sync (Phase 2 — ContextPack 정적 레이어 외부화 토글)
+            commands::conventions_sync::list_project_conventions,
+            commands::conventions_sync::set_project_convention,
+            commands::conventions_sync::delete_project_convention,
+            commands::conventions_sync::sync_project_conventions,
+            commands::conventions_sync::get_project_conventions_sync,
+            commands::conventions_sync::set_project_conventions_sync,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

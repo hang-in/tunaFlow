@@ -46,6 +46,7 @@ mod tests {
             context_mode_override: None,
             context_budget_cap: None,
             user_profile: None,
+            conventions_synced: false,
         }
     }
 
@@ -401,5 +402,65 @@ mod tests {
         let (_, _, meta) = assemble_prompt(&data, None);
         // At minimum: project + platform
         assert!(meta.sections.len() >= 2, "sections should have at least project + platform: {:?}", meta.sections);
+    }
+
+    // ─── Conventions Sync Phase 2 — static layer skip ────────────────────
+
+    #[test]
+    fn conventions_synced_skips_platform_section() {
+        let mut data = empty_context_data();
+        data.conventions_synced = true;
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        // Skipped — marker present, content absent
+        assert!(meta.sections.contains(&"platform:skipped".to_string()), "should mark platform skipped: {:?}", meta.sections);
+        assert!(!meta.sections.contains(&"platform".to_string()));
+        // PLATFORM_TIER0 content should NOT appear in assembled output
+        assert!(!assembled.contains("tunaFlow platform"), "platform text leaked");
+    }
+
+    #[test]
+    fn conventions_synced_skips_agent_role_section() {
+        let mut data = empty_context_data();
+        data.conventions_synced = true;
+        data.agent_role_doc = Some("Do the thing".into());
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        assert!(meta.sections.contains(&"agent-role:skipped".to_string()));
+        assert!(!assembled.contains("Do the thing"));
+    }
+
+    #[test]
+    fn conventions_synced_skips_user_profile() {
+        let mut data = empty_context_data();
+        data.conventions_synced = true;
+        data.user_profile = Some(r#"{"name":"Alice","title":"Engineer"}"#.into());
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        assert!(meta.sections.contains(&"user-profile:skipped".to_string()));
+        assert!(!assembled.contains("Name: Alice"));
+    }
+
+    #[test]
+    fn conventions_not_synced_keeps_static_sections() {
+        let mut data = empty_context_data();
+        data.conventions_synced = false;
+        data.agent_role_doc = Some("Do the thing".into());
+        data.user_profile = Some(r#"{"name":"Alice"}"#.into());
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        // Default path — all layers present
+        assert!(meta.sections.contains(&"platform".to_string()));
+        assert!(meta.sections.contains(&"agent-role".to_string()));
+        assert!(meta.sections.contains(&"user-profile".to_string()));
+        assert!(assembled.contains("Do the thing"));
+        assert!(assembled.contains("Name: Alice"));
+    }
+
+    #[test]
+    fn conventions_synced_preserves_dynamic_layers() {
+        let mut data = empty_context_data();
+        data.conventions_synced = true;
+        data.plan_section = Some("## Active Plan\n\n### Migration".into());
+        data.context_mode_override = Some("standard".into());
+        let (_, _, meta) = assemble_prompt(&data, None);
+        // Dynamic layer stays even when static layers are skipped
+        assert!(meta.sections.contains(&"plan".to_string()), "plan should stay: {:?}", meta.sections);
     }
 }

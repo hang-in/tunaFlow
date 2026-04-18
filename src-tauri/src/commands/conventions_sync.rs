@@ -388,6 +388,42 @@ pub fn list_project_conventions(
     list_conventions(&conn, &project_key, persona_label.as_deref())
 }
 
+/// Read the per-project `conventions_sync_enabled` flag. Defaults to false
+/// when the column is NULL or the row is missing — safe for legacy projects
+/// created before migration v37.
+pub fn is_conventions_sync_enabled(conn: &Connection, project_key: &str) -> bool {
+    conn.query_row(
+        "SELECT COALESCE(conventions_sync_enabled, 0) FROM projects WHERE key = ?1",
+        params![project_key],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|v| v != 0)
+    .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn get_project_conventions_sync(
+    state: State<DbState>,
+    project_key: String,
+) -> Result<bool, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    Ok(is_conventions_sync_enabled(&conn, &project_key))
+}
+
+#[tauri::command]
+pub fn set_project_conventions_sync(
+    state: State<DbState>,
+    project_key: String,
+    enabled: bool,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    conn.execute(
+        "UPDATE projects SET conventions_sync_enabled = ?1 WHERE key = ?2",
+        params![if enabled { 1i64 } else { 0i64 }, project_key],
+    )?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_project_convention(
     state: State<DbState>,

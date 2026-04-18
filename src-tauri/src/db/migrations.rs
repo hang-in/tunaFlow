@@ -133,6 +133,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 36 {
         apply_v36(conn)?;
     }
+    if current < 37 {
+        apply_v37(conn)?;
+    }
     Ok(())
 }
 
@@ -845,6 +848,17 @@ fn apply_v36(conn: &Connection) -> Result<(), AppError> {
     add_column_if_missing(conn, "trace_log", "cache_read_tokens", "INTEGER DEFAULT 0")?;
     add_column_if_missing(conn, "trace_log", "cache_creation_tokens", "INTEGER DEFAULT 0")?;
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (36, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// v37 — per-project conventions sync toggle. When on, ContextPack skips the
+/// static layers (platform / agent-role / persona / user-profile) because
+/// they've been synced into CLAUDE.md/AGENTS.md/GEMINI.md — they get prepended
+/// automatically by the CLI and (for Anthropic API) benefit from prompt cache.
+/// Default 0 (off) — experimental opt-in. See `conventionsContextSyncPlan.md`.
+fn apply_v37(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "projects", "conventions_sync_enabled", "INTEGER DEFAULT 0")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (37, ?1)", [now_epoch()])?;
     Ok(())
 }
 

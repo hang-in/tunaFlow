@@ -50,6 +50,8 @@ export function ConventionsSection() {
   const [syncing, setSyncing] = useState(false);
   const [report, setReport] = useState<SyncReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncEnabled, setSyncEnabled] = useState<boolean>(false);
+  const [togglingSync, setTogglingSync] = useState(false);
 
   // 새 행 폼
   const [newLayer, setNewLayer] = useState<string>("platform");
@@ -76,6 +78,27 @@ export function ConventionsSection() {
   };
 
   useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectKey, personaFilter]);
+
+  // Load per-project toggle state (Phase 2 — in-app switch replaces env flag)
+  useEffect(() => {
+    if (!projectKey) { setSyncEnabled(false); return; }
+    invoke<boolean>("get_project_conventions_sync", { projectKey })
+      .then(setSyncEnabled)
+      .catch(() => setSyncEnabled(false));
+  }, [projectKey]);
+
+  const handleToggleSync = async (next: boolean) => {
+    if (!projectKey) return;
+    setTogglingSync(true);
+    try {
+      await invoke("set_project_conventions_sync", { projectKey, enabled: next });
+      setSyncEnabled(next);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setTogglingSync(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!projectKey || !newContent.trim()) return;
@@ -139,13 +162,31 @@ export function ConventionsSection() {
       <div>
         <h2 className="text-[14px] font-[550] text-foreground mb-1">Conventions Context Sync</h2>
         <p className="text-[12px] text-muted-foreground mb-2">
-          정적 ContextPack layer를 CLAUDE.md / AGENTS.md / GEMINI.md로 sync합니다.
-          편집 후 "Sync Now" 버튼으로 파일 갱신.
+          정적 ContextPack layer(platform / agent role / persona / user profile)를
+          CLAUDE.md / AGENTS.md / GEMINI.md로 sync 합니다. 편집 후 "Sync Now" 로 파일 갱신.
         </p>
-        <p className="text-[11px] text-amber-600/80">
-          ⚠️ Phase 1 실험. ContextPack에서 정적 layer가 실제로 생략되려면
-          앱을 <code className="px-1 bg-card rounded">TUNAFLOW_CONVENTIONS_SYNC=1</code> 환경변수로 실행하세요.
-        </p>
+        {projectKey && (
+          <label className="flex items-start gap-2 mt-2 p-2 rounded border border-border/50 bg-card/50 cursor-pointer hover:bg-card transition-colors">
+            <input
+              type="checkbox"
+              checked={syncEnabled}
+              onChange={(e) => handleToggleSync(e.target.checked)}
+              disabled={togglingSync}
+              className="mt-0.5"
+            />
+            <div className="flex-1">
+              <div className="text-[12px] font-medium text-foreground">
+                ContextPack 에서 정적 레이어 생략
+                {togglingSync && <Loader2 className="inline-block w-3 h-3 ml-1.5 animate-spin text-muted-foreground" />}
+              </div>
+              <p className="text-[10.5px] text-muted-foreground/80 mt-0.5 leading-relaxed">
+                켜면 매 turn 정적 레이어를 재송신하지 않습니다. CLI 가 CLAUDE.md/AGENTS.md 를
+                자동 prepending 하며 Anthropic API 경로에서는 prompt cache 적중으로 비용 절감.
+                먼저 아래에서 해당 프로젝트의 conventions 를 추가하고 "Sync Now" 로 파일을 만들어야 실제 효과.
+              </p>
+            </div>
+          </label>
+        )}
       </div>
 
       {/* Project + persona filter */}
