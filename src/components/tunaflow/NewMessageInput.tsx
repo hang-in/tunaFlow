@@ -42,6 +42,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   // 첨부 파일 state — 입력창 로컬. 전송 후 자동 clear.
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachBusy, setAttachBusy] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
   const ptySessionId = usePtyStore((s) => s.getSession(engine));
   const [rtMode, setRtMode] = useState<RtMode>("sequential");
   const [ptyRespawning, setPtyRespawning] = useState(false);
@@ -532,7 +533,14 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                 title={`${att.relPath} · ${(att.size / 1024).toFixed(0)}KB`}
               >
                 {att.isImage && att.previewUrl ? (
-                  <img src={att.previewUrl} alt={att.name} className="w-4 h-4 object-cover rounded-sm shrink-0" />
+                  <button
+                    type="button"
+                    onClick={() => setPreviewAttachment(att)}
+                    className="shrink-0 rounded-sm hover:ring-1 hover:ring-primary/40 transition-all"
+                    aria-label={`${att.name} 미리보기`}
+                  >
+                    <img src={att.previewUrl} alt={att.name} className="w-4 h-4 object-cover rounded-sm" />
+                  </button>
                 ) : (
                   <FileText className="w-3 h-3 text-muted-foreground/60 shrink-0" />
                 )}
@@ -587,6 +595,60 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
               : isRoundtable ? (hasRtMessages ? "Next" : "Start") : "Send"}
           </button>
         </div>
+      </div>
+
+      {/* Image preview modal — ESC or backdrop click to close */}
+      {previewAttachment && previewAttachment.isImage && previewAttachment.previewUrl && (
+        <AttachmentPreview
+          attachment={previewAttachment}
+          onClose={() => setPreviewAttachment(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Attachment preview modal ─────────────────────────────────────────────
+
+function AttachmentPreview({
+  attachment,
+  onClose,
+}: {
+  attachment: Attachment;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-[90vw] max-h-[85vh] flex flex-col gap-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={attachment.previewUrl}
+          alt={attachment.name}
+          className="max-w-full max-h-[80vh] object-contain rounded-md shadow-2xl"
+        />
+        <div className="text-center text-[11px] text-muted-foreground/70">
+          {attachment.name} · {attachment.relPath} · {(attachment.size / 1024).toFixed(0)}KB
+        </div>
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 p-1.5 rounded-full bg-background/80 hover:bg-background text-foreground/60 hover:text-foreground transition-colors"
+          aria-label="닫기"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
