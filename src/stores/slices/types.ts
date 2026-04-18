@@ -148,7 +148,7 @@ export interface ChatState {
   closeBranchStream: () => Promise<void>;
   openThread: (branchId: string) => Promise<void>;
   closeThread: () => void;
-  sendThreadMessage: (prompt: string, engine?: string, model?: string) => Promise<void>;
+  sendThreadMessage: (prompt: string, engine?: string, model?: string, opts?: { userMessageId?: string }) => Promise<void>;
   sendThreadRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => Promise<void>;
   sendThreadRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => Promise<void>;
   cancelOperation: (threadId?: string) => Promise<void>;

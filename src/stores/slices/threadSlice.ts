@@ -41,7 +41,7 @@ export interface ThreadSlice {
   openThread: (branchId: string) => Promise<void>;
   closeThread: () => void;
   toggleDrawerPin: () => void;
-  sendThreadMessage: (prompt: string, engine?: string, model?: string) => Promise<void>;
+  sendThreadMessage: (prompt: string, engine?: string, model?: string, opts?: { userMessageId?: string }) => Promise<void>;
   sendThreadRoundtable: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => Promise<void>;
   sendThreadRoundtableFollowup: (prompt: string, participants: RoundtableParticipant[], mode?: RtMode, opts?: { autoSynthesize?: boolean }) => Promise<void>;
 }
@@ -169,16 +169,17 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
     set((state) => ({ drawerPinned: !state.drawerPinned }));
   },
 
-  sendThreadMessage: async (prompt: string, engine?: string, model?: string) => {
+  sendThreadMessage: async (prompt: string, engine?: string, model?: string, opts?: { userMessageId?: string }) => {
     const { threadBranchConvId, threadBranchId, selectedProjectKey } = get();
     if (!threadBranchConvId || !selectedProjectKey || !threadBranchId) return;
     const convId = threadBranchConvId; // narrowed: string (guaranteed by guard above)
     const engineKey = engine ?? "claude";
+    const isSystemFollowup = !!opts?.userMessageId;
 
     // Queue if already running
     if (get().runningThreadIds.includes(convId)) {
       get()._enqueue(convId, prompt.slice(0, 30), () =>
-        get().sendThreadMessage(prompt, engine, model),
+        get().sendThreadMessage(prompt, engine, model, opts),
       );
       return;
     }
@@ -205,7 +206,17 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
                 if (followUp) {
                   const saved = get().getConversationEngine(convId);
                   get()._endRun(convId, { silent: true });
-                  get().sendThreadMessage(followUp, saved?.engine ?? "claude", saved?.model ?? undefined);
+                  // Persist follow-up as system message (auto-generated, not user-typed).
+                  const sysMsgId = await invoke<string>("persist_system_msg", {
+                    conversationId: convId,
+                    content: followUp,
+                  }).catch((e) => { console.warn("[pty-thread] persist_system_msg failed:", e); return null; });
+                  get().sendThreadMessage(
+                    followUp,
+                    saved?.engine ?? "claude",
+                    saved?.model ?? undefined,
+                    sysMsgId ? { userMessageId: sysMsgId } : undefined,
+                  );
                   toolRequestHandled = true;
                 }
               }
@@ -244,7 +255,12 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
     set((state) => ({
       threadMessages: [
         ...state.threadMessages,
-        { id: `temp-user-${now}`, conversationId: convId, role: "user", content: prompt, timestamp: now, status: "done" },
+        // Tool-request auto follow-up 은 사용자가 직접 입력한 게 아니므로
+        // role="system" 으로 구분. `userMessageId` 가 주어지면 백엔드가
+        // persist_system_msg 로 이미 저장한 system 메시지 ID 를 그대로 씀.
+        isSystemFollowup
+          ? { id: opts!.userMessageId!, conversationId: convId, role: "system" as const, content: prompt, timestamp: now, status: "done" as const }
+          : { id: `temp-user-${now}`, conversationId: convId, role: "user" as const, content: prompt, timestamp: now, status: "done" as const },
         { id: `temp-thinking-${now}`, conversationId: convId, role: "assistant", content: "", progressContent: (ENGINE_CONFIGS[engine ?? "claude"] ?? ENGINE_CONFIGS.claude).label, timestamp: now, status: "streaming", engine: (ENGINE_CONFIGS[engine ?? "claude"] ?? ENGINE_CONFIGS.claude).engineKey, model },
       ],
     }));
@@ -267,6 +283,10 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       contextModeOverride: budgetCfg.mode === "auto" ? undefined : budgetCfg.mode,
       contextBudgetCap: budgetCfg.totalCap === 60000 ? undefined : budgetCfg.totalCap,
       userProfileJson: userProfile ? JSON.stringify(userProfile) : undefined,
+      // When this send is a system-followup (tool-request result), the system
+      // message has already been persisted via persist_system_msg → pass the
+      // pre-existing id so Rust skips user-message creation.
+      ...(opts?.userMessageId ? { userMessageId: opts.userMessageId } : {}),
     };
 
     // Event listeners for streaming updates
@@ -315,7 +335,19 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       if (followUp) {
         const saved = get().getConversationEngine(convId);
         get()._endRun(convId, { silent: true });
-        get().sendThreadMessage(followUp, saved?.engine ?? "claude", saved?.model ?? undefined);
+        // Persist follow-up as a system message so UI renders it as
+        // auto-generated (not user-typed) and Rust skips user-message creation.
+        // Matches runtimeSlice.ts:253-270 for the main-chat path.
+        const sysMsgId = await invoke<string>("persist_system_msg", {
+          conversationId: convId,
+          content: followUp,
+        }).catch((e) => { console.warn("[thread] persist_system_msg failed:", e); return null; });
+        get().sendThreadMessage(
+          followUp,
+          saved?.engine ?? "claude",
+          saved?.model ?? undefined,
+          sysMsgId ? { userMessageId: sysMsgId } : undefined,
+        );
         toolRequestHandled = true;
       }
       // Auto-sync implementation subtasks + detect completion
