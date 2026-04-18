@@ -36,6 +36,13 @@ pub struct OnboardingPreviewPayload {
     pub claude_md: String,
     pub ref_index: String,
     pub has_existing_claude_md: bool,
+    /// Optional — meta-agent's initial setup recommendation (agent profiles,
+    /// skills, workflow defaults). May be `None` if the agent omitted the
+    /// [INITIAL_SETUP_*] block or if the JSON inside it was unparseable.
+    /// In that case onboarding falls back to the legacy flow (claude_md +
+    /// ref_index only) — see plan §7 (안전 장치).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_setup: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, Clone)]
@@ -306,6 +313,33 @@ fn build_prompt(
 ## 프롬프트
 - [prompts/index.md](prompts/index.md)
 [REF_INDEX_END]
+
+[INITIAL_SETUP_START]
+{{
+  "agent_profiles": [
+    {{ "role": "architect", "engine": "claude", "model": "claude-opus-4-6", "persona_id": "persona_architect" }},
+    {{ "role": "developer", "engine": "codex",  "model": "gpt-5-codex",     "persona_id": "persona_implementer" }},
+    {{ "role": "reviewer",  "engine": "gemini", "model": "gemini-2.5-pro",  "persona_id": "persona_reviewer" }}
+  ],
+  "skills": ["rust-review", "cargo-test"],
+  "workflow": {{
+    "review_track": "deep",
+    "context_mode": "auto",
+    "rt_participants": ["claude", "codex", "gemini"]
+  }},
+  "rationale": "스택과 프로젝트 성격 기반 추천 근거 1~2문장"
+}}
+[INITIAL_SETUP_END]
+
+### INITIAL_SETUP 작성 규칙
+- **JSON만** 출력. 주석·trailing comma 금지.
+- `persona_id`는 다음 값 중 하나만: `persona_general`, `persona_reviewer`, `persona_tester`, `persona_architect`, `persona_implementer`, `persona_debugger`, `persona_ux_critic`, `persona_meta`.
+- `engine`은 `claude` / `codex` / `gemini` / `ollama` / `lmstudio` 중 설치 가능성이 높은 것만 추천. 확신 없으면 profile 항목에서 생략.
+- `skills`는 사용자가 로드한 `~/.tunaflow/skills/` 레지스트리 이름(kebab-case, e.g. `rust-review`). 모르면 빈 배열 `[]`.
+- `review_track`: `quick` (subtask ≤ 3) 또는 `deep`. `context_mode`: `auto` / `lite` / `standard` / `full`.
+- `rt_participants`는 2~3개 엔진 이름. 1인 프로젝트에서 모델 하나만 추천한다면 빈 배열 허용.
+- `rationale`은 1~2문장으로 간결하게. 추천 근거(스택, 프로젝트 규모 등) 언급.
+- 스택을 전혀 추론하지 못했다면 이 섹션 전체를 빈 객체 `{{}}`로 출력 가능 (건너뜀 처리됨).
 "#,
         project_name = project_name,
         lang = lang,
@@ -321,12 +355,29 @@ fn build_prompt(
 
 // ─── Parse output ────────────────────────────────────────────────────────────
 
-fn parse_output(text: &str) -> Result<(String, String), String> {
+fn parse_output(text: &str) -> Result<(String, String, Option<serde_json::Value>), String> {
     let claude_md = extract_between(text, "[CLAUDE_MD_START]", "[CLAUDE_MD_END]")
         .ok_or("AI 응답에서 CLAUDE.md 섹션을 찾을 수 없습니다")?;
     let ref_index = extract_between(text, "[REF_INDEX_START]", "[REF_INDEX_END]")
         .ok_or("AI 응답에서 Reference Index 섹션을 찾을 수 없습니다")?;
-    Ok((claude_md.trim().to_string(), ref_index.trim().to_string()))
+    // Optional — fail-soft per plan §7. Unparseable/empty JSON → None, which
+    // causes the FE to skip the Initial Setup section entirely.
+    let initial_setup = extract_between(text, "[INITIAL_SETUP_START]", "[INITIAL_SETUP_END]")
+        .and_then(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() { return None; }
+            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(v) => {
+                    // Treat empty-object sentinel `{}` as "no recommendation".
+                    if v.as_object().map(|o| o.is_empty()).unwrap_or(false) { None } else { Some(v) }
+                }
+                Err(e) => {
+                    eprintln!("[onboarding] INITIAL_SETUP parse failed (skipping): {e}");
+                    None
+                }
+            }
+        });
+    Ok((claude_md.trim().to_string(), ref_index.trim().to_string(), initial_setup))
 }
 
 fn extract_between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
@@ -524,13 +575,14 @@ async fn call_ollama(
 }
 
 /// Top-level dispatcher: pick CLI vs HTTP path by engine name.
+#[allow(clippy::too_many_arguments)]
 async fn call_agent(
     engine: &str,
     model: Option<&str>,
     endpoint: Option<&str>,
     prompt: &str,
     cancel: &AtomicBool,
-) -> Result<(String, String), String> {
+) -> Result<(String, String, Option<serde_json::Value>), String> {
     let text = match engine {
         "claude" | "codex" | "gemini" => {
             call_cli_agent(engine, engine, prompt, model, cancel).await?
@@ -605,13 +657,14 @@ pub async fn analyze_project_for_onboarding(
     ).await;
 
     match agent_result {
-        Ok((claude_md, ref_index)) => {
+        Ok((claude_md, ref_index, initial_setup)) => {
             if is_cancelled(&cancel) { clear_cancel_flag(); return Ok(()); }
             emit_step(3, "분석 완료", true);
             app.emit("project:onboarding:preview", OnboardingPreviewPayload {
                 claude_md,
                 ref_index,
                 has_existing_claude_md: has_existing,
+                initial_setup,
             }).ok();
         }
         Err(e) if e == "cancelled" => { /* no-op */ }
@@ -651,4 +704,96 @@ pub fn apply_project_onboarding(
         .map_err(|e| format!("docs/reference/index.md 쓰기 실패: {e}"))?;
 
     Ok(())
+}
+
+// ─── Tests ──────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::parse_output;
+
+    #[test]
+    fn parse_output_legacy_without_initial_setup() {
+        let text = r#"
+[CLAUDE_MD_START]
+# foo
+[CLAUDE_MD_END]
+[REF_INDEX_START]
+# ref
+[REF_INDEX_END]
+"#;
+        let (md, idx, init) = parse_output(text).expect("parse ok");
+        assert_eq!(md, "# foo");
+        assert_eq!(idx, "# ref");
+        assert!(init.is_none());
+    }
+
+    #[test]
+    fn parse_output_with_initial_setup_json() {
+        let text = r#"
+[CLAUDE_MD_START]
+# foo
+[CLAUDE_MD_END]
+[REF_INDEX_START]
+# ref
+[REF_INDEX_END]
+[INITIAL_SETUP_START]
+{
+  "agent_profiles": [
+    { "role": "developer", "engine": "codex", "model": "gpt-5-codex", "persona_id": "persona_implementer" }
+  ],
+  "skills": ["rust-review"],
+  "workflow": { "review_track": "deep", "context_mode": "auto", "rt_participants": ["claude", "codex"] },
+  "rationale": "Rust 프로젝트"
+}
+[INITIAL_SETUP_END]
+"#;
+        let (_md, _idx, init) = parse_output(text).expect("parse ok");
+        let v = init.expect("initial_setup present");
+        assert_eq!(v["skills"][0], "rust-review");
+        assert_eq!(v["workflow"]["review_track"], "deep");
+        assert_eq!(v["agent_profiles"][0]["role"], "developer");
+    }
+
+    #[test]
+    fn parse_output_initial_setup_empty_object_returns_none() {
+        let text = r#"
+[CLAUDE_MD_START]
+a
+[CLAUDE_MD_END]
+[REF_INDEX_START]
+b
+[REF_INDEX_END]
+[INITIAL_SETUP_START]
+{}
+[INITIAL_SETUP_END]
+"#;
+        let (_m, _r, init) = parse_output(text).expect("parse ok");
+        assert!(init.is_none(), "empty object should be treated as skip");
+    }
+
+    #[test]
+    fn parse_output_initial_setup_bad_json_is_ignored() {
+        let text = r#"
+[CLAUDE_MD_START]
+a
+[CLAUDE_MD_END]
+[REF_INDEX_START]
+b
+[REF_INDEX_END]
+[INITIAL_SETUP_START]
+{ this is not json,,, }
+[INITIAL_SETUP_END]
+"#;
+        let (md, idx, init) = parse_output(text).expect("parse still ok because markers OK");
+        assert_eq!(md, "a");
+        assert_eq!(idx, "b");
+        assert!(init.is_none(), "bad JSON should fail-soft to None");
+    }
+
+    #[test]
+    fn parse_output_missing_claude_md_errors() {
+        let text = "[REF_INDEX_START]\nx\n[REF_INDEX_END]\n";
+        assert!(parse_output(text).is_err());
+    }
 }
