@@ -171,8 +171,8 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
-      // Kick off the actual RT run — startReviewRT only scaffolds the branch/config.
-      await sendThreadRoundtable(prompt, participants, mode);
+      // Deep review = ≥2 reviewers → auto-synthesize MoA summary after the round.
+      await sendThreadRoundtable(prompt, participants, mode, { autoSynthesize: true });
     } catch (e) { console.warn("[tunaflow]", e); }
     setBusy(false);
     setReviewMode("idle");

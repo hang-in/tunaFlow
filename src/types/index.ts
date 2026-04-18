@@ -222,6 +222,9 @@ export interface RoundtableRunInput {
   rounds?: number;
   /** Execution mode (default "sequential") */
   mode?: RtMode;
+  /** When true, a synthesizer participant runs after the round to aggregate
+   *  reviewer verdicts. Requires ≥2 reviewer roles; silently skipped otherwise. */
+  autoSynthesize?: boolean;
 }
 
 export interface CreateBranchInput {

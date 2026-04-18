@@ -89,18 +89,57 @@ export async function autoDetectReviewVerdict(shadowConvId: string, messages: Me
     if (!plan || plan.reviewBranchId !== branchId) return;
     if (plan.phase !== "review") return;
 
+    const { scanAllReviewerVerdicts } = await import("@/lib/planProposalParser");
     const { scanMessagesForMarkers, processReviewVerdict } = await import("@/lib/workflowOrchestration");
-    const markers = scanMessagesForMarkers(messages);
-    if (!markers.reviewVerdict) return;
+    const { aggregateReviewVerdicts } = await import("@/lib/aggregateReviewVerdicts");
+
+    // Multi-reviewer path (RT): collect every reviewer verdict, aggregate, and
+    // feed the consensus to processReviewVerdict. Single-reviewer path falls
+    // back to the legacy last-verdict-wins behavior.
+    const all = scanAllReviewerVerdicts(messages);
+    let effectiveVerdict;
+    if (all.length >= 2) {
+      const agg = aggregateReviewVerdicts(all);
+      if (!agg) return;
+      // Flatten aggregate into ParsedReviewVerdict shape for processReviewVerdict.
+      effectiveVerdict = {
+        verdict: agg.verdict,
+        rubric: agg.rubric
+          ? {
+              planCoverage: agg.rubric.planCoverage.mean,
+              codeQuality: agg.rubric.codeQuality.mean,
+              testCoverage: agg.rubric.testCoverage.mean,
+              docQuality: agg.rubric.docQuality.mean,
+              convention: agg.rubric.convention.mean,
+            }
+          : undefined,
+        findings: agg.findings,
+        recommendations: agg.recommendations,
+        failedSubtaskIds: agg.failedSubtaskIds,
+        raw: `aggregated from ${agg.reviewerCount} reviewers (pass=${agg.votes.pass}, fail=${agg.votes.fail}, conditional=${agg.votes.conditional})`,
+      };
+    } else {
+      const markers = scanMessagesForMarkers(messages);
+      if (!markers.reviewVerdict) return;
+      effectiveVerdict = markers.reviewVerdict;
+    }
 
     const { toast } = await import("sonner");
-    const verdict = markers.reviewVerdict.verdict;
-    await processReviewVerdict(plan, markers.reviewVerdict);
+    const verdict = effectiveVerdict.verdict;
+    await processReviewVerdict(plan, effectiveVerdict);
 
     if (verdict === "pass") {
-      toast.success("Review 통과 — Plan 완료 처리됨");
+      toast.success(
+        all.length >= 2
+          ? `Review 통과 — 만장일치 (${all.length} reviewers)`
+          : "Review 통과 — Plan 완료 처리됨",
+      );
     } else if (verdict === "fail") {
-      toast.warning("Review 실패 — Rework 단계로 전환됨");
+      toast.warning(
+        all.length >= 2
+          ? `Review 실패 — ${all.length}명 중 fail 투표 있음 (Rework)`
+          : "Review 실패 — Rework 단계로 전환됨",
+      );
     } else {
       toast.info("Review 조건부 통과 — 사용자 판단 필요");
     }

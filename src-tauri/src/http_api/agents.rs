@@ -199,6 +199,7 @@ pub async fn start_rt_run(
         participants: input.participants,
         rounds: None,
         mode: input.mode,
+        auto_synthesize: None,
     };
 
     let db = state.db.clone();
