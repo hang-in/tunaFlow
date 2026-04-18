@@ -129,6 +129,19 @@ pub fn retrieve_relevant_chunks_with_overlap(
         return Vec::new();
     }
 
+    // Resolve the current conversation's type ('main' / 'scratchpad' / …).
+    // Scratchpad and main chat are semantically different workspaces — a
+    // main-chat user asking "what did I discuss" should NOT get scratchpad
+    // snippets back (pollution) and vice versa. Branch shadow convs inherit
+    // their parent's type. NULL defaults to 'main' for legacy rows.
+    // Explicit cross-type retrieval is still available through the
+    // `tool-request:sessions` marker, which bypasses this filter.
+    let current_type: String = conn.query_row(
+        "SELECT COALESCE(type, 'main') FROM conversations WHERE id = ?1",
+        [_current_conversation_id],
+        |row| row.get(0),
+    ).unwrap_or_else(|_| "main".into());
+
     // Step 1: Broad FTS5 search (fetch more than needed for ranking headroom).
     // Exclude current conversation — its recent context is already loaded via
     // load_recent_messages_with_author(). Including it here re-surfaces old messages
@@ -144,14 +157,15 @@ pub fn retrieve_relevant_chunks_with_overlap(
          WHERE messages_fts MATCH ?1
            AND c.project_key = ?2
            AND m.conversation_id != ?3
+           AND COALESCE(c.type, 'main') = ?4
          ORDER BY rank
-         LIMIT ?4",
+         LIMIT ?5",
     ) else {
         return Vec::new();
     };
 
     let hits: Vec<(String, String, String, i64, f64)> = stmt
-        .query_map(params![fts_query, project_key, _current_conversation_id, fetch_count], |row| {
+        .query_map(params![fts_query, project_key, _current_conversation_id, current_type, fetch_count], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
         })
         .map(|mapped| mapped.filter_map(|r| r.ok()).collect())

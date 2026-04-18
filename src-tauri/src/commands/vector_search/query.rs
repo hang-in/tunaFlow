@@ -7,8 +7,25 @@ use crate::errors::AppError;
 
 use super::{VectorChunk, helpers::{embedding_to_blob, blob_to_embedding, truncate_str}};
 
+/// Resolve the conversation's type for retrieval scoping ('main' / 'scratchpad').
+/// Main chat and scratchpad are separate workspaces — automatic retrieval
+/// should not cross the boundary (see context_queries.rs for rationale).
+fn resolve_conv_type(conn: &Connection, conv_id: &str) -> String {
+    conn.query_row(
+        "SELECT COALESCE(type, 'main') FROM conversations WHERE id = ?1",
+        [conv_id],
+        |row| row.get(0),
+    )
+    .unwrap_or_else(|_| "main".into())
+}
+
 /// Search for similar chunks across a project using sqlite-vec KNN.
 /// Falls back to brute-force cosine if vec0 table is unavailable.
+///
+/// Scoping: results are filtered to chunks whose conversation.type matches
+/// the querying conversation's type. Main-chat queries never match scratchpad
+/// chunks and vice versa. Cross-type retrieval remains available via explicit
+/// `tool-request:sessions` markers.
 pub fn search_similar(
     conn: &Connection,
     query_embedding: &[f32],
@@ -17,15 +34,16 @@ pub fn search_similar(
     limit: usize,
 ) -> Vec<VectorChunk> {
     let query_blob = embedding_to_blob(query_embedding);
+    let current_type = resolve_conv_type(conn, exclude_conv_id);
 
     // Try sqlite-vec KNN first (O(log n) with HNSW index)
-    let results = search_via_vec0(conn, &query_blob, project_key, exclude_conv_id, limit);
+    let results = search_via_vec0(conn, &query_blob, project_key, exclude_conv_id, &current_type, limit);
     if !results.is_empty() {
         return results;
     }
 
     // Fallback: brute-force cosine (for pre-migration databases)
-    search_brute_force(conn, query_embedding, project_key, exclude_conv_id, limit)
+    search_brute_force(conn, query_embedding, project_key, exclude_conv_id, &current_type, limit)
 }
 
 /// KNN search via sqlite-vec vec0 virtual table.
@@ -34,16 +52,19 @@ fn search_via_vec0(
     query_blob: &[u8],
     project_key: &str,
     exclude_conv_id: &str,
+    conv_type: &str,
     limit: usize,
 ) -> Vec<VectorChunk> {
     let sql = "
         SELECT cc.id, cc.conversation_id, cc.kind, cc.text_preview, cc.root_message_id, vc.distance
         FROM vec_chunks vc
         JOIN conversation_chunks cc ON cc.rowid = vc.rowid
+        JOIN conversations c ON c.id = cc.conversation_id
         WHERE vc.embedding MATCH ?1
           AND cc.project_key = ?2
           AND cc.conversation_id != ?3
-          AND vc.k = ?4
+          AND COALESCE(c.type, 'main') = ?4
+          AND vc.k = ?5
         ORDER BY vc.distance
     ";
     let mut stmt = match conn.prepare(sql) {
@@ -56,7 +77,7 @@ fn search_via_vec0(
 
     let fetch_limit = limit * 3; // Over-fetch to account for filtered rows
     let rows: Vec<(String, String, String, String, String, f64)> = stmt
-        .query_map(rusqlite::params![query_blob, project_key, exclude_conv_id, fetch_limit as i64], |row| {
+        .query_map(rusqlite::params![query_blob, project_key, exclude_conv_id, conv_type, fetch_limit as i64], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
         })
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
@@ -85,19 +106,24 @@ fn search_brute_force(
     query_embedding: &[f32],
     project_key: &str,
     exclude_conv_id: &str,
+    conv_type: &str,
     limit: usize,
 ) -> Vec<VectorChunk> {
     let mut stmt = match conn.prepare(
-        "SELECT id, conversation_id, kind, text_preview, embedding, root_message_id
-         FROM conversation_chunks
-         WHERE project_key = ?1 AND conversation_id != ?2 AND embedding IS NOT NULL",
+        "SELECT cc.id, cc.conversation_id, cc.kind, cc.text_preview, cc.embedding, cc.root_message_id
+         FROM conversation_chunks cc
+         JOIN conversations c ON c.id = cc.conversation_id
+         WHERE cc.project_key = ?1
+           AND cc.conversation_id != ?2
+           AND COALESCE(c.type, 'main') = ?3
+           AND cc.embedding IS NOT NULL",
     ) {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
 
     let mut results: Vec<(VectorChunk, String)> = stmt
-        .query_map(rusqlite::params![project_key, exclude_conv_id], |row| {
+        .query_map(rusqlite::params![project_key, exclude_conv_id, conv_type], |row| {
             let id: String = row.get(0)?;
             let conv_id: String = row.get(1)?;
             let kind: String = row.get(2)?;
@@ -211,6 +237,10 @@ mod tests {
                 content TEXT,
                 timestamp INTEGER
             );
+            CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                type TEXT DEFAULT 'main'
+            );
             CREATE VIRTUAL TABLE vec_chunks USING vec0(
                 embedding float[1024] distance_metric=cosine
             );
@@ -244,15 +274,23 @@ mod tests {
             ).unwrap();
         }
 
+        // Populate conversations with type='main' so the type-filter JOIN matches.
+        for i in 0..100i32 {
+            conn.execute(
+                "INSERT OR IGNORE INTO conversations (id, type) VALUES (?1, 'main')",
+                [format!("conv-{}", i)],
+            ).unwrap();
+        }
+
         let query = fake_embedding(42);
         let query_blob = embedding_to_blob(&query);
 
         let t_brute = Instant::now();
-        let brute_results = search_brute_force(&conn, &query, "proj1", "conv-999", 10);
+        let brute_results = search_brute_force(&conn, &query, "proj1", "conv-999", "main", 10);
         let brute_ms = t_brute.elapsed().as_micros();
 
         let t_vec0 = Instant::now();
-        let vec0_results = search_via_vec0(&conn, &query_blob, "proj1", "conv-999", 10);
+        let vec0_results = search_via_vec0(&conn, &query_blob, "proj1", "conv-999", "main", 10);
         let vec0_ms = t_vec0.elapsed().as_micros();
 
         eprintln!("[bench] {} chunks:", n);
@@ -264,5 +302,86 @@ mod tests {
         assert!(!vec0_results.is_empty());
         assert!(brute_results[0].full_text.is_some());
         assert!(vec0_results[0].full_text.is_some());
+    }
+
+    /// Vector retrieval must scope by conversation.type — main-chat queries
+    /// should not pull scratchpad chunks back and vice versa. Session 2026-04-18 s37.
+    #[test]
+    fn type_filter_separates_main_and_scratchpad_in_brute_force() {
+        use rusqlite::Connection;
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("
+            CREATE TABLE conversation_chunks (
+                id TEXT PRIMARY KEY,
+                project_key TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'pair',
+                root_message_id TEXT NOT NULL,
+                text_preview TEXT NOT NULL,
+                embedding BLOB,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT,
+                role TEXT,
+                content TEXT,
+                timestamp INTEGER
+            );
+            CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                type TEXT DEFAULT 'main'
+            );
+        ").unwrap();
+
+        // Two conversations: main-A and scratchpad-B, both in project P.
+        conn.execute("INSERT INTO conversations (id, type) VALUES ('main-A', 'main')", []).unwrap();
+        conn.execute("INSERT INTO conversations (id, type) VALUES ('scratch-B', 'scratchpad')", []).unwrap();
+
+        let emb = fake_embedding(100);
+        let blob = embedding_to_blob(&emb);
+
+        // Chunk in main-A (matches query seed)
+        conn.execute("INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES ('m1','main-A','assistant','main text',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO conversation_chunks (id, project_key, conversation_id, kind, root_message_id, text_preview, embedding, created_at)
+             VALUES ('c1','P','main-A','pair','m1','main preview',?1,0)",
+            [&blob],
+        ).unwrap();
+
+        // Chunk in scratchpad-B (same embedding, so similarity score would be high if retrieved)
+        conn.execute("INSERT INTO messages (id, conversation_id, role, content, timestamp) VALUES ('m2','scratch-B','assistant','scratch text',0)", []).unwrap();
+        conn.execute(
+            "INSERT INTO conversation_chunks (id, project_key, conversation_id, kind, root_message_id, text_preview, embedding, created_at)
+             VALUES ('c2','P','scratch-B','pair','m2','scratch preview',?1,0)",
+            [&blob],
+        ).unwrap();
+
+        // Query from a different main conv — should ONLY return main-A, not scratchpad-B.
+        conn.execute("INSERT INTO conversations (id, type) VALUES ('main-C', 'main')", []).unwrap();
+        let main_results = search_brute_force(&conn, &emb, "P", "main-C", "main", 10);
+        assert_eq!(main_results.len(), 1);
+        assert_eq!(main_results[0].conversation_id, "main-A");
+
+        // Query from a different scratchpad conv — should ONLY return scratch-B.
+        conn.execute("INSERT INTO conversations (id, type) VALUES ('scratch-D', 'scratchpad')", []).unwrap();
+        let scratch_results = search_brute_force(&conn, &emb, "P", "scratch-D", "scratchpad", 10);
+        assert_eq!(scratch_results.len(), 1);
+        assert_eq!(scratch_results[0].conversation_id, "scratch-B");
+    }
+
+    #[test]
+    fn resolve_conv_type_defaults_to_main_when_missing() {
+        use rusqlite::Connection;
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE conversations (id TEXT PRIMARY KEY, type TEXT);").unwrap();
+        // Missing row → default 'main'
+        assert_eq!(resolve_conv_type(&conn, "nonexistent"), "main");
+        // NULL type → default 'main' via COALESCE
+        conn.execute("INSERT INTO conversations (id, type) VALUES ('legacy', NULL)", []).unwrap();
+        assert_eq!(resolve_conv_type(&conn, "legacy"), "main");
+        // Explicit type
+        conn.execute("INSERT INTO conversations (id, type) VALUES ('sc', 'scratchpad')", []).unwrap();
+        assert_eq!(resolve_conv_type(&conn, "sc"), "scratchpad");
     }
 }
