@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "description": "Retrieval golden set — (question, expected messages) pairs for regression testing. Populate with real conversation IDs from your local DB. See README.md for curation guidance.",
+  "entries": [
+    {
+      "id": "example_1",
+      "question": "이전에 언급했던 refactoring 얘기가 어디에 있지?",
+      "context": {
+        "conversation_id": "REPLACE_WITH_REAL_CONVERSATION_ID"
+      },
+      "expected_message_ids": [
+        "REPLACE_WITH_MESSAGE_ID_1",
+        "REPLACE_WITH_MESSAGE_ID_2"
+      ],
+      "notes": "사용자가 과거 대화 찾는 기본 패턴. expected 는 실제로 해당 내용이 있는 메시지 ID 를 손으로 선정."
+    }
+  ]
+}

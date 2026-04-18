@@ -7,6 +7,12 @@ edition = "2021"
 name = "tuna_flow_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# CLI evaluation harness — manually invoked, not part of the Tauri bundle.
+# Usage: `cargo run --release --bin eval_retrieval -- --db <path> --set <json>`
+[[bin]]
+name = "eval_retrieval"
+path = "src/bin/eval_retrieval.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
