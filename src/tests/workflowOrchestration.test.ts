@@ -396,7 +396,7 @@ describe("startReviewRT", () => {
     // RT config should include both engines
     const saveCall = (invoke as any).mock.calls.find((c: string[]) => c[0] === "save_rt_config");
     expect(saveCall).toBeDefined();
-    const config = JSON.parse(saveCall[1].config);
+    const config = JSON.parse(saveCall[1].configJson);
     expect(config.participants.length).toBe(2);
     expect(config.participants[0].engine).toBe("gemini");
     expect(config.participants[1].engine).toBe("ollama");

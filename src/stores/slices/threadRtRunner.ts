@@ -22,17 +22,8 @@ export async function runThreadRoundtable(
   opts?: { autoSynthesize?: boolean },
 ): Promise<void> {
   const { threadBranchConvId } = get();
-  console.log("[rt-debug] runThreadRoundtable entry", {
-    command, threadBranchConvId,
-    participants: participants.length,
-    mode, autoSynthesize: opts?.autoSynthesize,
-  });
-  if (!threadBranchConvId) {
-    console.warn("[rt-debug] runThreadRoundtable EARLY RETURN — threadBranchConvId null");
-    return;
-  }
+  if (!threadBranchConvId) return;
   if (get().runningThreadIds.includes(threadBranchConvId)) {
-    console.log("[rt-debug] runThreadRoundtable ENQUEUED (already running)");
     get()._enqueue(threadBranchConvId, prompt.slice(0, 30), () =>
       command === "start_roundtable_run"
         ? get().sendThreadRoundtable(prompt, participants, mode, opts)
@@ -41,7 +32,6 @@ export async function runThreadRoundtable(
     return;
   }
   get()._startRun(threadBranchConvId);
-  console.log("[rt-debug] runThreadRoundtable _startRun called");
   const now = Date.now();
   set((state) => ({
     threadMessages: [
@@ -150,11 +140,8 @@ export async function runThreadRoundtable(
   });
 
   try {
-    console.log("[rt-debug] invoking Rust command", command);
-    const result = await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode, autoSynthesize: opts?.autoSynthesize } });
-    console.log("[rt-debug] Rust command returned", result);
+    await invoke<{ messageId: string }>(command, { input: { conversationId: threadBranchConvId, prompt, participants, mode, autoSynthesize: opts?.autoSynthesize } });
   } catch (e) {
-    console.error("[rt-debug] Rust command FAILED", e);
     cleanup();
     set({ error: errorMessage(e), rtParticipantStatuses: new Map(), rtStatusConversationId: null });
     get()._endRun(threadBranchConvId);

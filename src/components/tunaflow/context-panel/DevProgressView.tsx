@@ -167,24 +167,13 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       } catch (e) { console.debug("[test-before-review-rt]", e); }
 
       const engines = chosenProfiles.map((p) => p.engine);
-      console.log("[rt-debug] startReviewRT begin", { planId: plan.id, engines });
       const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, engines);
-      console.log("[rt-debug] startReviewRT done", { branchId: branch.id, participants, mode, promptLen: prompt.length });
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
       await loadBranches(plan.conversationId);
-      console.log("[rt-debug] openThread begin", { branchId: branch.id });
       await openThread(branch.id);
-      console.log("[rt-debug] openThread done", {
-        threadBranchId: useChatStore.getState().threadBranchId,
-        threadBranchConvId: useChatStore.getState().threadBranchConvId,
-      });
       // Deep review = ≥2 reviewers → auto-synthesize MoA summary after the round.
-      console.log("[rt-debug] sendThreadRoundtable begin");
       await sendThreadRoundtable(prompt, participants, mode, { autoSynthesize: true });
-      console.log("[rt-debug] sendThreadRoundtable done", {
-        runningThreadIds: useChatStore.getState().runningThreadIds,
-      });
-    } catch (e) { console.error("[rt-debug] startReviewRT/sendThreadRoundtable FAILED", e); }
+    } catch (e) { console.warn("[tunaflow]", e); }
     setBusy(false);
     setReviewMode("idle");
   };

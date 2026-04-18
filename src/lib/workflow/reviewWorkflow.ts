@@ -127,7 +127,10 @@ export async function startReviewRT(
 
   const mode = "sequential" as const;
   const rtConfig = JSON.stringify({ participants, mode });
-  await invoke("save_rt_config", { conversationId: shadowConvId, config: rtConfig });
+  // Tauri camelCase: Rust 의 `config_json: String` 은 FE 에서 `configJson` 으로 호출.
+  // 이전엔 `config` 로 잘못 보내 invoke 가 실패하며 save_rt_config 가 no-op 되고
+  // Review RT 진입 자체가 throw 되던 버그. s37 재현 로그로 특정.
+  await invoke("save_rt_config", { conversationId: shadowConvId, configJson: rtConfig });
 
   // NOTE: RT execution is the caller's responsibility.
   // After this returns, the caller should call openThread(branch.id) then
