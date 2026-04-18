@@ -274,9 +274,11 @@ export function AppShell() {
           ) : drawerOpen ? (
             /* Overlay mode — edge-grab resize, no visible line */
             <>
-              {/* Backdrop — covers main area only, fade in */}
+              {/* Backdrop — covers main area only, fade in.
+                  \`bg-black/8\` 은 거의 투명 수준이라 드로어 열릴 때 뒤쪽 메인
+                  영역이 "색이 급변하는" 인상을 줬음. 명확히 dim 되는 수준으로 강화. (s37) */}
               <div
-                className="absolute inset-0 z-40 bg-black/8"
+                className="absolute inset-0 z-40 bg-black/30"
                 style={{ animation: "fade-in 200ms ease-out" }}
                 onClick={() => useChatStore.getState().closeThread()}
               />
