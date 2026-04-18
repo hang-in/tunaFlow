@@ -383,7 +383,7 @@ function StuckRecoveryButton({ convId }: { convId: string | null }) {
     try {
       const msgs = await invoke<Message[]>("list_messages", { conversationId: convId });
       useChatStore.setState({ threadMessages: msgs });
-      useChatStore.getState()._endRun(convId);
+      useChatStore.getState()._endRun(convId, { silent: true });
     } catch (e) {
       console.error("[recovery]", e);
     } finally {

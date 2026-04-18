@@ -143,7 +143,7 @@ export function RuntimeStatusBar() {
         if (orphans.length > 0) {
           console.warn("[orphan-recovery] Clearing stale runningThreadIds:", orphans);
           for (const id of orphans) {
-            useChatStore.getState()._endRun(id);
+            useChatStore.getState()._endRun(id, { silent: true });
           }
           // Reload current conversation messages to clear "streaming" status
           const convId = useChatStore.getState().selectedConversationId;

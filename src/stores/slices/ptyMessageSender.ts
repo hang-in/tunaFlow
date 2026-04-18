@@ -373,8 +373,10 @@ export async function sendMessageViaPty(
 
               // Post-completion handling
               if (opts.onCompleted) {
+                // onCompleted callbacks (e.g. threadSlice) issue their own notify;
+                // pass silent:true to prevent _endRun from double-notifying.
                 const handled = await opts.onCompleted(savedMsg, result.text);
-                if (!handled) get()._endRun(conversationId);
+                if (!handled) get()._endRun(conversationId, { silent: true });
               } else {
                 // Default: scan markers + notify
                 if (result.text) {

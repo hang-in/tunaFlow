@@ -18,7 +18,7 @@ interface DevProgressViewProps {
 }
 
 export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
-  const { openThread, sendThreadMessage, loadBranches, saveConversationEngine } = useChatStore();
+  const { openThread, sendThreadMessage, sendThreadRoundtable, loadBranches, saveConversationEngine } = useChatStore();
   const profiles = useChatStore((s) => s.agentProfiles);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
 
@@ -167,10 +167,12 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       } catch (e) { console.debug("[test-before-review-rt]", e); }
 
       const engines = chosenProfiles.map((p) => p.engine);
-      const { branch } = await startReviewRT(plan, msgs, testOutput, engines);
+      const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, engines);
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
+      // Kick off the actual RT run — startReviewRT only scaffolds the branch/config.
+      await sendThreadRoundtable(prompt, participants, mode);
     } catch (e) { console.warn("[tunaflow]", e); }
     setBusy(false);
     setReviewMode("idle");

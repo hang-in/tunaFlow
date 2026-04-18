@@ -204,7 +204,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
                 const followUp = await handleToolRequests(savedMsg.role === "assistant" ? { ...savedMsg, content: text } : savedMsg);
                 if (followUp) {
                   const saved = get().getConversationEngine(convId);
-                  get()._endRun(convId);
+                  get()._endRun(convId, { silent: true });
                   get().sendThreadMessage(followUp, saved?.engine ?? "claude", saved?.model ?? undefined);
                   toolRequestHandled = true;
                 }
@@ -314,7 +314,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       const followUp = await handleToolRequests(lastMsg);
       if (followUp) {
         const saved = get().getConversationEngine(convId);
-        get()._endRun(convId);
+        get()._endRun(convId, { silent: true });
         get().sendThreadMessage(followUp, saved?.engine ?? "claude", saved?.model ?? undefined);
         toolRequestHandled = true;
       }
@@ -334,7 +334,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
           preview: lastAsst?.content?.replace(/\n+/g, " ").slice(0, 80),
         });
       }).catch((e) => console.debug("[notify:completed]", e));
-      if (!toolRequestHandled) get()._endRun(convId);
+      if (!toolRequestHandled) get()._endRun(convId, { silent: true });
     });
     const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
       if (e.payload.conversationId !== convId) return;

@@ -118,7 +118,7 @@ export async function runThreadRoundtable(
       });
     }).catch((e) => console.debug("[notify:rt-completed]", e));
     setTimeout(() => set({ rtParticipantStatuses: new Map(), rtStatusConversationId: null }), 2000);
-    get()._endRun(threadBranchConvId);
+    get()._endRun(threadBranchConvId, { silent: true });
   });
   const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
     if (e.payload.conversationId !== threadBranchConvId) return;

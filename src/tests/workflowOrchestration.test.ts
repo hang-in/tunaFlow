@@ -351,7 +351,7 @@ describe("startReviewBranch", () => {
 // ─── startReviewRT ──────────────────────────────────────────────────────
 
 describe("startReviewRT", () => {
-  it("creates RT branch with reviewer participants", async () => {
+  it("creates RT branch with reviewer participants and returns runnable config", async () => {
     const implMsgs: Message[] = [
       { id: "m1", conversationId: "c1", role: "assistant", content: "implemented X", timestamp: 0, status: "done" },
     ];
@@ -367,11 +367,17 @@ describe("startReviewRT", () => {
       }),
     }));
     expect(invoke).toHaveBeenCalledWith("save_rt_config", expect.any(Object));
+    // Caller is responsible for running RT — startReviewRT must NOT pre-create
+    // a user message (sendThreadRoundtable persists the prompt itself).
+    expect(invoke).not.toHaveBeenCalledWith("create_user_message", expect.any(Object));
     expect(result.branch.id).toBe("br-1");
+    expect(result.participants.length).toBeGreaterThanOrEqual(2);
+    expect(result.prompt).toContain("코드 리뷰어");
+    expect(result.mode).toBe("sequential");
   });
 
   it("uses custom reviewer engines", async () => {
-    await startReviewRT(mockPlan, [], undefined, ["gemini", "ollama"]);
+    const result = await startReviewRT(mockPlan, [], undefined, ["gemini", "ollama"]);
 
     // RT config should include both engines
     const saveCall = (invoke as any).mock.calls.find((c: string[]) => c[0] === "save_rt_config");
@@ -380,5 +386,7 @@ describe("startReviewRT", () => {
     expect(config.participants.length).toBe(2);
     expect(config.participants[0].engine).toBe("gemini");
     expect(config.participants[1].engine).toBe("ollama");
+    // Returned participants should match
+    expect(result.participants.map((p) => p.engine)).toEqual(["gemini", "ollama"]);
   });
 });

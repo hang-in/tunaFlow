@@ -26,12 +26,18 @@ export type { CreateBranchResult };
 
 // ─── Phase D→E: impl-complete → Start Review RT ───────────────────────────
 
+export interface StartReviewRTResult extends CreateBranchResult {
+  participants: RoundtableParticipant[];
+  prompt: string;
+  mode: "sequential";
+}
+
 export async function startReviewRT(
   plan: Plan,
   implMessages: Message[],
   testOutput?: string,
   reviewerEngines?: string[],
-): Promise<CreateBranchResult> {
+): Promise<StartReviewRTResult> {
   await planApi.updatePlanPhase(plan.id, "review");
   await planApi.createPlanEvent(plan.id, "impl_completed", "developer");
 
@@ -119,12 +125,17 @@ export async function startReviewRT(
     role: "reviewer" as const,
   }));
 
-  const rtConfig = JSON.stringify({ participants, mode: "sequential" });
+  const mode = "sequential" as const;
+  const rtConfig = JSON.stringify({ participants, mode });
   await invoke("save_rt_config", { conversationId: shadowConvId, config: rtConfig });
 
-  await invoke("create_user_message", { input: { conversationId: shadowConvId, content: prompt } });
-
-  return { branch, shadowConvId };
+  // NOTE: RT execution is the caller's responsibility.
+  // After this returns, the caller should call openThread(branch.id) then
+  // sendThreadRoundtable(prompt, participants, mode) to actually run the review.
+  // We intentionally do NOT create a user_message here — sendThreadRoundtable
+  // persists the prompt as the user message itself, and pre-seeding it would
+  // cause a duplicate prompt in the branch.
+  return { branch, shadowConvId, participants, prompt, mode };
 }
 
 // ─── Phase E: Process review verdict ──────────────────────────────────────

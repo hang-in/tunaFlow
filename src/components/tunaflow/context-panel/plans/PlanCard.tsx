@@ -37,7 +37,7 @@ export function PlanCard({
   onSwitchToChat?: () => void;
   defaultExpanded?: boolean;
 }) {
-  const { sendFollowup, setHandoffSource, branches, openThread, loadBranches, runningThreadIds } = useChatStore();
+  const { sendFollowup, setHandoffSource, branches, openThread, sendThreadRoundtable, loadBranches, runningThreadIds } = useChatStore();
   const [plan, setPlan] = useState(initialPlan);
   // Sync local plan state when parent re-renders with updated plan (e.g., auto-detect verdict)
   useEffect(() => {
@@ -292,10 +292,11 @@ export function PlanCard({
                             }
                           }
                         } catch (e) { console.debug("[test-before-review]", e); }
-                        const { branch } = await startReviewRT(plan, msgs, testOutput);
+                        const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput);
                         handlePlanUpdate({ phase: "review", reviewBranchId: branch.id });
                         await loadBranches(plan.conversationId);
                         await openThread(branch.id);
+                        await sendThreadRoundtable(prompt, participants, mode);
                       }}
                       className="ml-auto px-2 py-0.5 rounded text-[9px] font-medium bg-status-approved/20 hover:bg-status-approved/30 transition-colors"
                     >

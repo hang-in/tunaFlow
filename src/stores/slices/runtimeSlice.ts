@@ -39,7 +39,7 @@ export interface RuntimeSlice {
   messageQueue: QueuedAction[];
   error: string | null;
   _startRun: (threadId: string) => void;
-  _endRun: (threadId: string) => void;
+  _endRun: (threadId: string, opts?: { silent?: boolean }) => void;
   _enqueue: (threadId: string, label: string, execute: () => Promise<void>) => void;
   cancelOperation: (threadId?: string) => Promise<void>;
   sendMessage: (prompt: string, model?: string, systemPrompt?: string) => Promise<void>;
@@ -64,13 +64,14 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     }));
   },
 
-  _endRun: (threadId: string) => {
+  _endRun: (threadId: string, opts?: { silent?: boolean }) => {
     set((state) => {
       const next = state.runningThreadIds.filter((id) => id !== threadId);
       return { runningThreadIds: next };
     });
-    // Notify completion — skip if error was set (error handler sends its own notification)
-    if (!get().error) {
+    // Notify completion — skip if error was set (error handler sends its own notification),
+    // or if caller already notified (silent: true) to prevent double-notification.
+    if (!get().error && !opts?.silent) {
       import("@/stores/notificationStore").then(({ notify }) => {
         const state = get();
         const conv = state.conversations.find((c) => c.id === threadId);

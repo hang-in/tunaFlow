@@ -120,7 +120,7 @@ export interface ChatState {
 
   setHandoffSource: (source: { type: string; content: string } | null) => void;
   _startRun: (threadId: string) => void;
-  _endRun: (threadId: string) => void;
+  _endRun: (threadId: string, opts?: { silent?: boolean }) => void;
   _enqueue: (threadId: string, label: string, execute: () => Promise<void>) => void;
   loadProjects: () => Promise<void>;
   loadEngineModels: (refresh?: boolean) => Promise<void>;
