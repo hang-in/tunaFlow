@@ -130,6 +130,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 35 {
         apply_v35(conn)?;
     }
+    if current < 36 {
+        apply_v36(conn)?;
+    }
     Ok(())
 }
 
@@ -829,6 +832,19 @@ fn apply_v35(conn: &Connection) -> Result<(), AppError> {
     add_column_if_missing(conn, "trace_log", "cache_read_tokens", "INTEGER DEFAULT 0")?;
     add_column_if_missing(conn, "trace_log", "cache_creation_tokens", "INTEGER DEFAULT 0")?;
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (35, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// v36 — defensive repair for users whose DB ended up at schema_version=35
+/// but with missing `cache_read_tokens` / `cache_creation_tokens` columns
+/// (seen in the wild after DB backup/restore mishap). `add_column_if_missing`
+/// is idempotent, so running this is a no-op on correctly-migrated DBs.
+/// Without this, `list_traces` SELECT fails with "no such column" and the
+/// FE silently shows "No trace data yet" — see session 2026-04-18 s37.
+fn apply_v36(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "trace_log", "cache_read_tokens", "INTEGER DEFAULT 0")?;
+    add_column_if_missing(conn, "trace_log", "cache_creation_tokens", "INTEGER DEFAULT 0")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (36, ?1)", [now_epoch()])?;
     Ok(())
 }
 
