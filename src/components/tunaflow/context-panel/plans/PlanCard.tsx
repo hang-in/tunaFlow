@@ -324,7 +324,27 @@ export function PlanCard({
                 {!reviewVerdict && !runningThreadIds.includes(`branch:${plan.reviewBranchId}`) && (
                   <div className="mt-2 rounded-md border border-muted/40 bg-muted/5 p-2.5 space-y-1.5">
                     <p className="text-[9px] text-muted-foreground/60">리뷰어 마커가 감지되지 않았습니다. 수동으로 판단하세요.</p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={async () => {
+                          // Review 진입 자체가 실패한 경우 — 한 단계 전(dev 완료 상태)으로 되돌려
+                          // 사용자가 Review RT 를 다시 시작할 수 있게 한다. 기존 review 브랜치는
+                          // archive (재사용되지 않고 다음 시작 시 새 브랜치 생성됨). s37
+                          if (plan.reviewBranchId) {
+                            await invoke("archive_branch", { id: plan.reviewBranchId }).catch(() => {});
+                          }
+                          await planApi.updatePlanPhase(plan.id, "implementation");
+                          await planApi.createPlanEvent(
+                            plan.id, "review_rolled_back", "user",
+                            "Review 진입 실패로 Dev 단계 복귀",
+                          );
+                          handlePlanUpdate({ phase: "implementation" });
+                        }}
+                        className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                        title="Review RT 진입이 실패했을 때 Dev 완료 상태로 되돌립니다. 기존 review 브랜치는 archive."
+                      >
+                        ← Dev 단계로 복귀 (Review 재시도)
+                      </button>
                       <button
                         onClick={async () => {
                           await planApi.updatePlanPhase(plan.id, "rework");
