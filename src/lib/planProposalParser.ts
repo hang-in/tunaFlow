@@ -17,15 +17,61 @@ import { PlanProposalSchema } from "@/lib/schemas/planProposal";
 import { ImplPlanSchema } from "@/lib/schemas/implPlan";
 import { ReviewVerdictSchema } from "@/lib/schemas/reviewVerdict";
 
+/** Revision 시 아키텍트가 subtask 상세에 적는 파일 처리 방침. PR-3. */
+export interface FileDispositions {
+  keep: string[];
+  modify: string[];
+  revert: string[];
+}
+
 export interface ParsedPlanProposal {
   title: string;
   description: string;
   expectedOutcome: string;
-  subtasks: { title: string; details?: string }[];
+  subtasks: { title: string; details?: string; dispositions?: FileDispositions }[];
   constraints: string[];
   nonGoals: string[];
   /** Raw markdown inside the marker (for display) */
   raw: string;
+}
+
+/** subtask details 안의 `**File disposition**:` 블록을 파싱.
+ *  형식:
+ *    **File disposition**:
+ *    - Keep: src/a.ts — 이유
+ *    - Modify: src/b.ts — 이유
+ *    - Revert: src/c.ts — 이유
+ *  파일 경로만 추출 (이유 부분은 무시). 블록이 없으면 undefined 반환.
+ */
+export function parseFileDispositions(details: string): FileDispositions | undefined {
+  if (!details) return undefined;
+  const markerIdx = details.search(/\*\*file\s+disposition\*\*:/i);
+  if (markerIdx === -1) return undefined;
+  const body = details.slice(markerIdx);
+  const out: FileDispositions = { keep: [], modify: [], revert: [] };
+  for (const rawLine of body.split("\n")) {
+    const m = rawLine.match(/^\s*-\s*(keep|modify|revert)\s*:\s*`?([^\s`—-]+)`?/i);
+    if (!m) continue;
+    const kind = m[1].toLowerCase() as "keep" | "modify" | "revert";
+    const path = m[2].trim();
+    if (path && !out[kind].includes(path)) out[kind].push(path);
+  }
+  const total = out.keep.length + out.modify.length + out.revert.length;
+  return total > 0 ? out : undefined;
+}
+
+/** subtask 전체의 dispositions 을 union 으로 합친다 (overwrite 시 전체 안내용). */
+export function mergeDispositions(subtasks: ParsedPlanProposal["subtasks"]): FileDispositions {
+  const out: FileDispositions = { keep: [], modify: [], revert: [] };
+  for (const st of subtasks) {
+    if (!st.dispositions) continue;
+    for (const kind of ["keep", "modify", "revert"] as const) {
+      for (const p of st.dispositions[kind]) {
+        if (!out[kind].includes(p)) out[kind].push(p);
+      }
+    }
+  }
+  return out;
 }
 
 export type ContentSegment =
@@ -135,6 +181,14 @@ function parseProposalBody(raw: string): ParsedPlanProposal {
   // 4) Fallback: subtasks still empty — extract from "### Task NN — Title" section headers
   if (result.subtasks.length === 0) {
     result.subtasks = extractSubtasksFromTaskSections(sections);
+  }
+
+  // 5) PR-3: subtask details 내부의 **File disposition** 블록을 파싱해 연결.
+  for (const st of result.subtasks) {
+    if (st.details) {
+      const d = parseFileDispositions(st.details);
+      if (d) st.dispositions = d;
+    }
   }
 
   // Validate against schema
@@ -527,13 +581,19 @@ export function extractReviewVerdict(content: string): ParsedReviewVerdict | nul
  *   in roundtable.rs).
  * - Each returned item includes the `reviewerName` for UI display.
  */
+/** 리뷰 브랜치 재사용(A안) 으로 같은 브랜치에 N차 라운드 verdict 가 누적되므로,
+ *  `sinceTimestamp` 를 주면 해당 timestamp 이후의 verdict 만 수집한다. 보통 마지막
+ *  `review_started` plan event timestamp 를 넘겨서 **현재 라운드** 만 집계되도록 한다.
+ *  전달 안 하면 legacy 동작 (전체 스캔). */
 export function scanAllReviewerVerdicts(
   messages: import("@/types").Message[],
+  sinceTimestamp?: number,
 ): Array<ParsedReviewVerdict & { reviewerName?: string }> {
   const out: Array<ParsedReviewVerdict & { reviewerName?: string }> = [];
   for (const m of messages) {
     if (m.role !== "assistant") continue;
     if (m.persona === "Synthesizer") continue;
+    if (sinceTimestamp !== undefined && m.timestamp < sinceTimestamp) continue;
     if (!hasReviewVerdict(m.content)) continue;
     const v = extractReviewVerdict(m.content);
     if (v) out.push({ ...v, reviewerName: m.persona });
@@ -544,7 +604,7 @@ export function scanAllReviewerVerdicts(
 // ─── Tool request markers ──────────────────────────────────────────────────
 
 export interface ToolRequest {
-  type: "docs" | "rawq" | "graph" | "plans" | "memory" | "sessions" | "skills" | "artifacts" | "lessons" | "insight-update" | "insight";
+  type: "docs" | "rawq" | "graph" | "plans" | "memory" | "sessions" | "skills" | "artifacts" | "lessons" | "insight-update" | "insight" | "recent_turns";
   query: string;
 }
 
@@ -552,7 +612,7 @@ const TOOL_REQUEST_RE = /<!--\s*tunaflow:tool-request:([\w-]+):(.+?)\s*-->/g;
 
 const VALID_TOOL_REQUEST_TYPES = [
   "docs", "rawq", "graph", "plans", "memory", "sessions", "skills",
-  "artifacts", "lessons", "insight-update", "insight",
+  "artifacts", "lessons", "insight-update", "insight", "recent_turns",
 ] as const;
 
 /** Extract all tool-request markers from a message. */

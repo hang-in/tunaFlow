@@ -113,14 +113,33 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     await get().sendWithEngine("claude", prompt, model, systemPrompt);
   },
 
-  sendWithEngine: async (engine: string, prompt: string, model?: string, systemPrompt?: string, opts?: { userMessageId?: string }) => {
+  sendWithEngine: async (engine: string, prompt: string, model?: string, systemPrompt?: string, opts?: { userMessageId?: string; imagePaths?: string[] }) => {
     const { selectedProjectKey, selectedConversationId, runningThreadIds } = get();
     if (!selectedProjectKey || !selectedConversationId) return;
+
+    // model 방어선 — 호출부에서 인자를 잊어도 backend 가 model=None 으로 빠져
+    // codex app-server 400 등이 나지 않도록 store 레벨에서 폴백. 우선순위:
+    //   1) 같은 engine 으로 이 대화에 저장된 _convEngineMap[conv].model
+    //   2) agentProfiles 에서 engine 매칭되는 첫 프로필의 model
+    // 둘 다 없으면 그대로 undefined 전달(경고 로그 1회).
+    if (!model) {
+      const state = get();
+      const saved = state._convEngineMap[selectedConversationId];
+      if (saved?.engine === engine && saved?.model) {
+        model = saved.model;
+      } else {
+        const prof = state.agentProfiles.find((p) => p.engine === engine && p.model);
+        if (prof?.model) model = prof.model;
+      }
+      if (!model) {
+        console.warn(`[sendWithEngine] model unresolved for engine=${engine} conv=${selectedConversationId.slice(0, 12)}…`);
+      }
+    }
 
     // Queue if already running
     if (runningThreadIds.includes(selectedConversationId)) {
       get()._enqueue(selectedConversationId, prompt.slice(0, 30), () =>
-        get().sendWithEngine(engine, prompt, model, systemPrompt),
+        get().sendWithEngine(engine, prompt, model, systemPrompt, opts),
       );
       return;
     }
@@ -319,6 +338,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         personaLabel: get().personaLabel ?? undefined,
         userProfileJson: userProfile ? JSON.stringify(userProfile) : undefined,
         ...(opts?.userMessageId ? { userMessageId: opts.userMessageId } : {}),
+        ...(opts?.imagePaths && opts.imagePaths.length > 0 ? { imagePaths: opts.imagePaths } : {}),
         ...bo,
       };
       await invoke<{ messageId: string }>(config.command, { input });

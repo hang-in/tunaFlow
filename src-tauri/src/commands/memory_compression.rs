@@ -519,6 +519,7 @@ pub fn compress_memory_blocking(db: &crate::db::DbState, conversation_id: &str) 
                     system_prompt: None,
                     resume_token: None,
                     project_path: None,
+                    image_paths: Vec::new(),
                 };
                 return std::thread::scope(|_| {
                     handle.block_on(async {
@@ -534,6 +535,7 @@ pub fn compress_memory_blocking(db: &crate::db::DbState, conversation_id: &str) 
             system_prompt: None,
             resume_token: None,
             project_path: None,
+            image_paths: Vec::new(),
         })
     };
     let result = run_compression();

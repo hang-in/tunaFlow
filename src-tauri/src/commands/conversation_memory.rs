@@ -132,6 +132,60 @@ pub fn list_memory_topics(
     Ok(load_compressed_memory_topics(&conn, &conversation_id))
 }
 
+/// Tauri command: 현재 conversation 의 최근 user/assistant turn 을 **전문** 반환.
+/// tool-request:recent_turns 경로에서 사용. memory (요약본) / conversation_chunks (현재
+/// conv 제외) 가 커버하지 못하는 "직전 turn 단기 공백" 을 메우는 도구.
+///
+/// - `N` 은 1..=10 으로 clamp (너무 큰 값은 context bloat)
+/// - system 메시지 제외 (tool 결과 등은 잡음)
+/// - content 전문 반환. 각 메시지 최대 4000자까지 (그 이상은 tail 자름)
+/// - `[role:persona (engine)]` 라벨 포함
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentTurn {
+    pub role: String,
+    pub persona: Option<String>,
+    pub engine: Option<String>,
+    pub content: String,
+    pub timestamp: i64,
+}
+
+const RECENT_TURN_MAX_CHARS: usize = 4_000;
+
+#[tauri::command]
+pub fn list_recent_turns(
+    conversation_id: String,
+    n: Option<i64>,
+    state: tauri::State<crate::db::DbState>,
+) -> Result<Vec<RecentTurn>, AppError> {
+    let limit = n.unwrap_or(3).clamp(1, 10);
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let mut stmt = conn.prepare(
+        "SELECT role, persona, engine, content, timestamp FROM messages
+         WHERE conversation_id = ?1 AND role IN ('user','assistant') AND status = 'done'
+         ORDER BY timestamp DESC LIMIT ?2",
+    )?;
+    let rows: Vec<RecentTurn> = stmt
+        .query_map(rusqlite::params![conversation_id, limit], |r| {
+            let role: String = r.get(0)?;
+            let persona: Option<String> = r.get(1)?;
+            let engine: Option<String> = r.get(2)?;
+            let raw: String = r.get(3)?;
+            let ts: i64 = r.get(4)?;
+            let content = if raw.chars().count() > RECENT_TURN_MAX_CHARS {
+                let head: String = raw.chars().take(RECENT_TURN_MAX_CHARS).collect();
+                format!("{head}\n…(tail truncated)")
+            } else { raw };
+            Ok(RecentTurn { role, persona, engine, content, timestamp: ts })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+    // 오래된 것 → 최신 순으로 뒤집어 반환 (대화 읽기 순서)
+    let mut out = rows;
+    out.reverse();
+    Ok(out)
+}
+
 /// Tauri command: trigger memory compression for a conversation.
 ///
 /// Lock strategy: read data with short lock → release → call Claude (slow) → re-lock to write.
@@ -165,6 +219,7 @@ pub async fn compress_conversation_memory(
             system_prompt: None,
             resume_token: None,
             project_path: None,
+            image_paths: Vec::new(),
         });
 
         let raw_output = match result {
@@ -227,6 +282,7 @@ pub async fn force_recompress_memory(
             system_prompt: None,
             resume_token: None,
             project_path: None,
+            image_paths: Vec::new(),
         });
 
         let raw_output = match result {

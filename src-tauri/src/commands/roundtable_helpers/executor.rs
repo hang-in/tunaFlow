@@ -41,7 +41,7 @@ pub async fn run_participant(
         model: p.model.clone(),
         system_prompt: None,
         resume_token: None,
-        project_path,
+        project_path, image_paths: Vec::new(),
     };
 
     let engine_key_owned = engine_key.to_string();
@@ -117,7 +117,7 @@ pub(super) async fn stream_participant(
         model: p.model.clone(),
         system_prompt: None,
         resume_token,
-        project_path,
+        project_path, image_paths: Vec::new(),
     };
 
     let name = p.name.clone();

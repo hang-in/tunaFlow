@@ -7,9 +7,11 @@ import type { Message, Plan, RoundtableParticipant } from "@/types";
 import * as planApi from "../api/plans";
 import * as failureLessonsApi from "../api/failureLessons";
 import * as insightApi from "../api/insight";
+import { dispatchMetaNotification } from "../metaNotifications";
+import { maybeTriggerMetaAnalysis } from "../metaAnalysisTrigger";
 import {
   buildPlanContext,
-  createAndLinkBranch,
+  getOrCreateReviewBranch,
   saveFailureLessons,
   createVerdictArtifact,
   createTestReportArtifact,
@@ -32,11 +34,21 @@ export interface StartReviewRTResult extends CreateBranchResult {
   mode: "sequential";
 }
 
+/** Reviewer 선택 정보 — engine 뿐 아니라 model 까지 명시해야 Codex app-server
+ *  fallback(gpt-5-codex) 같은 엉뚱한 기본값이 끼어들지 않는다.
+ *  `reviewerEngines?: string[]` 경로는 deprecated — 최종적으로 `reviewers` 로 통일.
+ */
+export interface ReviewerChoice {
+  engine: string;
+  model?: string;
+  name?: string;
+}
+
 export async function startReviewRT(
   plan: Plan,
   implMessages: Message[],
   testOutput?: string,
-  reviewerEngines?: string[],
+  reviewers?: ReviewerChoice[] | string[],
 ): Promise<StartReviewRTResult> {
   await planApi.updatePlanPhase(plan.id, "review");
   await planApi.createPlanEvent(plan.id, "impl_completed", "developer");
@@ -48,11 +60,24 @@ export async function startReviewRT(
     createTestReportArtifact(plan, testOutput);
   }
 
-  const engines = reviewerEngines ?? ["claude", "gemini"];
+  // 하위호환: string[] 로 들어오면 model 없음으로 normalize.
+  // default 는 claude/gemini — 이 둘은 무료/구독 양쪽에서 model fallback 문제가 없음.
+  const normalized: ReviewerChoice[] = (() => {
+    if (!reviewers || reviewers.length === 0) {
+      return [{ engine: "claude" }, { engine: "gemini" }];
+    }
+    return (reviewers as (ReviewerChoice | string)[]).map((r) =>
+      typeof r === "string" ? { engine: r } : r,
+    );
+  })();
 
-  const { branch, shadowConvId } = await createAndLinkBranch(
-    plan, "review", `Review RT: ${plan.title}`, "roundtable",
+  // A안: 같은 roundtable 모드면 기존 리뷰 브랜치 재사용. 모드 달라지거나 없으면 신규.
+  const { branch, shadowConvId, reused } = await getOrCreateReviewBranch(
+    plan, `Review RT: ${plan.title}`, "roundtable",
   );
+  if (reused) {
+    console.debug("[startReviewRT] reusing existing review branch:", branch.id);
+  }
 
   const planContext = await buildPlanContext(plan);
   const implSummary = implMessages
@@ -119,9 +144,10 @@ export async function startReviewRT(
     "```",
   ].filter(Boolean).join("\n");
 
-  const participants: RoundtableParticipant[] = engines.map((eng, i) => ({
-    name: `Reviewer-${String.fromCharCode(65 + i)}`,
-    engine: eng,
+  const participants: RoundtableParticipant[] = normalized.map((r, i) => ({
+    name: r.name ?? `Reviewer-${String.fromCharCode(65 + i)}`,
+    engine: r.engine,
+    model: r.model,
     role: "reviewer" as const,
   }));
 
@@ -131,6 +157,24 @@ export async function startReviewRT(
   // 이전엔 `config` 로 잘못 보내 invoke 가 실패하며 save_rt_config 가 no-op 되고
   // Review RT 진입 자체가 throw 되던 버그. s37 재현 로그로 특정.
   await invoke("save_rt_config", { conversationId: shadowConvId, configJson: rtConfig });
+
+  // 리뷰 브랜치 shadow conv 에도 engine/model 을 기록한다. 사용자가 RT 진행 중
+  // 리뷰 브랜치에 "직접 메시지" 를 보낼 때(handoff, follow-up 등), `resolveModel()`
+  // 이 이 엔트리를 읽어 올바른 model 을 전달할 수 있게 한다. 이전엔 RT 참여자
+  // 기반으로만 실행되고 shadow conv 엔트리가 없어서, 일반 채팅 경로로 빠질 때
+  // engine=codex/model=undefined 가 되어 app-server fallback(gpt-5 등) 이 발동하며
+  // ChatGPT 계정에서 400 에러가 나던 문제를 수정.
+  const first = participants[0];
+  if (first?.engine) {
+    try {
+      const { useChatStore } = await import("@/stores/chatStore");
+      useChatStore.getState().saveConversationEngine(shadowConvId, {
+        profileId: null,
+        engine: first.engine,
+        model: first.model,
+      });
+    } catch (e) { console.warn("[startReviewRT] saveConversationEngine failed:", e); }
+  }
 
   // NOTE: RT execution is the caller's responsibility.
   // After this returns, the caller should call openThread(branch.id) then
@@ -172,7 +216,25 @@ export async function processReviewVerdict(
     await planApi.updatePlanStatus(plan.id, "done");
     await planApi.createPlanEvent(plan.id, "review_passed", "reviewer", detail);
     // Notify Meta — plan cycle finished, user may want next-priority suggestion.
-    window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
+    // projectKey 는 plan 의 메인 conv 경유해서 찾기
+    let projectKey: string | undefined;
+    try {
+      const conv = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId });
+      projectKey = conv?.projectKey;
+    } catch { /* ignore */ }
+    dispatchMetaNotification({
+      kind: "review_passed",
+      title: `✅ Plan "${plan.title}" 리뷰 통과`,
+      summary: verdict.findings.length > 0
+        ? `minor findings ${verdict.findings.length}건. ${verdict.recommendations[0]?.slice(0, 100) ?? ""}`
+        : "모든 검증 통과 — Done 처리됨",
+      projectKey,
+      route: { tab: "workflow", stage: "done", planId: plan.id },
+    });
+    if (projectKey) {
+      maybeTriggerMetaAnalysis(projectKey, "review_passed", { planTitle: plan.title })
+        .catch((e) => console.debug("[meta-trigger]", e));
+    }
     try {
       await failureLessonsApi.resolveFailureLessonsByPlan(
         plan.id,
@@ -188,6 +250,12 @@ export async function processReviewVerdict(
     if (plan.reviewBranchId) {
       await invoke("archive_branch", { id: plan.reviewBranchId }).catch((e) => console.debug("[archive]", e));
     }
+    // archive_branch 가 DB 에 반영된 뒤 Store 의 branches state 도 갱신. 이게 없으면
+    // 사이드바 메인 트리에 archived branch 가 active 로 남아있는 stale 상태가 됨.
+    try {
+      const { useChatStore } = await import("@/stores/chatStore");
+      await useChatStore.getState().loadBranches(plan.conversationId);
+    } catch (e) { console.debug("[loadBranches after archive]", e); }
     // Notify: auto-send plan completion summary to Architect
     window.dispatchEvent(new CustomEvent("tunaflow:plan-completed", {
       detail: { planId: plan.id, title: plan.title, conversationId: plan.conversationId },
@@ -197,6 +265,17 @@ export async function processReviewVerdict(
     await planApi.createPlanEvent(plan.id, "review_failed", "reviewer", detail);
     await saveFailureLessons(plan, verdict.findings);
     await createVerdictArtifact(plan, verdict);
+
+    // Tier 2 트리거 — projectKey 조회 후 fail 누적 카운트 체크.
+    try {
+      const conv = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId });
+      if (conv?.projectKey) {
+        maybeTriggerMetaAnalysis(conv.projectKey, "review_failed", {
+          planTitle: plan.title,
+          findings: verdict.findings,
+        }).catch((e) => console.debug("[meta-trigger]", e));
+      }
+    } catch { /* ignore */ }
 
     // Doom loop detection: count review_failed events SINCE last escalation
     const freshEvents = await planApi.listPlanEvents(plan.id);
@@ -250,8 +329,16 @@ export async function processReviewVerdict(
       // Baton has moved to Architect — review branch is no longer active.
       const { archiveReviewBranchForHandoff } = await import("./implementWorkflow");
       await archiveReviewBranchForHandoff(plan);
-      // Meta notification — escalation requires user attention.
-      window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
+      // projectKey 조회 (meta conv mirror 용).
+      const escProjectKey = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId })
+        .then((c) => c?.projectKey).catch(() => undefined);
+      dispatchMetaNotification({
+        kind: "doom_loop_escalated",
+        title: `⚠️ Plan "${plan.title}" 재설계 필요`,
+        summary: `Review ${failCount}회 실패로 Architect 재설계가 강제되었습니다. Subtask 범위를 재검토하세요.`,
+        projectKey: escProjectKey,
+        route: { tab: "workflow", stage: "plan-check", planId: plan.id },
+      });
     } else if (failCount >= 3) {
       await planApi.createPlanEvent(
         plan.id,
@@ -259,8 +346,15 @@ export async function processReviewVerdict(
         "system",
         `Review 실패 ${failCount}회 — 설계 재검토를 권장합니다. Architect 재설계 또는 Developer 계속 rework 중 선택하세요.`,
       );
-      // Meta notification — user should review whether to keep iterating or redesign.
-      window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
+      const warnProjectKey = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId })
+        .then((c) => c?.projectKey).catch(() => undefined);
+      dispatchMetaNotification({
+        kind: "doom_loop_warning",
+        title: `⚠️ Plan "${plan.title}" ${failCount}회 실패`,
+        summary: "설계 재검토 권장. 계속 rework 할지 Architect 재설계로 갈지 선택하세요.",
+        projectKey: warnProjectKey,
+        route: { tab: "workflow", stage: "review", planId: plan.id },
+      });
     }
   } else {
     await planApi.createPlanEvent(plan.id, "review_conditional", "reviewer", detail);

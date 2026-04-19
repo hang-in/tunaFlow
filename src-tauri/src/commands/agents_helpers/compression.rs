@@ -25,6 +25,7 @@ pub fn compress_context_with_claude(text: &str, target_chars: usize, preserve_hi
         system_prompt: None,
         resume_token: None,
         project_path: None,
+        image_paths: Vec::new(),
     })
     .ok()
     .map(|out| out.content)

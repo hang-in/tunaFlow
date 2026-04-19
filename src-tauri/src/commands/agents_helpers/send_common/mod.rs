@@ -37,7 +37,9 @@ mod tests {
             retrieval_chunks: vec![],
             document_chunks: vec![],
             compressed_memory: None,
+            compressed_memory_source: None,
             cross_session_data: vec![],
+            previous_impl_status: None,
             thread_inheritance: None,
             agent_role_doc: None,
             active_skills: vec![],
@@ -47,6 +49,7 @@ mod tests {
             context_budget_cap: None,
             user_profile: None,
             conventions_synced: false,
+            is_session_continuation: false,
         }
     }
 

@@ -3,7 +3,7 @@ use serde::Deserialize;
 use tauri::State;
 use uuid::Uuid;
 
-use crate::db::{migrations::now_epoch, models::Conversation, DbState};
+use crate::db::{migrations::now_epoch_ms, models::Conversation, DbState};
 use crate::errors::AppError;
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +71,8 @@ pub fn create_conversation(
 ) -> Result<Conversation, AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let id = Uuid::new_v4().to_string();
-    let now = now_epoch();
+    // 컨벤션: ms. messages.timestamp/plans.created_at 과 단위 일치.
+    let now = now_epoch_ms();
     let conv_type = input.conv_type.as_deref().unwrap_or("main").to_string();
     let mode = input.mode.as_deref().unwrap_or("chat").to_string();
     let source = input.source.as_deref().unwrap_or("tunadish").to_string();
@@ -165,7 +166,7 @@ pub fn rename_conversation(id: String, custom_label: String, state: State<DbStat
     let value: Option<&str> = if custom_label.trim().is_empty() { None } else { Some(custom_label.trim()) };
     conn.execute(
         "UPDATE conversations SET custom_label = ?1, updated_at = ?2 WHERE id = ?3",
-        params![value, now_epoch(), id],
+        params![value, now_epoch_ms(), id],
     )?;
     Ok(())
 }

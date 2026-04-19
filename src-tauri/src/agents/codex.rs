@@ -18,6 +18,34 @@ fn resolve_codex() -> (String, Option<String>) {
 
 use super::claude::resolve_cwd;
 
+/// Codex `exec --json` 은 한 턴 안에서 `item.completed(agent_message)` 를
+/// 여러 번 emit 할 수 있다 (reasoning 중간 답변 → 도구 호출 → 최종 답변).
+/// 단순 `push` 하면 같은 문단이 두 번 찍히는 현상이 발생한다.
+///
+/// 정책:
+/// - 새 텍스트가 마지막 메시지와 동일 → skip
+/// - 새 텍스트가 마지막 메시지를 **prefix 로 포함** → 기존을 대체 (점진적 확장)
+/// - 그 외 → append
+fn push_agent_text_dedup(texts: &mut Vec<String>, incoming: &str) {
+    let trimmed = incoming.trim();
+    if trimmed.is_empty() { return; }
+    if let Some(last) = texts.last() {
+        let last_tr = last.trim();
+        if last_tr == trimmed { return; }
+        if trimmed.starts_with(last_tr) && trimmed.len() > last_tr.len() {
+            *texts.last_mut().unwrap() = incoming.to_string();
+            return;
+        }
+        // 사용자가 관찰한 "같은 문단 2회" 패턴: Codex 가 reasoning 후 같은 텍스트를
+        // 다시 내뱉는 경우. prefix 관계는 아니어도 60% 이상 겹치면 중복으로 판단.
+        if last_tr.len() >= 40 && trimmed.contains(last_tr) {
+            *texts.last_mut().unwrap() = incoming.to_string();
+            return;
+        }
+    }
+    texts.push(incoming.to_string());
+}
+
 /// Execute `codex exec` as a one-shot non-interactive subprocess.
 ///
 /// Prompt is delivered via **stdin** (tunadish pattern: `exec --json ... -`).
@@ -38,6 +66,10 @@ pub fn run(input: RunInput) -> Result<RunOutput, AppError> {
 
     if let Some(model) = &input.model {
         cmd.arg("--model").arg(model);
+    }
+
+    for img in &input.image_paths {
+        cmd.arg("-i").arg(img);
     }
 
     // `-` = read prompt from stdin (tunadish pattern)
@@ -114,7 +146,7 @@ pub fn run(input: RunInput) -> Result<RunOutput, AppError> {
         // Try to parse as JSON; skip non-JSON lines (e.g. plain text output)
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             // Not valid JSON — treat as plain text fallback
-            agent_texts.push(line.to_string());
+            push_agent_text_dedup(&mut agent_texts, line);
             continue;
         };
 
@@ -128,7 +160,7 @@ pub fn run(input: RunInput) -> Result<RunOutput, AppError> {
                     if item_type == "agent_message" {
                         if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
                             if !text.is_empty() {
-                                agent_texts.push(text.to_string());
+                                push_agent_text_dedup(&mut agent_texts, text);
                             }
                         }
                     }
@@ -210,6 +242,10 @@ where
         cmd.arg("--model").arg(model);
     }
 
+    for img in &input.image_paths {
+        cmd.arg("-i").arg(img);
+    }
+
     cmd.arg("-");
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -251,7 +287,7 @@ where
         if line.is_empty() { continue; }
 
         let Ok(event) = serde_json::from_str::<serde_json::Value>(&line) else {
-            agent_texts.push(line);
+            push_agent_text_dedup(&mut agent_texts, &line);
             let accumulated = agent_texts.join("\n\n");
             on_chunk(&accumulated);
             continue;
@@ -306,7 +342,7 @@ where
                         "agent_message" => {
                             if let Some(text) = item.get("text").and_then(|v| v.as_str()) {
                                 if !text.is_empty() {
-                                    agent_texts.push(text.to_string());
+                                    push_agent_text_dedup(&mut agent_texts, text);
                                     let accumulated = agent_texts.join("\n\n");
                                     on_chunk(&accumulated);
                                 }
@@ -371,4 +407,51 @@ where
         output_tokens,
         session_id: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::push_agent_text_dedup;
+
+    #[test]
+    fn dedup_skips_exact_duplicate() {
+        let mut v: Vec<String> = Vec::new();
+        push_agent_text_dedup(&mut v, "hello world");
+        push_agent_text_dedup(&mut v, "hello world");
+        assert_eq!(v, vec!["hello world".to_string()]);
+    }
+
+    #[test]
+    fn dedup_replaces_prefix_extension() {
+        let mut v: Vec<String> = Vec::new();
+        push_agent_text_dedup(&mut v, "Step 1 draft");
+        push_agent_text_dedup(&mut v, "Step 1 draft\n\nStep 2 final");
+        assert_eq!(v.len(), 1);
+        assert!(v[0].contains("Step 2 final"));
+    }
+
+    #[test]
+    fn dedup_appends_when_distinct() {
+        let mut v: Vec<String> = Vec::new();
+        push_agent_text_dedup(&mut v, "first topic discussion");
+        push_agent_text_dedup(&mut v, "totally different topic result");
+        assert_eq!(v.len(), 2);
+    }
+
+    #[test]
+    fn dedup_handles_same_paragraph_repeated_midstream() {
+        let para = "Architect Codex입니다. 요청하신 6개 이슈는 기존 범위를 넘어섭니다. 파일 경로를 먼저 검증하겠습니다.";
+        let mut v: Vec<String> = Vec::new();
+        push_agent_text_dedup(&mut v, para);
+        push_agent_text_dedup(&mut v, para);
+        assert_eq!(v, vec![para.to_string()]);
+    }
+
+    #[test]
+    fn dedup_ignores_whitespace_diff() {
+        let mut v: Vec<String> = Vec::new();
+        push_agent_text_dedup(&mut v, "same content");
+        push_agent_text_dedup(&mut v, "  same content  ");
+        assert_eq!(v.len(), 1);
+    }
 }

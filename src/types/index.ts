@@ -193,6 +193,9 @@ export interface SendWithClaudeInput {
   contextBudgetCap?: number;
   /** Serialized user profile JSON — injected as ## User section in ContextPack */
   userProfileJson?: string;
+  /** Absolute paths of image attachments — used by Codex CLI (`-i <path>`).
+   *  Other engines read the image via `Read` tool from the prompt path section. */
+  imagePaths?: string[];
 }
 
 export interface RoundtableParticipant {

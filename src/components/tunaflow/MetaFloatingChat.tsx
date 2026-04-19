@@ -1,14 +1,29 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Bot, X, Pin, PinOff, Send, Loader2 } from "lucide-react";
+import { Bot, X, Pin, PinOff, Send, Loader2, Inbox, Trash2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { getOrCreateMetaConversation } from "@/lib/metaConversation";
 import type { Message } from "@/types";
+import type { MetaNotification } from "@/lib/metaNotifications";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { vizMarkersAll } from "@/lib/vizMarkers";
+
+const NOTIF_LS_KEY = "meta-notifications-v1";
+const NOTIF_MAX = 50;
+
+function loadNotifs(): MetaNotification[] {
+  try {
+    const raw = localStorage.getItem(NOTIF_LS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+function saveNotifs(list: MetaNotification[]) {
+  try { localStorage.setItem(NOTIF_LS_KEY, JSON.stringify(list.slice(0, NOTIF_MAX))); } catch { /* ignore */ }
+}
 
 interface MetaFloatingChatProps {
   projectKey: string;
@@ -35,7 +50,8 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
-  const [pendingCount, setPendingCount] = useState(0);
+  const [notifs, setNotifs] = useState<MetaNotification[]>(() => loadNotifs());
+  const [inboxOpen, setInboxOpen] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number }>(loadPos);
   const posRef = useRef(pos);
   posRef.current = pos;
@@ -44,11 +60,128 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
 
-  // Listen for meta task assignments from other agents
+  // Mount 시 DB 에서 최신 알림 로드 (v38 meta_notifications 테이블).
   useEffect(() => {
-    const handler = () => setPendingCount((c) => c + 1);
+    let alive = true;
+    (async () => {
+      try {
+        const rows = await invoke<Array<{
+          id: string; projectKey: string | null; kind: string; title: string;
+          summary: string | null; routeJson: string | null; createdAt: number;
+          readAt: number | null; dismissedAt: number | null;
+        }>>("list_meta_notifications", { projectKey, limit: NOTIF_MAX });
+        if (!alive) return;
+        const parsed: MetaNotification[] = rows.map((r) => ({
+          id: r.id,
+          kind: r.kind as MetaNotification["kind"],
+          title: r.title,
+          summary: r.summary ?? undefined,
+          projectKey: r.projectKey ?? undefined,
+          createdAt: r.createdAt,
+          read: !!r.readAt,
+          dismissed: !!r.dismissedAt,
+          route: r.routeJson ? (() => { try { return JSON.parse(r.routeJson!); } catch { return undefined; } })() : undefined,
+        }));
+        setNotifs(parsed);
+        saveNotifs(parsed);
+      } catch (e) {
+        console.warn("[meta-notif] DB load failed, using localStorage only:", e);
+        setNotifs(loadNotifs());
+      }
+    })();
+    return () => { alive = false; };
+  }, [projectKey]);
+
+  // Listen for meta task assignments — payload 기반 inbox 누적 + localStorage 보존.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<MetaNotification | undefined>;
+      const notif: MetaNotification = ce.detail ?? {
+        id: crypto.randomUUID(),
+        kind: "generic",
+        title: "새 알림",
+        createdAt: Date.now(),
+        read: false,
+        dismissed: false,
+      };
+      setNotifs((prev) => {
+        const next = [notif, ...prev].slice(0, NOTIF_MAX);
+        saveNotifs(next);
+        return next;
+      });
+    };
     window.addEventListener("tunaflow:meta-task", handler);
     return () => window.removeEventListener("tunaflow:meta-task", handler);
+  }, []);
+
+  const unreadCount = notifs.filter((n) => !n.read && !n.dismissed).length;
+
+  const markAllRead = useCallback(() => {
+    setNotifs((prev) => {
+      const next = prev.map((n) => ({ ...n, read: true }));
+      saveNotifs(next);
+      return next;
+    });
+    invoke("mark_all_meta_notifications_read", { projectKey }).catch((e) =>
+      console.warn("[meta-notif] markAll failed:", e));
+  }, [projectKey]);
+
+  const dismissNotif = useCallback((id: string) => {
+    setNotifs((prev) => {
+      const next = prev.map((n) => (n.id === id ? { ...n, dismissed: true } : n));
+      saveNotifs(next);
+      return next;
+    });
+    invoke("dismiss_meta_notification", { id }).catch((e) =>
+      console.warn("[meta-notif] dismiss failed:", e));
+  }, []);
+
+  const clearAllNotifs = useCallback(() => {
+    setNotifs([]);
+    saveNotifs([]);
+    invoke("clear_meta_notifications", { projectKey }).catch((e) =>
+      console.warn("[meta-notif] clear failed:", e));
+  }, [projectKey]);
+
+  const routeTo = useCallback((notif: MetaNotification) => {
+    const r = notif.route;
+    setNotifs((prev) => {
+      const next = prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n));
+      saveNotifs(next);
+      return next;
+    });
+    invoke("mark_meta_notification_read", { id: notif.id }).catch(() => {});
+    if (!r) return;
+    if (r.tab) window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: r.tab }));
+    if (r.stage) window.dispatchEvent(new CustomEvent("tunaflow:switch-stage", { detail: r.stage }));
+    if (r.planId) window.dispatchEvent(new CustomEvent("tunaflow:focus-plan", { detail: r.planId }));
+    if (r.messageId) window.dispatchEvent(new CustomEvent("tunaflow:scroll-to-message", { detail: r.messageId }));
+    setInboxOpen(false);
+  }, []);
+
+  /** C — "메타에게 물어보기": 알림 하나를 선택해 메타 채팅 패널을 열면서
+   *  해당 맥락을 input 에 자동 주입. 사용자는 엔터만 누르거나 질문을 덧붙여 전송.
+   *  실제 메타 LLM 호출은 사용자가 전송할 때 (원칙: 자동 실행 금지). */
+  const askMetaAbout = useCallback((notif: MetaNotification) => {
+    // 읽음 처리
+    setNotifs((prev) => {
+      const next = prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n));
+      saveNotifs(next);
+      return next;
+    });
+    invoke("mark_meta_notification_read", { id: notif.id }).catch(() => {});
+    // 메타 채팅 패널 열기 + 컨텍스트 질문 prompt 주입
+    const prompt = [
+      `알림: **${notif.title}**`,
+      notif.summary ? `요약: ${notif.summary}` : "",
+      "",
+      `위 이벤트에 대해 분석해주시고, 다음 권장 액션을 제안해주세요.`,
+    ].filter(Boolean).join("\n");
+    setInput(prompt);
+    setInboxOpen(false);
+    setOpen(true);
+    // 다음 tick 에 input 포커스
+    setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
   // Close popup on outside click (pinned stays open)
@@ -86,7 +219,8 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
   useEffect(() => {
     if (open && metaConvId) {
       loadMessages();
-      setPendingCount(0); // Clear notification badge on open
+      // 채팅 패널 열면 inbox 자동 닫기 (두 UI 가 겹치지 않게)
+      setInboxOpen(false);
     }
   }, [open, metaConvId, loadMessages]);
 
@@ -268,18 +402,96 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
             isOpen
               ? "bg-primary text-primary-foreground border-primary shadow-primary/20"
               : "bg-background border-border/30 text-muted-foreground/60 hover:text-primary hover:border-primary/30 hover:shadow-primary/10",
-            !isOpen && pendingCount > 0 && "animate-pulse border-amber-400/60 text-amber-400",
+            !isOpen && unreadCount > 0 && "animate-pulse border-amber-400/60 text-amber-400",
           )}
-          title="Meta Agent (드래그로 이동)"
+          title="Meta Agent (드래그로 이동, 길게 눌러 알림함)"
         >
           <Bot className="w-4 h-4" />
         </button>
-        {pendingCount > 0 && !isOpen && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-[9px] font-bold text-black flex items-center justify-center pointer-events-none">
-            {pendingCount > 9 ? "9+" : pendingCount}
-          </span>
+        {unreadCount > 0 && !isOpen && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setInboxOpen((v) => !v); }}
+            className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-[9px] font-bold text-black flex items-center justify-center hover:bg-amber-300 transition-colors"
+            title="알림함 열기"
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </button>
+        )}
+        {/* 배지 없어도 오른쪽 클릭으로 inbox 열 수 있게 small button */}
+        {unreadCount === 0 && notifs.length > 0 && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setInboxOpen((v) => !v); }}
+            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-muted text-[8px] text-muted-foreground flex items-center justify-center hover:bg-accent transition-colors"
+            title="알림함 (읽음 포함)"
+          >
+            <Inbox className="w-2.5 h-2.5" />
+          </button>
         )}
       </div>
+
+      {/* Inbox dropdown — 알림 리스트 */}
+      {inboxOpen && (
+        <div
+          className="absolute z-[61] w-[320px] max-h-[400px] flex flex-col bg-background border border-border/40 rounded-xl shadow-2xl overflow-hidden"
+          style={{
+            ...(openUpward
+              ? { bottom: BUTTON_SIZE + 8 }
+              : { top: BUTTON_SIZE + 8 }),
+            left: 0,
+          }}
+        >
+          <div className="flex items-center gap-2 px-3 h-9 border-b border-border/30 bg-muted/20">
+            <Inbox className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[12px] font-medium text-foreground flex-1">알림함 ({notifs.filter((n) => !n.dismissed).length})</span>
+            {unreadCount > 0 && (
+              <button onClick={markAllRead} className="text-[10px] text-muted-foreground hover:text-foreground">모두 읽음</button>
+            )}
+            {notifs.length > 0 && (
+              <button onClick={clearAllNotifs} className="text-muted-foreground/50 hover:text-destructive p-1" title="전체 삭제">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+            <button onClick={() => setInboxOpen(false)} className="text-muted-foreground/50 hover:text-foreground p-1">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {notifs.filter((n) => !n.dismissed).length === 0 ? (
+              <p className="text-[11px] text-muted-foreground/50 text-center py-8">알림 없음</p>
+            ) : (
+              <ul className="divide-y divide-border/20">
+                {notifs.filter((n) => !n.dismissed).slice(0, 30).map((n) => (
+                  <li key={n.id} className={cn("group px-3 py-2 hover:bg-accent/30 transition-colors", !n.read && "bg-amber-500/5")}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-medium text-foreground truncate">{n.title}</p>
+                        {n.summary && <p className="text-[10px] text-muted-foreground line-clamp-2 mt-0.5">{n.summary}</p>}
+                        <p className="text-[9px] text-muted-foreground/50 mt-0.5">
+                          {new Date(n.createdAt).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          {!n.read && <span className="ml-1.5 text-amber-500">●</span>}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => askMetaAbout(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title="메타에게 물어보기">
+                          <Bot className="w-3 h-3" />
+                        </button>
+                        {n.route && (
+                          <button onClick={() => routeTo(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title="관련 위치로 이동">
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        )}
+                        <button onClick={() => dismissNotif(n.id)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="닫기">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Popup chat panel — direction flips based on position */}
       {isOpen && (

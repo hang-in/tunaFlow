@@ -26,6 +26,66 @@ use super::context_loading::{load_context_data, load_project_path};
 use super::prompt_assembly::assemble_prompt;
 use super::session_freshness;
 
+/// 엔진 전환 감지: 동일 대화 안에서 마지막 assistant 응답의 engine 이 현재
+/// 요청의 engine 과 다르면 handoff 블록을 생성한다.
+///
+/// 시나리오: Claude 구독량 초과 → Codex 로 전환 후 같은 역할로 계속. 새 엔진이
+/// "이전 엔진의 분석" 을 자신이 반복해야 할 작업으로 오인하지 않도록 명시한다.
+pub fn detect_engine_handoff(
+    conn: &Connection,
+    conversation_id: &str,
+    current_engine: &str,
+    _current_persona: Option<&str>,
+) -> Option<String> {
+    // 마지막 assistant 메시지 (done 상태) — engine / persona / content preview
+    let row: Option<(String, Option<String>, String)> = conn
+        .query_row(
+            "SELECT COALESCE(engine,''), persona, content
+             FROM messages
+             WHERE conversation_id = ?1 AND role = 'assistant' AND status = 'done'
+             ORDER BY timestamp DESC LIMIT 1",
+            [conversation_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
+    let (prev_engine, prev_persona, prev_content) = row?;
+    if prev_engine.is_empty() { return None; }
+
+    // 엔진 식별자 정규화 — claude-code/claude/codex/gemini/ollama 수준으로 비교
+    let norm = |e: &str| -> String {
+        let l = e.to_ascii_lowercase();
+        if l.starts_with("claude") { "claude".into() }
+        else if l.starts_with("codex") || l.starts_with("openai") { "codex".into() }
+        else if l.starts_with("gemini") { "gemini".into() }
+        else if l.starts_with("ollama") { "ollama".into() }
+        else if l.starts_with("lmstudio") || l.starts_with("openai_compat") || l.starts_with("openai-compat") { "lmstudio".into() }
+        else { l }
+    };
+    if norm(&prev_engine) == norm(current_engine) { return None; }
+
+    let persona_label = prev_persona.as_deref().filter(|s| !s.is_empty()).unwrap_or("the previous agent");
+    // 이전 응답 preview — 앞 400자
+    let preview: String = prev_content.chars().take(400).collect();
+    let preview = if prev_content.chars().count() > 400 { format!("{}…", preview) } else { preview };
+
+    Some(format!(
+        "## Handoff Notice\n\
+         In this conversation the engine just switched from **{prev}** to **{curr}** (same role: {role}).\n\
+         Reason: quota exhaustion or user-initiated engine change — NOT a restart of the task.\n\n\
+         **Rules for this turn:**\n\
+         1. Treat {prev}'s previous conclusions as established context — do NOT redo the same diagnosis, file lookup, or plan drafting that is already captured below.\n\
+         2. Continue from where {prev} stopped. If its last message was a plan/proposal, evaluate or extend it instead of re-deriving it.\n\
+         3. If something in {prev}'s output looks wrong, say so explicitly and point to the specific claim — don't silently restart.\n\
+         4. Your persona and goal remain the same ({role}). Do not rebrand yourself as a fresh reviewer.\n\n\
+         **Last message from {prev} ({role}):**\n\
+         > {preview}\n",
+        prev = prev_engine,
+        curr = current_engine,
+        role = persona_label,
+        preview = preview.replace('\n', "\n> "),
+    ))
+}
+
 /// Persist a system message (tool-request results, workflow triggers, etc.)
 /// Returns the message ID.
 pub fn persist_system_message(
@@ -87,8 +147,10 @@ pub fn prepare_engine_run(
     state: &DbState,
 ) -> Result<PreparedRun, crate::errors::AppError> {
     // Phase A: DB operations under lock — persist user msg, load context data, pre-create streaming msg
-    let (mut data, project_path, msg_id) = {
+    let (mut data, project_path, msg_id, handoff_block) = {
         let conn = state.write.lock().map_err(|_| crate::errors::AppError::Lock)?;
+        // 엔진 전환 감지는 user 메시지 persist 전에 수행 — 이전 assistant 턴 기준.
+        let handoff = detect_engine_handoff(&conn, &input.conversation_id, engine_key, input.persona_label.as_deref());
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
         let pp = load_project_path(&conn, &input.project_key);
         let ctx_data = load_context_data(
@@ -104,27 +166,39 @@ pub fn prepare_engine_run(
              VALUES(?1,?2,'assistant','',?3,'streaming',?4,?5,?6)",
             params![mid, input.conversation_id, now, engine_key, input.model, input.persona_label],
         )?;
-        (ctx_data, pp, mid)
+        (ctx_data, pp, mid, handoff)
         // lock released here
     };
 
     // Session freshness: stateful 엔진(sdk-url, app-server)에서
-    // 같은 세션이 연속되면 ContextPack을 minimal(lite)로 전환.
+    // 같은 세션이 연속되면 recent_context + compressed_memory 섹션을 **drop** 한다.
+    // 이유: Claude 자체 세션 히스토리가 source-of-truth. tunaFlow 가 truncate 된 prepend 를
+    // 넣으면 오염 유발(사용자 지적). 에이전트는 필요시 `tool-request:recent_turns:N` 로 명시 조회.
+    //
+    // fresh 세션 (엔진 전환/첫 send/session crash 후 re-spawn) 이면 full 모드 + anchor 2 turn 으로
+    // tunaFlow 가 history 제공자 역할.
     let session_key = session_freshness::current_session_key(&input.conversation_id, engine_key);
     if let Some(ref key) = session_key {
         session_freshness::stash_pending(&msg_id, key);
         if session_freshness::is_session_continuation(&input.conversation_id, engine_key) {
-            data.context_mode_override = Some("lite".into());
-            eprintln!("[session_freshness] continuation detected for conv={} engine={} → lite mode",
+            data.is_session_continuation = true;
+            eprintln!("[session_freshness] continuation conv={} engine={} → drop recent_context + compressed_memory (rely on Claude session)",
                 &input.conversation_id[..input.conversation_id.len().min(12)], engine_key);
         } else {
-            eprintln!("[session_freshness] new session for conv={} engine={} → full mode",
+            eprintln!("[session_freshness] new session conv={} engine={} → full mode + anchor 2 turns",
                 &input.conversation_id[..input.conversation_id.len().min(12)], engine_key);
         }
     }
 
     // Phase B: Pure prompt assembly — no DB lock held
-    let (enriched_prompt, system_context, ctx_meta) = assemble_prompt(&data, identity_frag);
+    let (mut enriched_prompt, system_context, ctx_meta) = assemble_prompt(&data, identity_frag);
+
+    // 엔진 전환 감지 시 handoff 블록을 enriched_prompt 최상단에 주입.
+    // 새 엔진(Codex 등) 이 "이전 엔진이 내린 결정" 을 그대로 이어받고, 검증 루프에
+    // 빠지지 않도록 명시적으로 안내.
+    if let Some(block) = handoff_block {
+        enriched_prompt = format!("{}\n\n{}", block, enriched_prompt);
+    }
 
     let job_id = format!("job-{}", Uuid::new_v4());
     {
@@ -467,4 +541,69 @@ pub fn persist_assistant_message_with_id(
         persona: None,
         duration_ms: None, input_tokens: None, output_tokens: None, cost_usd: None,
     })
+}
+
+#[cfg(test)]
+mod handoff_tests {
+    use super::detect_engine_handoff;
+    use rusqlite::Connection;
+
+    fn setup_conv(engine: &str, content: &str) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE messages (
+                id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+                content TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL,
+                engine TEXT, model TEXT, persona TEXT
+            );",
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,persona)
+             VALUES('m1','c1','user','hi',1000,'done',NULL,NULL)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO messages(id,conversation_id,role,content,timestamp,status,engine,persona)
+             VALUES('m2','c1','assistant',?1,2000,'done',?2,'Architect')",
+            rusqlite::params![content, engine],
+        ).unwrap();
+        conn
+    }
+
+    #[test]
+    fn no_handoff_when_engine_matches() {
+        let conn = setup_conv("claude-code", "previous analysis");
+        assert!(detect_engine_handoff(&conn, "c1", "claude-code", Some("Architect")).is_none());
+    }
+
+    #[test]
+    fn no_handoff_when_only_aliases_differ() {
+        let conn = setup_conv("claude-code", "previous analysis");
+        // claude-code vs claude → both normalize to "claude"
+        assert!(detect_engine_handoff(&conn, "c1", "claude", Some("Architect")).is_none());
+    }
+
+    #[test]
+    fn handoff_emitted_when_engine_differs() {
+        let conn = setup_conv("claude-code", "Plan draft: use JWT auth, split migration into two phases.");
+        let block = detect_engine_handoff(&conn, "c1", "codex", Some("Architect")).unwrap();
+        assert!(block.contains("Handoff"));
+        assert!(block.contains("claude-code"));
+        assert!(block.contains("codex"));
+        assert!(block.contains("Architect"));
+        assert!(block.contains("Plan draft"));
+    }
+
+    #[test]
+    fn no_handoff_when_no_previous_assistant() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE messages (
+                id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+                content TEXT NOT NULL, timestamp INTEGER NOT NULL, status TEXT NOT NULL,
+                engine TEXT, model TEXT, persona TEXT
+            );",
+        ).unwrap();
+        assert!(detect_engine_handoff(&conn, "c1", "codex", None).is_none());
+    }
 }

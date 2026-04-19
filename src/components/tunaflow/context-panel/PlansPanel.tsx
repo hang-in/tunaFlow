@@ -50,6 +50,25 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
 
   useEffect(() => { loadPlans(); }, [canonicalConvId]);
 
+  // Meta 알림에서 "이동" 클릭 시 해당 plan 카드로 스크롤 + 하이라이트.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const planId = (e as CustomEvent<string>).detail;
+      if (!planId) return;
+      loadPlans();
+      setTimeout(() => {
+        const el = containerRef.current?.querySelector(`[data-plan-id="${planId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-2", "ring-primary/60");
+          setTimeout(() => el.classList.remove("ring-2", "ring-primary/60"), 2000);
+        }
+      }, 150);
+    };
+    window.addEventListener("tunaflow:focus-plan", handler);
+    return () => window.removeEventListener("tunaflow:focus-plan", handler);
+  }, []);
+
   // Reload when visible
   useEffect(() => {
     const el = containerRef.current;
@@ -146,13 +165,14 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
                   <p className="text-[9px] font-medium text-muted-foreground/40 uppercase tracking-wider px-1">작성 중</p>
                 )}
                 {draftingPlans.map((plan) => (
-                  <PlanCard
-                    key={plan.id}
-                    plan={plan}
-                    onStatusChange={handlePlanStatus}
-                    onPlanUpdated={handlePlanUpdated}
-                    onSwitchToChat={onSwitchToChat}
-                  />
+                  <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
+                    <PlanCard
+                      plan={plan}
+                      onStatusChange={handlePlanStatus}
+                      onPlanUpdated={handlePlanUpdated}
+                      onSwitchToChat={onSwitchToChat}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -162,7 +182,9 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
                   <p className="text-[9px] font-medium text-muted-foreground/40 uppercase tracking-wider px-1">검토 대기</p>
                 )}
                 {normalPlans.map((plan) => (
-                  <SubtaskReviewView key={plan.id} plan={plan} onPlanUpdate={handlePlanUpdated} onSwitchToChat={onSwitchToChat} />
+                  <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
+                    <SubtaskReviewView plan={plan} onPlanUpdate={handlePlanUpdated} onSwitchToChat={onSwitchToChat} />
+                  </div>
                 ))}
               </div>
             )}
@@ -170,7 +192,9 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
               <div className="space-y-2 mt-4">
                 <p className="text-[9px] font-medium text-amber-600/60 uppercase tracking-wider px-1">⚠️ 설계 재검토 필요</p>
                 {escalatedPlans.map((plan) => (
-                  <SubtaskReviewView key={plan.id} plan={plan} onPlanUpdate={handlePlanUpdated} onSwitchToChat={onSwitchToChat} />
+                  <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
+                    <SubtaskReviewView plan={plan} onPlanUpdate={handlePlanUpdated} onSwitchToChat={onSwitchToChat} />
+                  </div>
                 ))}
               </div>
             )}
@@ -178,17 +202,20 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
         );
       })() : activeStage === "dev" ? (
         filteredPlans.map((plan) => (
-          <DevProgressView key={plan.id} plan={plan} onPlanUpdate={handlePlanUpdated} />
+          <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
+            <DevProgressView plan={plan} onPlanUpdate={handlePlanUpdated} />
+          </div>
         ))
       ) : (
         filteredPlans.map((plan) => (
-          <PlanCard
-            key={plan.id}
-            plan={plan}
-            onStatusChange={handlePlanStatus}
-            onPlanUpdated={handlePlanUpdated}
-            onSwitchToChat={onSwitchToChat}
-          />
+          <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
+            <PlanCard
+              plan={plan}
+              onStatusChange={handlePlanStatus}
+              onPlanUpdated={handlePlanUpdated}
+              onSwitchToChat={onSwitchToChat}
+            />
+          </div>
         ))
       )}
     </div>

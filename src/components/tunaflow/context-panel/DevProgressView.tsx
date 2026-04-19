@@ -30,7 +30,9 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
 
   const [busy, setBusy] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
-  const [reviewMode, setReviewMode] = useState<"idle" | "select">("idle");
+  // reviewMode state 제거 (2026-04-19) — Dev 시작과 동일하게 한 번 클릭으로 즉시 실행.
+  // 이전엔 "Review 시작" → select 모드 전환 → reviewer 선택 + "Review 시작" 3단계였고,
+  // 이제는 implComplete 가 되면 곧바로 reviewer 선택 UI 가 노출되고 "Review 시작" 1회로 끝.
   const branchRunning = plan.implementationBranchId
     ? runningThreadIds.includes(`branch:${plan.implementationBranchId}`)
     : false;
@@ -82,10 +84,6 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       const msgs = await invoke<Message[]>("list_messages", { conversationId: implShadow });
       await syncResultReport(plan.id, msgs, plan.developerEngine ?? undefined);
 
-      if (plan.reviewBranchId) {
-        await invoke("archive_branch", { id: plan.reviewBranchId }).catch((e) => console.debug("[archive]", e));
-      }
-
       const isRework = plan.phase === "rework" || !!reviewVerdict;
       const reviewRound = (plan.versionMinor || 0) + 1;
       const roundLabel = isRework ? `review (${reviewRound})` : `review`;
@@ -93,12 +91,16 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       await planApi.createPlanEvent(plan.id, "review_started", "user",
         `reviewer=${selectedProfile.label}${isRework ? " (rework)" : ""}`);
 
-      const slug = getPlanSlug(plan);
-      const input = { conversationId: plan.conversationId, label: `${roundLabel}: ${plan.title.slice(0, 25)}`, mode: "chat" };
-      const branch = await invoke<Branch>("create_branch", { input });
-      const shadowConvId = await invoke<string>("open_branch_stream", { branchId: branch.id });
-      await planApi.linkPlanBranch(plan.id, "review", branch.id);
+      // A안: 같은 chat 모드 리뷰 브랜치가 있으면 재사용. 모드 다른 브랜치는 archive 후 신규.
+      // 이전 라운드 대화를 reviewer 가 자연스럽게 참고할 수 있어 context 보존도 커짐.
+      const { getOrCreateReviewBranch } = await import("@/lib/workflow/helpers");
+      const { branch, shadowConvId, reused } = await getOrCreateReviewBranch(
+        plan, `${roundLabel}: ${plan.title.slice(0, 25)}`, "chat",
+      );
+      if (reused) console.debug("[handleStartReview] reusing branch:", branch.id);
       saveConversationEngine(shadowConvId, { profileId: selectedReviewerId, engine: selectedProfile.engine, model: selectedProfile.model });
+
+      const slug = getPlanSlug(plan);
 
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
@@ -135,11 +137,21 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         `> 완료 후 리뷰 verdict를 제출하세요.`,
       ].join("\n");
 
-      await sendThreadMessage(prompt, selectedProfile.engine);
+      // 자동 생성 프롬프트 → role="system" 으로 persist 후 sendThreadMessage 에 pre-existing
+      // id 로 전달. UI 는 사용자 말풍선이 아닌 접힘 시스템 블록으로 렌더 (s37 원칙).
+      const sysMsgId = await invoke<string>("persist_system_msg", {
+        conversationId: shadowConvId,
+        content: prompt,
+      }).catch((e) => { console.warn("[handleStartReview] persist_system_msg failed:", e); return null; });
+      await sendThreadMessage(
+        prompt,
+        selectedProfile.engine,
+        selectedProfile.model,
+        sysMsgId ? { userMessageId: sysMsgId } : undefined,
+      );
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
     } catch (e) { console.warn("[tunaflow]", e); }
     setBusy(false);
-    setReviewMode("idle");
   };
 
   // Deep RT track — multi-engine review. Uses the existing startReviewRT flow
@@ -149,6 +161,10 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
     if (!plan.implementationBranchId) return;
     const chosenProfiles = profiles.filter((p) => selectedDeepIds.has(p.id));
     if (chosenProfiles.length < 2) return;
+    // 진입 게이트 — reviewers 역할 설정/모델 상태를 검증. missing 이면 toast + Settings 열기.
+    const { assertRoleReady } = await import("@/lib/roleAssignments");
+    const gate = await assertRoleReady("reviewers", profiles);
+    if (!gate.ok) return;
     setBusy(true);
     try {
       const implShadow = `branch:${plan.implementationBranchId}`;
@@ -166,8 +182,12 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         }
       } catch (e) { console.debug("[test-before-review-rt]", e); }
 
-      const engines = chosenProfiles.map((p) => p.engine);
-      const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, engines);
+      // 프로필의 engine+model 을 모두 전달해야 RT executor → codex_app_server 까지
+      // 실제 설정값이 흐른다. 이전엔 `.map(p => p.engine)` 로 string[] 만 넘겨서
+      // model 이 유실 → codex_app_server fallback(gpt-5-codex) 로 귀결 → ChatGPT
+      // 구독 계정에서 400 에러가 발생했음 (s37 재현).
+      const reviewers = chosenProfiles.map((p) => ({ engine: p.engine, model: p.model, name: p.label }));
+      const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, reviewers);
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
@@ -175,7 +195,6 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       await sendThreadRoundtable(prompt, participants, mode, { autoSynthesize: true });
     } catch (e) { console.warn("[tunaflow]", e); }
     setBusy(false);
-    setReviewMode("idle");
   };
 
   const handleCreateSubPlan = async (subtask: PlanSubtask, index: number) => {
@@ -367,11 +386,31 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         )}>
           {doomLoopEscalated ? (
             <>
-              <p className="font-semibold">⚠️ Review {failCount}회 연속 실패 — 설계 재검토가 필요합니다</p>
-              <p className="text-[9px] text-foreground/60">
-                동일한 문제가 반복되고 있어 Rework으로 해결되지 않습니다.
-                Subtask 설계를 재검토하고 Architect에게 수정을 요청하세요.
-              </p>
+              {failCount === 0 ? (
+                <>
+                  <p className="font-semibold">⚠️ 설계 재검토 필요 — Architect 재설계 진행 중</p>
+                  <p className="text-[9px] text-foreground/60">
+                    이전 싸이클에서 Review 5회 이상 실패로 에스컬레이션 되었습니다.
+                    Architect 의 rev 제안을 검토/승인한 뒤 Dev 를 다시 시작하세요.
+                  </p>
+                </>
+              ) : failCount === 1 ? (
+                <>
+                  <p className="font-semibold">⚠️ Review 1회 실패 — 이전 싸이클 설계 재검토 이력 있음</p>
+                  <p className="text-[9px] text-foreground/60">
+                    동일 패턴이 반복되면 설계 재검토가 또 필요할 수 있습니다.
+                    Rework 으로 해소되지 않으면 Architect 재설계를 요청하세요.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold">⚠️ Review {failCount}회 연속 실패 — 설계 재검토가 필요합니다</p>
+                  <p className="text-[9px] text-foreground/60">
+                    동일한 문제가 반복되고 있어 Rework 으로 해결되지 않습니다.
+                    Subtask 설계를 재검토하고 Architect 에게 수정을 요청하세요.
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <p className="font-medium">Rework 필요 — Review에서 다음 사항이 지적되었습니다.</p>
@@ -458,22 +497,15 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       )}
 
       {/* Summary + actions */}
-      <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-        <span className="text-[10px] text-muted-foreground/50">{completedNums.size}/{subtasks.length} 완료</span>
-        <span className="flex-1" />
-        {implComplete && plan.phase !== "rework" && reviewMode === "idle" && (
-          <button onClick={() => setReviewMode("select")} disabled={busy}
-            className={cn("flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium disabled:opacity-50 transition-colors",
-              reviewVerdict ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20"
-            )}>
-            <Check className="w-3.5 h-3.5" />{reviewVerdict ? "Re-review 시작" : "Review 시작"}
-          </button>
-        )}
-        {implComplete && reviewMode === "select" && (
+      <div className="pt-2 border-t border-border/30 space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground/50">{completedNums.size}/{subtasks.length} 완료</span>
+        </div>
+        {implComplete && plan.phase !== "rework" && (
           <div className="space-y-1.5">
             {/* Re-review scope indicator */}
             {reviewVerdict && reviewVerdict.failedSubtaskIds.length > 0 && (
-              <div className="flex items-center gap-1.5 text-[9px] text-amber-600/70">
+              <div className="flex items-center gap-1.5 text-[9px] text-amber-600/70 flex-wrap">
                 <span>리뷰 대상:</span>
                 {reviewVerdict.failedSubtaskIds.map((id) => {
                   const st = subtasks[id - 1];
@@ -502,20 +534,25 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
 
             {reviewTrack === "quick" ? (
               <div className="flex items-center gap-2">
+                <span className="text-[10px] text-muted-foreground shrink-0">Reviewer:</span>
                 <select value={selectedReviewerId} onChange={(e) => setSelectedReviewerId(e.target.value)}
-                  className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
-                  {profiles.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.engine})</option>)}
+                  disabled={busy}
+                  className="flex-1 text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none disabled:opacity-40">
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label} ({p.engine}{p.model ? `/${p.model.slice(0, 24)}` : ""})</option>
+                  ))}
                 </select>
-                <button onClick={handleStartReview} disabled={busy}
-                  className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
-                  {busy ? "시작 중..." : reviewVerdict ? "Re-review 시작" : "Review 시작"}
+                <button onClick={handleStartReview} disabled={busy || !selectedReviewerId}
+                  className={cn("flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium disabled:opacity-50 transition-colors",
+                    reviewVerdict ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20",
+                  )}>
+                  <Check className="w-3 h-3" />{busy ? "시작 중..." : reviewVerdict ? "Re-review 시작" : "Review 시작"}
                 </button>
-                <button onClick={() => setReviewMode("idle")}
-                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
               </div>
             ) : (
               <div className="space-y-1.5">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground shrink-0">Reviewers:</span>
                   {profiles.map((p) => (
                     <label key={p.id} className={cn(
                       "flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer text-[10px]",
@@ -532,11 +569,11 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                     {selectedDeepIds.size}명 선택{selectedDeepIds.size < 2 ? " — 최소 2명 필요" : ""}
                   </span>
                   <button onClick={handleStartReviewRT} disabled={busy || selectedDeepIds.size < 2}
-                    className="ml-auto px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                    {busy ? "시작 중..." : reviewVerdict ? "Re-review RT 시작" : "Review RT 시작"}
+                    className={cn("ml-auto flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
+                      reviewVerdict ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20",
+                    )}>
+                    <Check className="w-3 h-3" />{busy ? "시작 중..." : reviewVerdict ? "Re-review RT 시작" : "Review RT 시작"}
                   </button>
-                  <button onClick={() => setReviewMode("idle")}
-                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
                 </div>
               </div>
             )}

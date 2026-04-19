@@ -93,7 +93,19 @@ export function RuntimeStatusBar() {
   const terminalOpen = usePtyStore((s) => s.terminalOpen);
   const toggleTerminal = usePtyStore((s) => s.toggleTerminal);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
   const hasPtySession = usePtyStore((s) => s.sessions.size > 0);
+
+  // 외부 컴포넌트(역할 게이트, CommandPalette)가 Settings 를 여는 단일 이벤트.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ section?: string }>).detail;
+      setSettingsInitialSection(detail?.section);
+      setSettingsOpen(true);
+    };
+    window.addEventListener("tunaflow:open-settings", handler);
+    return () => window.removeEventListener("tunaflow:open-settings", handler);
+  }, []);
 
   const isRunning = runningThreadIds.length > 0;
   const runningEngines = [...new Set(jobs.filter((j) => j.status === "running").map((j) => j.engine))];
@@ -393,7 +405,7 @@ export function RuntimeStatusBar() {
       </div>
 
       {traceOpen && <TraceModal onClose={() => setTraceOpen(false)} />}
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} initialSection={settingsInitialSection} />}
     </>
   );
 }

@@ -19,6 +19,7 @@ pub mod insight_extract;
 pub mod files;
 pub mod jobs;
 pub mod memos;
+pub mod meta_notifications;
 pub mod model_discovery;
 pub mod messages;
 pub mod plans;

@@ -52,7 +52,8 @@ You are an agent in tunaFlow, a multi-agent orchestration platform.\n\
   - `<!-- tunaflow:tool-request:rawq:QUERY -->` — Search project codebase\n\
   - `<!-- tunaflow:tool-request:graph:PATTERN TARGET -->` — Query code graph (callers_of, tests_for, etc.)\n\
   - `<!-- tunaflow:tool-request:plans:completed -->` — List completed plans in this conversation\n\
-  - `<!-- tunaflow:tool-request:memory:TOPIC -->` — Recall compressed conversation memory by topic\n\
+  - `<!-- tunaflow:tool-request:memory:TOPIC -->` — Recall compressed conversation memory by topic (long-term summary)\n\
+  - `<!-- tunaflow:tool-request:recent_turns:N -->` — Fetch the last N user/assistant turns of the CURRENT conversation in full (default 3, max 10). Use when you forgot your own previous reply or need the exact earlier phrasing.\n\
   - `<!-- tunaflow:tool-request:sessions:QUERY -->` — Find related past sessions\n\
   - `<!-- tunaflow:tool-request:skills:KEYWORD -->` — Load skill documentation by keyword\n\
   - `<!-- tunaflow:tool-request:artifacts:TITLE -->` — Fetch artifact content by title/ID\n\

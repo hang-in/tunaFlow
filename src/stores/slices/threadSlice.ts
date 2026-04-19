@@ -170,12 +170,29 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
     set((state) => ({ drawerPinned: !state.drawerPinned }));
   },
 
-  sendThreadMessage: async (prompt: string, engine?: string, model?: string, opts?: { userMessageId?: string }) => {
+  sendThreadMessage: async (prompt: string, engine?: string, model?: string, opts?: { userMessageId?: string; imagePaths?: string[] }) => {
     const { threadBranchConvId, threadBranchId, selectedProjectKey } = get();
     if (!threadBranchConvId || !selectedProjectKey || !threadBranchId) return;
     const convId = threadBranchConvId; // narrowed: string (guaranteed by guard above)
     const engineKey = engine ?? "claude";
     const isSystemFollowup = !!opts?.userMessageId;
+
+    // runtimeSlice.sendWithEngine 와 동일한 model 폴백 규칙 (engine 일치 시 conv 저장값,
+    // 아니면 agentProfiles 의 engine 매칭 프로필 model). 자동 전송 경로에서 model 인자
+    // 누락 시 codex app-server 400 방지.
+    if (!model) {
+      const state = get();
+      const saved = state._convEngineMap[convId];
+      if (saved?.engine === engineKey && saved?.model) {
+        model = saved.model;
+      } else {
+        const prof = state.agentProfiles.find((p) => p.engine === engineKey && p.model);
+        if (prof?.model) model = prof.model;
+      }
+      if (!model) {
+        console.warn(`[sendThreadMessage] model unresolved for engine=${engineKey} conv=${convId.slice(0, 12)}…`);
+      }
+    }
 
     // Queue if already running
     if (get().runningThreadIds.includes(convId)) {
@@ -288,6 +305,7 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       // message has already been persisted via persist_system_msg → pass the
       // pre-existing id so Rust skips user-message creation.
       ...(opts?.userMessageId ? { userMessageId: opts.userMessageId } : {}),
+      ...(opts?.imagePaths && opts.imagePaths.length > 0 ? { imagePaths: opts.imagePaths } : {}),
     };
 
     // Event listeners for streaming updates

@@ -136,6 +136,12 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 37 {
         apply_v37(conn)?;
     }
+    if current < 38 {
+        apply_v38(conn)?;
+    }
+    if current < 39 {
+        apply_v39(conn)?;
+    }
     Ok(())
 }
 
@@ -859,6 +865,61 @@ fn apply_v36(conn: &Connection) -> Result<(), AppError> {
 fn apply_v37(conn: &Connection) -> Result<(), AppError> {
     add_column_if_missing(conn, "projects", "conventions_sync_enabled", "INTEGER DEFAULT 0")?;
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (37, ?1)", [now_epoch()])?;
+    Ok(())
+}
+
+/// v38 — meta_notifications 테이블 신설.
+/// Meta agent 알림 (워크플로우 이벤트, Tier 2 분석 결과) 영속화.
+/// 설계: docs/plans/metaAgentPlan.md
+fn apply_v38(conn: &Connection) -> Result<(), AppError> {
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS meta_notifications (
+            id            TEXT PRIMARY KEY,
+            project_key   TEXT,
+            kind          TEXT NOT NULL,
+            title         TEXT NOT NULL,
+            summary       TEXT,
+            route_json    TEXT,
+            created_at    INTEGER NOT NULL,
+            read_at       INTEGER,
+            dismissed_at  INTEGER,
+            FOREIGN KEY (project_key) REFERENCES projects(key) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_meta_notif_project ON meta_notifications(project_key);
+        CREATE INDEX IF NOT EXISTS idx_meta_notif_created ON meta_notifications(created_at DESC);
+    ")?;
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (38, ?1)", [now_epoch_ms()])?;
+    Ok(())
+}
+
+/// v39 — conversation_chunks 스테일 row 정리.
+/// 구버전 `index_conversation` (현재 dead_code) 이 저장하던 `kind='anchor'` / `kind='pair'`
+/// row 는 현재 production 경로(`build_sliding_window_chunks` 는 `window` 만 생성)에서
+/// 재인덱싱 대상이 아니라 embedding=NULL 인 채로 영구 잔존. 벡터 검색에선 어차피 무시되지만
+/// COUNT/통계를 왜곡시키고 disk 차지. 정리.
+fn apply_v39(conn: &Connection) -> Result<(), AppError> {
+    // 1) vec_chunks(rowid 매핑) 에 있는 해당 chunk 들도 정리.
+    let stale_rowids: Vec<i64> = {
+        let mut stmt = conn.prepare(
+            "SELECT rowid FROM conversation_chunks
+             WHERE embedding IS NULL AND kind IN ('anchor', 'pair')"
+        )?;
+        stmt.query_map([], |r| r.get::<_, i64>(0))
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+    };
+    for rid in &stale_rowids {
+        // vec_chunks 는 virtual table (vec0). 없는 rowid 삭제는 그냥 no-op.
+        conn.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [rid]).ok();
+    }
+    // 2) 본체 row 삭제
+    let deleted = conn.execute(
+        "DELETE FROM conversation_chunks
+         WHERE embedding IS NULL AND kind IN ('anchor', 'pair')",
+        [],
+    )?;
+    eprintln!("[migration v39] cleaned up {} stale anchor/pair chunks (NULL embedding)", deleted);
+    conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (39, ?1)", [now_epoch_ms()])?;
     Ok(())
 }
 

@@ -119,6 +119,7 @@ pub async fn send_message(
                 system_prompt,
                 resume_token: None,
                 project_path: project_path.clone(),
+                image_paths: Vec::new(),
             };
             match engine.as_str() {
                 "claude" => claude::run(run_input),
@@ -258,6 +259,7 @@ pub async fn start_rt_run(
                         system_prompt: Some(format!("You are {} participating in a roundtable discussion. Be concise.", name)),
                         resume_token: None,
                         project_path: None,
+                        image_paths: Vec::new(),
                     };
                     match engine {
                         "claude" => claude::run(run_input),

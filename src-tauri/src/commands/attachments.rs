@@ -116,6 +116,63 @@ pub fn save_attachment(
     })
 }
 
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResult {
+    pub deleted_count: usize,
+    pub freed_bytes: u64,
+}
+
+/// `.tunaflow/attachments/` 내부에서 `older_than_days` 보다 오래된 파일을 삭제.
+/// `.gitignore` 는 보존. 0 이하 값은 "전부 삭제" 로 해석.
+#[tauri::command]
+pub fn cleanup_attachments(
+    project_path: String,
+    older_than_days: i64,
+) -> Result<CleanupResult, AppError> {
+    let project = PathBuf::from(&project_path);
+    if !project.is_dir() {
+        return Err(AppError::NotFound("project path not a directory".into()));
+    }
+    let dir = project.join(ATTACHMENT_DIR);
+    if !dir.is_dir() {
+        return Ok(CleanupResult { deleted_count: 0, freed_bytes: 0 });
+    }
+
+    let threshold = if older_than_days > 0 {
+        std::time::SystemTime::now()
+            .checked_sub(std::time::Duration::from_secs((older_than_days as u64) * 86400))
+    } else {
+        None
+    };
+
+    let mut deleted_count = 0usize;
+    let mut freed_bytes = 0u64;
+
+    for entry in fs::read_dir(&dir)? {
+        let entry = match entry { Ok(e) => e, Err(_) => continue };
+        let path = entry.path();
+        // .gitignore 보존
+        if path.file_name().and_then(|n| n.to_str()) == Some(".gitignore") { continue; }
+        let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
+        if !meta.is_file() { continue; }
+
+        let should_delete = match threshold {
+            None => true,
+            Some(t) => meta.modified().map(|m| m < t).unwrap_or(false),
+        };
+        if !should_delete { continue; }
+
+        let sz = meta.len();
+        if fs::remove_file(&path).is_ok() {
+            deleted_count += 1;
+            freed_bytes += sz;
+        }
+    }
+
+    Ok(CleanupResult { deleted_count, freed_bytes })
+}
+
 #[tauri::command]
 pub fn delete_attachment(abs_path: String) -> Result<(), AppError> {
     // 보안: 경로가 `.tunaflow/attachments` 를 포함해야 삭제 허용. 그 외엔 거부.
@@ -199,6 +256,35 @@ mod tests {
     fn delete_refuses_outside_attachments_dir() {
         let err = delete_attachment("/etc/passwd".into()).unwrap_err();
         assert!(format!("{err}").contains("refusing to delete"));
+    }
+
+    #[test]
+    fn cleanup_with_zero_days_deletes_all_but_gitignore() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = tmp.path().to_string_lossy().to_string();
+        // 파일 2개 저장
+        let data = general_purpose::STANDARD.encode("one");
+        let _ = save_attachment(project.clone(), "a.txt".into(), data).unwrap();
+        let data2 = general_purpose::STANDARD.encode("two");
+        let _ = save_attachment(project.clone(), "b.txt".into(), data2).unwrap();
+        // older_than_days=0 → 전부 삭제
+        let result = cleanup_attachments(project.clone(), 0).unwrap();
+        assert_eq!(result.deleted_count, 2);
+        assert!(result.freed_bytes >= 6);
+        // .gitignore 는 살아있어야
+        assert!(tmp.path().join(".tunaflow/attachments/.gitignore").exists());
+    }
+
+    #[test]
+    fn cleanup_with_future_threshold_deletes_nothing() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let project = tmp.path().to_string_lossy().to_string();
+        let data = general_purpose::STANDARD.encode("x");
+        let _ = save_attachment(project.clone(), "fresh.txt".into(), data).unwrap();
+        // 막 저장한 파일은 30일 이상 오래되지 않았으므로 그대로
+        let result = cleanup_attachments(project, 30).unwrap();
+        assert_eq!(result.deleted_count, 0);
+        assert_eq!(result.freed_bytes, 0);
     }
 
     #[test]

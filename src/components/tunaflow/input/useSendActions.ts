@@ -350,10 +350,14 @@ export function useSendActions({
     } else if (threadMode) {
       // Thread mode: route through sendThreadMessage
       const model = resolveModel();
-      await sendThreadMessage(prompt, engine, model);
+      // Codex vision: pass abs paths of image attachments as -i argv. Other
+      // engines read via Read tool from the prompt path section.
+      const imagePaths = attachments.filter((a) => a.isImage && a.absPath).map((a) => a.absPath);
+      await sendThreadMessage(prompt, engine, model, imagePaths.length > 0 ? { imagePaths } : undefined);
     } else {
       const model = resolveModel();
-      await sendWithEngine(engine ?? "claude", prompt, model);
+      const imagePaths = attachments.filter((a) => a.isImage && a.absPath).map((a) => a.absPath);
+      await sendWithEngine(engine ?? "claude", prompt, model, undefined, imagePaths.length > 0 ? { imagePaths } : undefined);
     }
   };
 

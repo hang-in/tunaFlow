@@ -644,6 +644,82 @@ export function RuntimeSection() {
           <div className="flex items-center gap-2"><span className="text-muted-foreground w-[80px]">DB SSOT</span><span className="text-foreground/80">Event 유실 시 list_messages()로 복구</span></div>
         </div>
       </div>
+
+      <AttachmentsCleanupPanel />
+    </div>
+  );
+}
+
+// ─── Attachments Cleanup ──────────────────────────────────────────────────────
+
+function AttachmentsCleanupPanel() {
+  const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
+  const [olderThanDays, setOlderThanDays] = useState(30);
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState<{ deletedCount: number; freedBytes: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const runCleanup = async () => {
+    if (!selectedProjectKey) {
+      setError("프로젝트가 선택되지 않았습니다.");
+      return;
+    }
+    setRunning(true);
+    setError(null);
+    try {
+      const project = await invoke<{ path?: string }>("get_project", { key: selectedProjectKey });
+      if (!project.path) { setError("프로젝트 경로를 찾을 수 없습니다."); return; }
+      const result = await invoke<{ deletedCount: number; freedBytes: number }>("cleanup_attachments", {
+        projectPath: project.path,
+        olderThanDays,
+      });
+      setLastResult(result);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const formatSize = (bytes: number) => bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)}MB`
+    : `${(bytes / 1024).toFixed(0)}KB`;
+
+  return (
+    <div className="rounded-lg border border-border/30 bg-background/50 p-4 space-y-3">
+      <div>
+        <h3 className="text-[13px] font-medium text-foreground">Attachments Cleanup</h3>
+        <p className="text-[11px] text-muted-foreground mt-0.5">
+          `.tunaflow/attachments/` 내부의 오래된 첨부 파일을 정리합니다. (.gitignore 는 보존)
+        </p>
+      </div>
+      <div className="flex items-center gap-2 text-[12px]">
+        <span className="text-muted-foreground">보다 오래된 파일 삭제:</span>
+        <input
+          type="number"
+          min={0}
+          max={3650}
+          value={olderThanDays}
+          onChange={(e) => setOlderThanDays(Math.max(0, parseInt(e.target.value || "0", 10)))}
+          className="w-16 px-2 py-1 rounded border border-border/40 bg-background text-foreground"
+        />
+        <span className="text-muted-foreground">일 (0 = 전부)</span>
+        <button
+          onClick={runCleanup}
+          disabled={running || !selectedProjectKey}
+          className="ml-auto px-3 py-1 rounded bg-primary text-primary-foreground text-[12px] disabled:opacity-50"
+        >
+          {running ? "정리 중..." : "정리 실행"}
+        </button>
+      </div>
+      {lastResult && (
+        <div className="text-[11px] text-muted-foreground">
+          ✅ 삭제 {lastResult.deletedCount}건 · 확보 {formatSize(lastResult.freedBytes)}
+        </div>
+      )}
+      {error && (
+        <div className="text-[11px] text-destructive">❌ {error}</div>
+      )}
     </div>
   );
 }

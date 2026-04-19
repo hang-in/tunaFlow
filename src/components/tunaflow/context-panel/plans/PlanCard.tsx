@@ -277,6 +277,15 @@ export function PlanCard({
                     <Check className="w-3 h-3" />구현 완료 — Review 단계로 전환 가능
                     <button
                       onClick={async () => {
+                        // 진입 게이트 + roleAssignments 해석으로 model 포함 전달
+                        const { assertRoleReady, loadRoleAssignments, resolveRoleProfiles } = await import("@/lib/roleAssignments");
+                        const allProfiles = useChatStore.getState().agentProfiles;
+                        const gate = await assertRoleReady("reviewers", allProfiles);
+                        if (!gate.ok) return;
+                        const assignments = await loadRoleAssignments();
+                        const reviewerProfiles = resolveRoleProfiles("reviewers", assignments, allProfiles);
+                        const reviewers = reviewerProfiles.map((p) => ({ engine: p.engine, model: p.model, name: p.label }));
+
                         const implShadow = `branch:${plan.implementationBranchId}`;
                         const msgs = await invoke<Message[]>("list_messages", { conversationId: implShadow });
                         // Run project tests and pass results to Reviewer
@@ -292,7 +301,7 @@ export function PlanCard({
                             }
                           }
                         } catch (e) { console.debug("[test-before-review]", e); }
-                        const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput);
+                        const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, reviewers);
                         handlePlanUpdate({ phase: "review", reviewBranchId: branch.id });
                         await loadBranches(plan.conversationId);
                         await openThread(branch.id);

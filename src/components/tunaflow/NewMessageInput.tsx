@@ -297,7 +297,6 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     try {
       const selected = await openFileDialog({
         multiple: true,
-        filters: [{ name: "Images and files", extensions: ["*"] }],
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];

@@ -100,6 +100,9 @@ pub struct RunInput {
     pub resume_token: Option<String>,
     /// Project directory — agent runs here (read+write own project).
     pub project_path: Option<String>,
+    /// Absolute paths to image attachments. Codex 만 실제로 argv 로 전달
+    /// (`-i <path>` 반복). Claude / Gemini 는 prompt 안에 경로 참조로 처리.
+    pub image_paths: Vec<String>,
 }
 
 pub struct RunOutput {

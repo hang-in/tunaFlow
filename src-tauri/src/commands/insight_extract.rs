@@ -395,7 +395,7 @@ pub async fn run_insight_analysis(
         model,
         system_prompt: Some(system_prompt.unwrap_or(fallback_system)),
         resume_token: None,
-        project_path,
+        project_path, image_paths: Vec::new(),
     };
 
     let engine_name = engine.unwrap_or_else(|| "claude".to_string());

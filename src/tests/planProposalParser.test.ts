@@ -216,3 +216,38 @@ recommendations:
     expect(v!.verdict).toBe("conditional");
   });
 });
+
+// ─── PR-3: File disposition 파싱 ─────────────────────────────────────────────
+
+describe("parseFileDispositions", () => {
+  it("extracts keep/modify/revert blocks", async () => {
+    const { parseFileDispositions } = await import("@/lib/planProposalParser");
+    const details = `이 subtask 는 branch 진입 경로 통합.
+
+**File disposition**:
+- Keep: src/components/ChatInput.tsx — Task 1 결과 유지
+- Modify: src/tabs/MenuTab.tsx — helper 호출로 교체
+- Revert: src/store/useStore.ts — openBranch() 초기화 로직 제거`;
+    const d = parseFileDispositions(details)!;
+    expect(d.keep).toEqual(["src/components/ChatInput.tsx"]);
+    expect(d.modify).toEqual(["src/tabs/MenuTab.tsx"]);
+    expect(d.revert).toEqual(["src/store/useStore.ts"]);
+  });
+
+  it("returns undefined when no block", async () => {
+    const { parseFileDispositions } = await import("@/lib/planProposalParser");
+    expect(parseFileDispositions("plain details without disposition")).toBeUndefined();
+  });
+
+  it("mergeDispositions unions across subtasks", async () => {
+    const { mergeDispositions } = await import("@/lib/planProposalParser");
+    const subtasks = [
+      { title: "A", dispositions: { keep: ["a.ts"], modify: [], revert: ["x.ts"] } },
+      { title: "B", dispositions: { keep: ["b.ts"], modify: ["c.ts"], revert: ["x.ts"] } },
+    ];
+    const merged = mergeDispositions(subtasks);
+    expect(merged.keep.sort()).toEqual(["a.ts", "b.ts"]);
+    expect(merged.modify).toEqual(["c.ts"]);
+    expect(merged.revert).toEqual(["x.ts"]); // dedup
+  });
+});

@@ -42,6 +42,19 @@ pub fn load_compressed_memory(conn: &Connection, conversation_id: &str) -> Optio
     Some(format_topics_as_section(&topics))
 }
 
+/// 가장 최근 compressed memory row 의 `model_used` 를 반환. 엔진 전환 시 출처
+/// 표기("who wrote this summary")에 사용된다. 결과 없으면 None.
+pub fn latest_memory_source(conn: &Connection, conversation_id: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT model_used FROM conversation_memory
+         WHERE conversation_id = ?1 AND model_used IS NOT NULL AND model_used != ''
+         ORDER BY updated_at DESC LIMIT 1",
+        [conversation_id],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+}
+
 /// Format topic list into a readable section for ContextPack injection.
 pub fn format_topics_as_section(topics: &[MemoryTopic]) -> String {
     if topics.len() == 1 {

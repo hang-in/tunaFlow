@@ -23,10 +23,15 @@ const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] 
 
 interface SettingsPanelProps {
   onClose: () => void;
+  initialSection?: string;
 }
 
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const [activeSection, setActiveSection] = useState<SettingsSection>("profile");
+export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
+  const valid: SettingsSection[] = ["profile", "agents", "personas", "skills", "runtime", "terminal", "mobile"];
+  const initial = (initialSection && valid.includes(initialSection as SettingsSection))
+    ? (initialSection as SettingsSection)
+    : "profile";
+  const [activeSection, setActiveSection] = useState<SettingsSection>(initial);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center">

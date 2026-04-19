@@ -340,6 +340,12 @@ pub fn run() {
             commands::memos::create_memo,
             commands::memos::get_branch_brief,
             commands::memos::delete_memo,
+            commands::meta_notifications::create_meta_notification,
+            commands::meta_notifications::list_meta_notifications,
+            commands::meta_notifications::mark_meta_notification_read,
+            commands::meta_notifications::mark_all_meta_notifications_read,
+            commands::meta_notifications::dismiss_meta_notification,
+            commands::meta_notifications::clear_meta_notifications,
             // Artifact
             commands::artifacts::list_artifacts,
             commands::artifacts::list_artifacts_by_branch,
@@ -362,6 +368,7 @@ pub fn run() {
             // Conversation Memory
             commands::conversation_memory::get_conversation_memory_status,
             commands::conversation_memory::list_memory_topics,
+            commands::conversation_memory::list_recent_turns,
             commands::conversation_memory::compress_conversation_memory,
             commands::conversation_memory::force_recompress_memory,
             // Session Discovery
@@ -387,9 +394,11 @@ pub fn run() {
             commands::plans::create_plan,
             commands::plans::get_plan,
             commands::plans::list_plans_by_conversation,
+            commands::plans::list_plans_by_project,
             commands::plans::get_active_plan_phase,
             commands::plans::count_active_plans,
             commands::plans::update_plan_status,
+            commands::plans::update_plan_meta,
             commands::plans::list_subtasks,
             commands::plans::set_subtask_owner,
             commands::plans::update_subtask_status,
@@ -446,9 +455,10 @@ pub fn run() {
             commands::secrets::secret_get,
             commands::secrets::secret_has,
             commands::secrets::secret_delete,
-            // Attachments — 첨부 파일 저장/삭제
+            // Attachments — 첨부 파일 저장/삭제/정리
             commands::attachments::save_attachment,
             commands::attachments::delete_attachment,
+            commands::attachments::cleanup_attachments,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

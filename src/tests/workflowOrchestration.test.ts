@@ -390,17 +390,32 @@ describe("startReviewRT", () => {
     expect(result.mode).toBe("sequential");
   });
 
-  it("uses custom reviewer engines", async () => {
+  it("uses custom reviewer engines (string[] backward-compat)", async () => {
     const result = await startReviewRT(mockPlan, [], undefined, ["gemini", "ollama"]);
 
-    // RT config should include both engines
     const saveCall = (invoke as any).mock.calls.find((c: string[]) => c[0] === "save_rt_config");
     expect(saveCall).toBeDefined();
     const config = JSON.parse(saveCall[1].configJson);
     expect(config.participants.length).toBe(2);
     expect(config.participants[0].engine).toBe("gemini");
     expect(config.participants[1].engine).toBe("ollama");
-    // Returned participants should match
+    // string[] 경로에서는 model 이 없어야 함
+    expect(config.participants[0].model).toBeUndefined();
     expect(result.participants.map((p) => p.engine)).toEqual(["gemini", "ollama"]);
+  });
+
+  it("forwards reviewer model/name when passed as ReviewerChoice[]", async () => {
+    const result = await startReviewRT(mockPlan, [], undefined, [
+      { engine: "codex", model: "gpt-5", name: "Reviewer-Codex" },
+      { engine: "gemini", model: "gemini-2.5-pro" },
+    ]);
+
+    const saveCall = (invoke as any).mock.calls.find((c: string[]) => c[0] === "save_rt_config");
+    expect(saveCall).toBeDefined();
+    const config = JSON.parse(saveCall[1].configJson);
+    expect(config.participants.length).toBe(2);
+    expect(config.participants[0]).toMatchObject({ engine: "codex", model: "gpt-5", name: "Reviewer-Codex" });
+    expect(config.participants[1]).toMatchObject({ engine: "gemini", model: "gemini-2.5-pro" });
+    expect(result.participants[0].model).toBe("gpt-5");
   });
 });

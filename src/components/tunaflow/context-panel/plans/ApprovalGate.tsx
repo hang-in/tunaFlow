@@ -69,31 +69,42 @@ export function ApprovalGate({
     }
   };
 
-  if (mode === "agent-select") {
-    return (
-      <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground">Developer 에이전트:</span>
-          <select value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)} className="text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none">
-            {profiles.map((p) => <option key={p.id} value={p.id}>{p.label} ({p.engine})</option>)}
-          </select>
-        </div>
-        <div className="flex gap-1.5">
-          <button onClick={handleDevStart} className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors">Dev 시작</button>
-          <button onClick={() => setMode("idle")} className="px-2.5 py-1 rounded-md text-[10px] text-muted-foreground hover:text-foreground transition-colors">취소</button>
-        </div>
-      </div>
-    );
-  }
-
+  // Dev 진입 UX 단순화: 에이전트 선택 UI 를 상단에 상시 노출(기본 coder preselect) +
+  // "Dev 시작" 한 번 클릭으로 즉시 실행. 이전엔 클릭→선택 모드 전환→다시 클릭 3단계였음.
+  const engineLabel = selectedProfile ? `${selectedProfile.label} (${selectedProfile.engine}${selectedProfile.model ? `/${selectedProfile.model}` : ""})` : "—";
   return (
-    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
-      <button onClick={() => setMode("agent-select")} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors">
-        <Check className="w-3 h-3" />Dev 시작
-      </button>
-      <button onClick={handleRevert} disabled={mode === "busy"} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
-        <Pause className="w-3 h-3" />되돌리기
-      </button>
+    <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-muted-foreground shrink-0">Developer:</span>
+        <select
+          value={selectedProfileId}
+          onChange={(e) => setSelectedProfileId(e.target.value)}
+          disabled={mode === "busy"}
+          className="flex-1 text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none disabled:opacity-40"
+          title={engineLabel}
+        >
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>{p.label} ({p.engine}{p.model ? `/${p.model.slice(0, 24)}` : ""})</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex gap-1.5">
+        <button
+          onClick={handleDevStart}
+          disabled={mode === "busy" || !selectedProfile}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors"
+          title="선택된 Developer 에이전트로 즉시 구현 시작"
+        >
+          <Check className="w-3 h-3" />Dev 시작
+        </button>
+        <button
+          onClick={handleRevert}
+          disabled={mode === "busy"}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+        >
+          <Pause className="w-3 h-3" />되돌리기
+        </button>
+      </div>
     </div>
   );
 }

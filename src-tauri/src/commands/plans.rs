@@ -193,6 +193,36 @@ pub fn list_plans_by_conversation(
     Ok(rows)
 }
 
+/// List all plans for a project (across every conversation in the project).
+///
+/// 도구 호출(`tool-request:plans`) 경로에서 쓰인다. `list_plans_by_conversation`
+/// 은 현재 대화 ID 와 정확히 일치하는 플랜만 반환하므로, 에이전트가 브랜치
+/// (shadow conv `branch:<id>`) 안에서 질의할 때 **같은 프로젝트의 메인 대화에
+/// 소속된 완료 플랜** 을 놓치는 문제가 있다. 이 명령은 project_key 기준으로
+/// 전체를 반환해서 에이전트가 "이 프로젝트의 완료된 플랜" 을 정확히 볼 수 있게
+/// 한다.
+#[tauri::command]
+pub fn list_plans_by_project(
+    project_key: String,
+    state: State<DbState>,
+) -> Result<Vec<Plan>, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let sql = format!(
+        "SELECT {} FROM plans p JOIN conversations c ON c.id = p.conversation_id
+         WHERE c.project_key = ?1 ORDER BY p.created_at ASC",
+        PLAN_COLS
+            .split(", ")
+            .map(|c| format!("p.{}", c))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([&project_key], map_plan)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Get the active plan phase for a conversation. Returns the phase of the most recent non-done plan.
 #[tauri::command]
 pub fn get_active_plan_phase(
@@ -225,6 +255,32 @@ pub fn count_active_plans(
         |row| row.get(0),
     ).unwrap_or(0);
     Ok(count)
+}
+
+/// Plan 의 metadata(title/description/expected_outcome) 를 일괄 업데이트.
+/// b 정책 revision overwrite 경로에서 사용 — 아키텍트가 rev 로 plan 을 재정의할 때
+/// replacePlanSubtasks + bumpPlanMajorVersion 와 함께 호출.
+#[tauri::command]
+pub fn update_plan_meta(
+    id: String,
+    title: Option<String>,
+    description: Option<String>,
+    expected_outcome: Option<String>,
+    state: State<DbState>,
+) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let now = now_epoch_ms();
+    // COALESCE 로 None 은 기존 값 유지.
+    conn.execute(
+        "UPDATE plans SET
+            title = COALESCE(?1, title),
+            description = COALESCE(?2, description),
+            expected_outcome = COALESCE(?3, expected_outcome),
+            updated_at = ?4
+         WHERE id = ?5",
+        params![title, description, expected_outcome, now, id],
+    )?;
+    Ok(())
 }
 
 /// Update the status of a plan (draft → active → done | abandoned).

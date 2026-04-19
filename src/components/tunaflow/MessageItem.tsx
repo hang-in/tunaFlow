@@ -213,7 +213,14 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
             ) : isStreaming && !message.content ? (
               <TypingIndicator />
             ) : isStreaming ? (
-              <MarkdownBody content={message.content} conversationId={message.conversationId} isStreaming />
+              <>
+                <MarkdownBody content={message.content} conversationId={message.conversationId} isStreaming />
+                {/* Tool running 중에는 본문 아래에도 타이핑 인디케이터를 병행 표시 —
+                    tool 결과 대기 중 "멈춘 것처럼" 보이는 UX 문제 해소. */}
+                {toolSteps.some((s) => s.status === "running") && (
+                  <div className="mt-1 opacity-60"><TypingIndicator /></div>
+                )}
+              </>
             ) : (
               <MarkdownBody content={message.content} conversationId={message.conversationId} className={cn(isCompact && "line-clamp-3")} />
             )}
