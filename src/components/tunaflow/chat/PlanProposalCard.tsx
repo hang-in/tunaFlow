@@ -4,6 +4,7 @@ import { ClipboardList, Check, RotateCcw, Merge, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import type { ParsedPlanProposal } from "@/lib/planProposalParser";
+import { mergeDispositions } from "@/lib/planProposalParser";
 import type { Plan, PlanEvent } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { slugifyPlanTitle, syncPlanDocument } from "@/lib/workflowOrchestration";
@@ -17,6 +18,9 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
   const [status, setStatus] = useState<"loading" | "idle" | "promoting" | "promoted" | "merged" | "revising" | "warn-empty" | "dismissed">("loading");
   const [revisionInput, setRevisionInput] = useState("");
   const [revisionTarget, setRevisionTarget] = useState<Plan | null>(null);
+  // b 정책 revision overwrite 후보 — `promoted` 상태에서 active 매칭 plan 이 있고
+  // 제안 subtasks 가 기존과 다르면 이 값으로 "rev 로 덮어쓰기" 수동 버튼이 노출된다.
+  const [overwriteCandidate, setOverwriteCandidate] = useState<Plan | null>(null);
   const activeBranchId = useChatStore((s) => s.activeBranchId);
   const threadBranchId = useChatStore((s) => s.threadBranchId);
   const threadBranchConvId = useChatStore((s) => s.threadBranchConvId);
@@ -63,8 +67,21 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
         return;
       }
 
-      // Matching plan found — suppress promote button for done/abandoned/branch context
-      if (isBranchContext || matchingPlan.status === "done" || matchingPlan.status === "abandoned") {
+      // Branch context 에서는 main chat 의 card 가 promote/overwrite 를 전담.
+      if (isBranchContext) {
+        setStatus("promoted");
+        return;
+      }
+
+      // done/abandoned plan — "등록됨" 표시는 유지하되, 제안 subtasks 가 기존과 다르면
+      // **완료된 Plan 재개** 용 overwrite 후보로 세팅. 사용자가 버튼 눌러야 재개.
+      if (matchingPlan.status === "done" || matchingPlan.status === "abandoned") {
+        const existingSubtasks = await planApi.listSubtasks(matchingPlan.id);
+        const proposalKey = proposal.subtasks.map((s) => s.title.toLowerCase()).join("|");
+        const existingKey = existingSubtasks.map((s) => s.title.toLowerCase()).join("|");
+        if (proposal.subtasks.length > 0 && proposalKey !== existingKey) {
+          setOverwriteCandidate(matchingPlan);
+        }
         setStatus("promoted");
         return;
       }
@@ -98,10 +115,104 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
         return;
       }
 
-      // Active plan, no pending revision → already promoted, just show "등록됨"
+      // Active plan, no pending revision → already promoted.
+      // b 정책: 기존 subtasks 와 제안 subtasks 가 다르면 사용자가 수동 overwrite 할 수 있게
+      // `overwriteCandidate` 세팅. 동일하면 이미 반영된 상태라 버튼 숨김.
+      const existingSubtasks = await planApi.listSubtasks(matchingPlan.id);
+      const proposalKey = proposal.subtasks.map((s) => s.title.toLowerCase()).join("|");
+      const existingKey = existingSubtasks.map((s) => s.title.toLowerCase()).join("|");
+      if (proposal.subtasks.length > 0 && proposalKey !== existingKey) {
+        setOverwriteCandidate(matchingPlan);
+      }
       setStatus("promoted");
     }).catch(() => setStatus("idle"));
   }, [conversationId]);
+
+  const handleOverwrite = async () => {
+    if (!overwriteCandidate) return;
+    const isResumingDone = overwriteCandidate.status === "done" || overwriteCandidate.status === "abandoned";
+    // 명시적 사용자 confirm — 기존 subtasks/메타가 교체되고 branches 가 archive 됨을 경고.
+    const confirmMsg = isResumingDone
+      ? `완료된 Plan "${overwriteCandidate.title}" 을 이 제안으로 재개하시겠습니까?\n\n` +
+        `- 이미 ${overwriteCandidate.status === "done" ? "완료" : "폐기"} 된 Plan 을 active 로 되돌려 Dev 단계로 진입시킵니다\n` +
+        `- 기존 subtasks 는 모두 제안 내용으로 교체됩니다\n` +
+        `- 이미 archive 된 impl/review branches 는 그대로 (재사용하지 않음 — 신규 Dev 시작 시 새 브랜치)\n` +
+        `- 이미 수정된 파일은 자동 revert 되지 않습니다`
+      : `기존 Plan "${overwriteCandidate.title}" 을 이 제안으로 덮어쓰시겠습니까?\n\n` +
+        `- 기존 subtasks 는 모두 교체됩니다\n` +
+        `- 진행 중인 implementation/review branches 는 archive 됩니다\n` +
+        `- Phase 가 Approval 로 리셋되어 Dev 시작 가능 상태가 됩니다\n` +
+        `- 이미 수정된 파일은 자동 revert 되지 않습니다 (필요 시 수동 처리)`;
+    const ok = window.confirm(confirmMsg);
+    if (!ok) return;
+
+    setStatus("promoting");
+    try {
+      // done/abandoned → active 로 복원해야 워크플로우 탭에 다시 노출됨
+      if (isResumingDone) {
+        await planApi.updatePlanStatus(overwriteCandidate.id, "active");
+      }
+      // 1) meta (title/description/expectedOutcome) 업데이트
+      await planApi.updatePlanMeta(overwriteCandidate.id, {
+        title: proposal.title || null,
+        description: proposal.description || null,
+        expectedOutcome: proposal.expectedOutcome || null,
+      });
+      // 2) subtasks 전량 교체
+      await planApi.replacePlanSubtasks(overwriteCandidate.id, proposal.subtasks.map((s) => ({
+        title: s.title, details: s.details,
+      })));
+      // 3) major version bump + 이벤트 기록
+      await planApi.bumpPlanMajorVersion(overwriteCandidate.id);
+      await planApi.createPlanEvent(overwriteCandidate.id, "plan_full_revision_requested", "user",
+        "Manual overwrite via PlanProposalCard (b policy)");
+      await planApi.createPlanEvent(overwriteCandidate.id, "review_merged", "system",
+        "Plan overwritten with revision proposal");
+      // 4) impl/review branch archive
+      if (overwriteCandidate.implementationBranchId) {
+        await invoke("archive_branch", { id: overwriteCandidate.implementationBranchId }).catch(() => {});
+        await planApi.linkPlanBranch(overwriteCandidate.id, "implementation", null);
+      }
+      if (overwriteCandidate.reviewBranchId) {
+        await invoke("archive_branch", { id: overwriteCandidate.reviewBranchId }).catch(() => {});
+        await planApi.linkPlanBranch(overwriteCandidate.id, "review", null);
+      }
+      closeThread();
+      await loadBranches(overwriteCandidate.conversationId);
+      // 5) phase = approval (b 정책: Dev 시작 바로 가능)
+      await planApi.updatePlanPhase(overwriteCandidate.id, "approval");
+      syncPlanDocument(overwriteCandidate.id);
+      // 워크플로우 탭 전환
+      window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "workflow" }));
+      window.dispatchEvent(new CustomEvent("tunaflow:switch-stage", { detail: "plan-check" }));
+      setRevisionTarget(overwriteCandidate);
+      setStatus("merged");
+
+      // PR-3: subtask 에 File disposition 이 명시돼 있으면 사용자에게 요약 토스트.
+      // 자동 revert 는 하지 않음(위험). 안내만 — 사용자가 IDE/git 으로 직접 처리.
+      const disp = mergeDispositions(proposal.subtasks);
+      const totalFiles = disp.keep.length + disp.modify.length + disp.revert.length;
+      if (totalFiles > 0) {
+        const { toast } = await import("sonner");
+        const summary = [
+          disp.keep.length > 0 ? `Keep ${disp.keep.length}` : null,
+          disp.modify.length > 0 ? `Modify ${disp.modify.length}` : null,
+          disp.revert.length > 0 ? `Revert ${disp.revert.length}` : null,
+        ].filter(Boolean).join(" · ");
+        if (disp.revert.length > 0) {
+          toast.warning(
+            `파일 처리 방침: ${summary}\n\nRevert 대상 (수동 처리 필요):\n${disp.revert.slice(0, 6).map((f) => `• ${f}`).join("\n")}${disp.revert.length > 6 ? `\n… +${disp.revert.length - 6}` : ""}`,
+            { duration: 12000 },
+          );
+        } else {
+          toast.info(`파일 처리 방침: ${summary}`, { duration: 5000 });
+        }
+      }
+    } catch (e) {
+      console.warn("[overwrite] failed:", e);
+      setStatus("idle");
+    }
+  };
 
   const autoMerge = async (targetPlan: Plan, isMajorRevision: boolean = false, overrideNextPhase?: string) => {
     setStatus("promoting");
@@ -253,10 +364,25 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
   }
 
   if (status === "promoted") {
+    const isDone = overwriteCandidate?.status === "done" || overwriteCandidate?.status === "abandoned";
+    const locationHint = isDone ? " (워크플로우 탭 → Done)" : "";
     return (
-      <div className="my-2 rounded-lg border border-status-approved/30 bg-status-approved/5 px-4 py-2.5 text-xs text-status-approved flex items-center gap-2">
-        <Check className="w-3.5 h-3.5" />
-        <span>Plan &quot;{proposal.title}&quot; — Plan 탭에 등록됨</span>
+      <div className="my-2 rounded-lg border border-status-approved/30 bg-status-approved/5 px-4 py-2.5 text-xs text-status-approved flex items-center gap-2 flex-wrap">
+        <Check className="w-3.5 h-3.5 shrink-0" />
+        <span className="flex-1 min-w-0">Plan &quot;{proposal.title}&quot; — Plan 탭에 등록됨{locationHint}</span>
+        {overwriteCandidate && (
+          <button
+            onClick={handleOverwrite}
+            className="shrink-0 px-2 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+            title={
+              isDone
+                ? "완료된 Plan 을 이 제안으로 재개 (active + Approval)"
+                : "이 제안으로 기존 Plan 덮어쓰기 (Approval 로 리셋 + branches archive)"
+            }
+          >
+            {isDone ? "완료 Plan 재개" : "rev 로 덮어쓰기"}
+          </button>
+        )}
       </div>
     );
   }

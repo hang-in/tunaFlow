@@ -64,6 +64,8 @@ pub struct ContextData {
 
     // Compressed memory
     pub compressed_memory: Option<String>,
+    /// 가장 최근 compressed_memory row 의 `model_used` — 엔진 전환 시 출처 표기용.
+    pub compressed_memory_source: Option<String>,
 
     // Cross-session (label, messages)
     pub cross_session_data: Vec<(String, Vec<(String, String)>)>,
@@ -73,6 +75,12 @@ pub struct ContextData {
 
     // Agent role document (docs/agents/{role}.md content)
     pub agent_role_doc: Option<String>,
+
+    /// Revision 컨텍스트 — architect 가 rev.N 을 제안할 때 참고하도록 이전
+    /// impl branch 의 변경 파일 / 최근 review findings 를 요약해 주입. 트리거:
+    /// plan_events 에 `doom_loop_escalated` 또는 `architect_redesign_requested`
+    /// 또는 `review_failed` 가 가장 최근 이벤트일 때. 그 외엔 None.
+    pub previous_impl_status: Option<String>,
 
     // Pass-through (no DB needed)
     pub active_skills: Vec<String>,
@@ -89,6 +97,12 @@ pub struct ContextData {
     /// been synced into CLAUDE.md/AGENTS.md/GEMINI.md. Default false.
     /// Toggled per-project via `set_project_conventions_sync` Tauri command.
     pub conventions_synced: bool,
+
+    /// 같은 Claude/Codex 세션이 연속되는지 여부. True 면 `recent_context` +
+    /// `compressed_memory` 섹션을 **생성하지 않는다** — Claude 자체 세션이 history 를
+    /// 가지고 있어 tunaFlow prepend 가 오염원이 되기 때문. 에이전트는 필요 시
+    /// `tool-request:recent_turns:N` 으로 명시 조회. False 면 정상 Full + anchor.
+    pub is_session_continuation: bool,
 }
 
 /// Phase A: Load all data needed for ContextPack assembly from DB.
@@ -394,12 +408,20 @@ pub fn load_context_data(
     }
 
     // Query 10: compressed memory (scratchpad: also check main chat memory)
-    let compressed_memory = load_compressed_memory(conn, conversation_id)
-        .or_else(|| {
-            if is_scratchpad {
-                plan_lookup_conv.as_deref().and_then(|main_id| load_compressed_memory(conn, main_id))
-            } else { None }
-        });
+    let (compressed_memory, compressed_memory_source) = {
+        let own = load_compressed_memory(conn, conversation_id);
+        if own.is_some() {
+            (own, crate::commands::memory_topics::latest_memory_source(conn, conversation_id))
+        } else if is_scratchpad {
+            if let Some(main_id) = plan_lookup_conv.as_deref() {
+                let main_mem = load_compressed_memory(conn, main_id);
+                let src = if main_mem.is_some() {
+                    crate::commands::memory_topics::latest_memory_source(conn, main_id)
+                } else { None };
+                (main_mem, src)
+            } else { (None, None) }
+        } else { (None, None) }
+    };
 
     // Query 11: cross-session data (manual IDs + auto-discovered links)
     let effective_cross_ids: Vec<String> = if cross_session_ids.is_empty() {
@@ -451,6 +473,11 @@ pub fn load_context_data(
         None
     };
 
+    // Query 13: previous implementation status (for architect revision context).
+    // 아키텍트가 rev.N 을 제안할 때 이전 impl branch 의 변경 요약·최근 findings 를
+    // 자동 주입해 "어떤 파일을 keep/modify/revert 할지" 판단 근거를 제공.
+    let previous_impl_status = build_previous_impl_status(conn, conversation_id);
+
     // Phase 2 — conventions sync per-project toggle. We already fetched
     // `project_key` above for retrieval; reuse it here instead of re-querying.
     let conventions_synced = project_key
@@ -473,9 +500,11 @@ pub fn load_context_data(
         retrieval_chunks,
         document_chunks,
         compressed_memory,
+        compressed_memory_source,
         cross_session_data,
         thread_inheritance,
         agent_role_doc,
+        previous_impl_status,
         active_skills: active_skills.to_vec(),
         cross_session_ids: cross_session_ids.to_vec(),
         persona_fragment: persona_fragment.map(|s| s.to_string()),
@@ -483,7 +512,130 @@ pub fn load_context_data(
         context_budget_cap,
         user_profile: user_profile_json.map(|s| s.to_string()),
         conventions_synced,
+        is_session_continuation: false, // persistence.rs 에서 필요시 true 로 override
     }
+}
+
+/// 아키텍트 revision 컨텍스트 빌더. 조건:
+///   - conversation 의 active plan 이 있고
+///   - plan_events 의 가장 최근 이벤트가 `doom_loop_escalated` / `architect_redesign_requested`
+///     / `review_failed` / `revision_requested` / `plan_full_revision_requested` 중 하나
+///   - impl branch 또는 review branch 가 존재
+///
+/// 포함 내용:
+///   - 이전 Plan 요약 (title/phase/revision)
+///   - impl branch 에서 수정된 파일 목록 (artifacts 테이블의 file_refs 에서 뽑음)
+///   - 최근 review findings (latest review_verdict message)
+fn build_previous_impl_status(conn: &Connection, conversation_id: &str) -> Option<String> {
+    // 1) active plan
+    let plan_row: Option<(String, String, String, i64, Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT id, title, phase, COALESCE(version_major,0), implementation_branch_id, review_branch_id
+             FROM plans
+             WHERE conversation_id = ?1 AND status NOT IN ('done','abandoned')
+             ORDER BY updated_at DESC LIMIT 1",
+            [conversation_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        )
+        .ok();
+    let (plan_id, plan_title, plan_phase, plan_major, impl_branch_id, review_branch_id) = plan_row?;
+
+    // 2) 최근 plan_event 확인 — revision 트리거가 있어야만 주입
+    let trigger_types = [
+        "doom_loop_escalated", "architect_redesign_requested",
+        "review_failed", "revision_requested", "plan_full_revision_requested",
+    ];
+    let latest_event: Option<String> = conn
+        .query_row(
+            "SELECT event_type FROM plan_events
+             WHERE plan_id = ?1 ORDER BY created_at DESC LIMIT 1",
+            [&plan_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok();
+    let trigger = latest_event.as_deref().map(|e| trigger_types.contains(&e)).unwrap_or(false);
+    if !trigger { return None; }
+
+    // 3) impl branch 변경 파일 목록 (artifacts.file_refs JSON 에서 수집)
+    let mut files: Vec<String> = Vec::new();
+    if let Some(ref bid) = impl_branch_id {
+        let shadow = format!("branch:{}", bid);
+        let mut stmt = conn.prepare(
+            "SELECT file_refs FROM artifacts
+             WHERE conversation_id = ?1 AND file_refs IS NOT NULL AND file_refs != ''
+             ORDER BY created_at ASC",
+        ).ok()?;
+        let rows = stmt.query_map([&shadow], |r| r.get::<_, String>(0)).ok()?;
+        for row in rows.flatten() {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&row) {
+                if let Some(arr) = v.as_array() {
+                    for f in arr {
+                        if let Some(s) = f.as_str() {
+                            if !files.contains(&s.to_string()) { files.push(s.to_string()); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4) 가장 최근 review_verdict findings
+    let latest_findings: Vec<String> = if let Some(ref rid) = review_branch_id {
+        let shadow = format!("branch:{}", rid);
+        let mut stmt = match conn.prepare(
+            "SELECT content FROM messages
+             WHERE conversation_id = ?1 AND role = 'assistant' AND status = 'done'
+             ORDER BY timestamp DESC LIMIT 5",
+        ) { Ok(s) => s, Err(_) => return None };
+        stmt.query_map([&shadow], |r| r.get::<_, String>(0))
+            .map(|rows| rows.filter_map(|r| r.ok())
+                .find(|c| c.contains("<!-- tunaflow:review-verdict -->") || c.contains("verdict:"))
+                .map(|c| {
+                    let mut out = Vec::new();
+                    let mut in_findings = false;
+                    for line in c.lines() {
+                        if line.trim_start().to_lowercase().starts_with("findings:") { in_findings = true; continue; }
+                        if line.trim_start().to_lowercase().starts_with("recommendations:") { in_findings = false; }
+                        if in_findings {
+                            if let Some(stripped) = line.trim_start().strip_prefix("- ") {
+                                out.push(stripped.to_string());
+                            } else if let Some(stripped) = line.trim_start().strip_prefix("* ") {
+                                out.push(stripped.to_string());
+                            }
+                        }
+                    }
+                    out
+                })
+                .unwrap_or_default()
+            )
+            .unwrap_or_default()
+    } else { Vec::new() };
+
+    // 5) 섹션 조립
+    let mut s = String::from("## Previous Implementation Status (for revision context)\n\n");
+    s.push_str(&format!("- Plan: \"{}\" (phase={}, major={})\n", plan_title, plan_phase, plan_major));
+    if let Some(ref bid) = impl_branch_id {
+        s.push_str(&format!("- Impl branch: `branch:{}` (archive 예정 on overwrite)\n", &bid[..bid.len().min(12)]));
+    }
+    if let Some(ref bid) = review_branch_id {
+        s.push_str(&format!("- Review branch: `branch:{}`\n", &bid[..bid.len().min(12)]));
+    }
+    s.push_str(&format!("- 마지막 트리거 이벤트: `{}`\n", latest_event.as_deref().unwrap_or("?")));
+    if !files.is_empty() {
+        s.push_str("\n**Changed files (이전 impl 에서 수정됨)**:\n");
+        for f in files.iter().take(20) { s.push_str(&format!("- `{}`\n", f)); }
+        if files.len() > 20 { s.push_str(&format!("- … (+{}개 생략)\n", files.len() - 20)); }
+    }
+    if !latest_findings.is_empty() {
+        s.push_str("\n**최근 Review findings**:\n");
+        for (i, f) in latest_findings.iter().take(10).enumerate() {
+            let truncated: String = f.chars().take(200).collect();
+            s.push_str(&format!("{}. {}\n", i + 1, truncated));
+        }
+    }
+    s.push_str("\n> rev.N 제안 시 위 파일 각각에 대해 Keep/Modify/Revert 방침을 subtask details 에 명시하세요 (docs/agents/architect.md 의 \"Revision 작성 시 행동 요령\" 참조).\n");
+
+    Some(s)
 }
 
 /// Search failure lessons relevant to the current rework context.

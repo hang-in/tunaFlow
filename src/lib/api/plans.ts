@@ -5,6 +5,10 @@ export async function listPlansByConversation(conversationId: string): Promise<P
   return invoke<Plan[]>("list_plans_by_conversation", { conversationId });
 }
 
+export async function listPlansByProject(projectKey: string): Promise<Plan[]> {
+  return invoke<Plan[]>("list_plans_by_project", { projectKey });
+}
+
 export async function createPlan(input: CreatePlanInput): Promise<Plan> {
   return invoke<Plan>("create_plan", { input });
 }
@@ -84,6 +88,19 @@ export async function getPlan(id: string): Promise<Plan> {
 
 export async function bumpPlanMajorVersion(id: string): Promise<void> {
   return invoke("bump_plan_major_version", { id });
+}
+
+/** Plan 의 title/description/expectedOutcome 을 일괄 업데이트. null 은 기존 값 유지. */
+export async function updatePlanMeta(
+  id: string,
+  meta: { title?: string | null; description?: string | null; expectedOutcome?: string | null },
+): Promise<void> {
+  return invoke("update_plan_meta", {
+    id,
+    title: meta.title ?? null,
+    description: meta.description ?? null,
+    expectedOutcome: meta.expectedOutcome ?? null,
+  });
 }
 
 /** Generate/update plan document markdown in project directory. Returns file path. */
