@@ -21,6 +21,15 @@ fn embed_semaphore() -> std::sync::Arc<tokio::sync::Semaphore> {
         .clone()
 }
 
+static COMPRESS_SEMAPHORE: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+    std::sync::OnceLock::new();
+
+fn compress_semaphore() -> std::sync::Arc<tokio::sync::Semaphore> {
+    COMPRESS_SEMAPHORE
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone()
+}
+
 use super::super::trace_log::{insert_trace_log, insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
 use super::context_loading::{load_context_data, load_project_path};
 use super::prompt_assembly::assemble_prompt;
@@ -313,9 +322,29 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
     std::thread::spawn(move || {
         let cid_short = if conversation_id.len() >= 8 { &conversation_id[..8] } else { &conversation_id };
 
-        // 1. Memory compression — DEFERRED to conversation switch / idle.
-        // Running claude -p here while sdk-url session is active causes exit 1 (CLI lock conflict).
-        // Compression is triggered by `compress_conversation_memory` Tauri command instead.
+        // 1. Memory compression — eager trigger (P1 #3 option B, two-turn window).
+        //    Runs Haiku summarization in background after every completion.
+        //    `compress_memory_blocking` prefers Anthropic SDK (no CLI conflict with
+        //    an active sdk-url session) and falls back to CLI -p. Internal
+        //    `needs_compression` threshold check keeps this cheap when not needed.
+        //    Semaphore ensures only one compression runs at a time — concurrent
+        //    completions (RT, rapid sends) queue or skip; the next completion will
+        //    reattempt if threshold is still met.
+        //    If compression completes before the next user turn, that turn's
+        //    ContextPack sees fresh topics and `memory:TOPIC` tool-requests can
+        //    hit them immediately. If not, the batch/idle path still catches up.
+        {
+            let sem = compress_semaphore();
+            if sem.try_acquire().is_ok() {
+                match crate::commands::memory_compression::compress_memory_blocking(&db, &conversation_id) {
+                    Ok(true) => eprintln!("[post-completion] memory compressed for {}", cid_short),
+                    Ok(false) => {} // threshold not met or empty transcript — silent
+                    Err(e) => eprintln!("[post-completion] compression error: {}", e),
+                }
+            } else {
+                eprintln!("[post-completion] compression semaphore busy, skipping for {}", cid_short);
+            }
+        }
 
         // 2. Session link discovery — read lock for discovery, write lock only for save
         let project_key: Option<String> = {
