@@ -109,7 +109,9 @@ pub fn create_branch(
 ) -> Result<Branch, AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let id = Uuid::new_v4().to_string();
-    let now = now_epoch();
+    // 프로젝트 컨벤션: 타임스탬프는 ms. 과거 `now_epoch()` 사용으로 branches.created_at
+    // 이 초 단위로 저장되던 버그 수정(2026-04-18).
+    let now = now_epoch_ms();
 
     // Resolve root conversation ID — if conversation_id is a shadow conv (branch:xxx),
     // walk up to find the real root conversation
@@ -271,7 +273,9 @@ pub fn open_branch_stream(
                 AppError::NotFound(format!("Conversation '{}' not found", parent_conv_id))
             })?;
 
-        let now = now_epoch();
+        // 컨벤션 통일 — conversations.created_at/updated_at 도 ms. 과거 `now_epoch()`
+        // 이 섞여 있어 일부 row 는 초, 일부 row 는 ms. 마이그레이션으로 정규화.
+        let now = now_epoch_ms();
         conn.execute(
             "INSERT INTO conversations
              (id, project_key, label, type, mode, parent_id, source,
@@ -418,6 +422,14 @@ pub fn delete_branch(
             conn.execute("DELETE FROM conversations WHERE id = ?1", [&branch_conv_id])?;
         }
         // Adopted/archived: shadow conv + messages preserved (git-style pointer-only delete)
+
+        // plans 3개 FK(branch_id / implementation_branch_id / review_branch_id) 는
+        // ON DELETE CASCADE 가 없으므로 branch row 삭제 전에 NULL 로 비운다.
+        // 남기지 않으면 `FOREIGN KEY constraint failed` 로 DELETE 실패 (특히 RT
+        // Review branch 가 plan.review_branch_id 로 연결된 경우 재현됨).
+        conn.execute("UPDATE plans SET branch_id = NULL WHERE branch_id = ?1", [branch_id])?;
+        conn.execute("UPDATE plans SET implementation_branch_id = NULL WHERE implementation_branch_id = ?1", [branch_id])?;
+        conn.execute("UPDATE plans SET review_branch_id = NULL WHERE review_branch_id = ?1", [branch_id])?;
 
         // Always remove the branch row itself
         conn.execute("DELETE FROM branches WHERE id = ?1", [branch_id])?;
