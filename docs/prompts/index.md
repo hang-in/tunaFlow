@@ -5,6 +5,7 @@ Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프
 - [dataModelPrompt](./dataModelPrompt.md): 데이터 모델 정리/생성용 프롬프트
 - [firstImplementationPrompt](./firstImplementationPrompt.md): 초기 구현 지시문
 - [handoffMaster](./handoffMaster.md): 신규 작업자 온보딩/핸드오프 문서
+- [mobileRedesignClaudeDesignPrompt](./mobileRedesignClaudeDesignPrompt.md): claude.ai/design 용 tunaFlow 모바일 재설계 지시 프롬프트 (이전 mobileDesignPrompt 대체)
 - [harnessEngineeringAdoptionPrompt](./harnessEngineeringAdoptionPrompt.md): tunaFlow에 harness engineering을 단계적으로 적용하기 위한 상세 실행 프롬프트
 - [messagePairDeletionPrompt](./messagePairDeletionPrompt.md): 일반 chat conversation에서 user+assistant 인접 메시지 쌍을 삭제하는 실행 프롬프트
 - [messageSearchAdoptionPrompt](./messageSearchAdoptionPrompt.md): tunaDish의 FTS 검색 UX를 참고해 tunaFlow의 Rust DB 레이어에 메시지 검색을 붙이는 실행 프롬프트
