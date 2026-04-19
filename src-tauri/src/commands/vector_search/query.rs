@@ -191,6 +191,138 @@ pub fn search_conversation_vectors(
     ))
 }
 
+// ─── Memory semantic search (within a single conversation) ────────────────────
+
+/// A hit returned by `search_memory_semantic` — the semantic replacement for
+/// substring-matching `list_memory_topics`. Unlike `VectorChunk`, this is
+/// conversation-scoped and always kind='window' (v39 cleaned up legacy kinds).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemorySearchHit {
+    pub chunk_id: String,
+    pub text: String,
+    pub score: f32,
+    /// Timestamp of the root message that anchors this chunk (epoch ms).
+    pub timestamp: Option<i64>,
+}
+
+/// Search for semantically similar chunks **within a single conversation**.
+/// Restricted to kind='window' (sliding-window summaries of 3-turn context).
+/// Tries vec0 KNN first; falls back to brute-force cosine on the conv's chunks.
+pub fn search_within_conversation(
+    conn: &Connection,
+    query_embedding: &[f32],
+    conversation_id: &str,
+    limit: usize,
+) -> Vec<MemorySearchHit> {
+    let query_blob = embedding_to_blob(query_embedding);
+
+    // Try sqlite-vec KNN first
+    let vec0_sql = "
+        SELECT cc.id, cc.text_preview, cc.root_message_id, vc.distance
+        FROM vec_chunks vc
+        JOIN conversation_chunks cc ON cc.rowid = vc.rowid
+        WHERE vc.embedding MATCH ?1
+          AND cc.conversation_id = ?2
+          AND cc.kind = 'window'
+          AND vc.k = ?3
+        ORDER BY vc.distance
+    ";
+    let fetch_limit = limit.saturating_mul(2).max(limit);
+    if let Ok(mut stmt) = conn.prepare(vec0_sql) {
+        let rows: Vec<(String, String, String, f64)> = stmt
+            .query_map(
+                rusqlite::params![query_blob, conversation_id, fetch_limit as i64],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default();
+
+        if !rows.is_empty() {
+            let mut hits: Vec<MemorySearchHit> = Vec::with_capacity(limit);
+            for (chunk_id, text, root_msg_id, distance) in rows.into_iter().take(limit) {
+                let score = 1.0 - (distance as f32 / 2.0);
+                let timestamp = conn
+                    .query_row(
+                        "SELECT timestamp FROM messages WHERE id = ?1",
+                        [&root_msg_id],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .ok();
+                hits.push(MemorySearchHit { chunk_id, text, score, timestamp });
+            }
+            return hits;
+        }
+    }
+
+    // Fallback: brute-force cosine on chunks of this conversation only
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT cc.id, cc.text_preview, cc.embedding, cc.root_message_id
+         FROM conversation_chunks cc
+         WHERE cc.conversation_id = ?1
+           AND cc.kind = 'window'
+           AND cc.embedding IS NOT NULL",
+    ) else { return Vec::new(); };
+
+    let mut scored: Vec<(MemorySearchHit, String)> = stmt
+        .query_map([conversation_id], |row| {
+            let id: String = row.get(0)?;
+            let text: String = row.get(1)?;
+            let blob: Vec<u8> = row.get(2)?;
+            let root_msg_id: String = row.get(3)?;
+            Ok((id, text, blob, root_msg_id))
+        })
+        .map(|rows| {
+            rows.filter_map(|r| r.ok())
+                .filter_map(|(id, text, blob, root_msg_id)| {
+                    let embedding = blob_to_embedding(&blob)?;
+                    let score = crate::agents::rawq::cosine_similarity(query_embedding, &embedding);
+                    Some((MemorySearchHit { chunk_id: id, text, score, timestamp: None }, root_msg_id))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    scored.sort_by(|a, b| b.0.score.partial_cmp(&a.0.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit);
+
+    // Resolve timestamps for truncated results
+    scored
+        .into_iter()
+        .map(|(mut hit, root_msg_id)| {
+            hit.timestamp = conn
+                .query_row(
+                    "SELECT timestamp FROM messages WHERE id = ?1",
+                    [&root_msg_id],
+                    |r| r.get::<_, i64>(0),
+                )
+                .ok();
+            hit
+        })
+        .collect()
+}
+
+/// Semantic memory search **within the current conversation**.
+///
+/// Supersedes the substring-matching path in `toolRequestHandler.memory:` which
+/// filtered on `conversation_memory.topic.toLowerCase().includes(query)`. That
+/// missed topically-related hits with different wording. This searches
+/// `conversation_chunks` (kind='window') by embedding similarity via vec0 KNN.
+///
+/// Returns up to `limit` (default 3, clamp 1..=10) hits ordered by relevance.
+#[tauri::command]
+pub fn search_memory_semantic(
+    conversation_id: String,
+    query: String,
+    limit: Option<i64>,
+    state: tauri::State<crate::db::DbState>,
+) -> Result<Vec<MemorySearchHit>, AppError> {
+    let lim = limit.unwrap_or(3).clamp(1, 10) as usize;
+    let query_embedding = embedder::embed_text(&query, true)?;
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    Ok(search_within_conversation(&conn, &query_embedding, &conversation_id, lim))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,6 +500,72 @@ mod tests {
         let scratch_results = search_brute_force(&conn, &emb, "P", "scratch-D", "scratchpad", 10);
         assert_eq!(scratch_results.len(), 1);
         assert_eq!(scratch_results[0].conversation_id, "scratch-B");
+    }
+
+    #[test]
+    fn search_within_conversation_scopes_to_target_conv_only() {
+        use rusqlite::Connection;
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("
+            CREATE TABLE conversation_chunks (
+                id TEXT PRIMARY KEY,
+                project_key TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                root_message_id TEXT NOT NULL,
+                text_preview TEXT NOT NULL,
+                embedding BLOB,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT, content TEXT, timestamp INTEGER
+            );
+        ").unwrap();
+
+        let emb_a = fake_embedding(10);
+        let emb_b = fake_embedding(20);
+        let emb_noise = fake_embedding(999);
+        let blob_a = embedding_to_blob(&emb_a);
+        let blob_b = embedding_to_blob(&emb_b);
+        let blob_n = embedding_to_blob(&emb_noise);
+
+        // target conv (A): 1 window chunk matching query, 1 noise window chunk
+        conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp) VALUES('mA1','A','assistant','a1',100)", []).unwrap();
+        conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp) VALUES('mA2','A','assistant','a2',200)", []).unwrap();
+        conn.execute(
+            "INSERT INTO conversation_chunks(id,project_key,conversation_id,kind,root_message_id,text_preview,embedding,created_at)
+             VALUES('cA1','P','A','window','mA1','A1 matching text',?1,0)",
+            [&blob_a],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO conversation_chunks(id,project_key,conversation_id,kind,root_message_id,text_preview,embedding,created_at)
+             VALUES('cA2','P','A','window','mA2','A2 noise text',?1,0)",
+            [&blob_n],
+        ).unwrap();
+
+        // stale anchor/pair in target conv — must be filtered out by kind='window' clause
+        conn.execute(
+            "INSERT INTO conversation_chunks(id,project_key,conversation_id,kind,root_message_id,text_preview,embedding,created_at)
+             VALUES('cA3','P','A','pair','mA1','A3 legacy pair',?1,0)",
+            [&blob_a],
+        ).unwrap();
+
+        // other conv (B): matching embedding, must NOT be returned
+        conn.execute("INSERT INTO messages(id,conversation_id,role,content,timestamp) VALUES('mB1','B','assistant','b1',300)", []).unwrap();
+        conn.execute(
+            "INSERT INTO conversation_chunks(id,project_key,conversation_id,kind,root_message_id,text_preview,embedding,created_at)
+             VALUES('cB1','P','B','window','mB1','B1 matching text',?1,0)",
+            [&blob_b],
+        ).unwrap();
+
+        // Query close to emb_a (in target conv A). Expect A1 first, A2 second, no B, no pair.
+        let hits = search_within_conversation(&conn, &emb_a, "A", 5);
+        assert!(!hits.is_empty(), "should find at least one hit in conv A");
+        assert_eq!(hits[0].chunk_id, "cA1", "highest similarity chunk is cA1");
+        assert!(!hits.iter().any(|h| h.chunk_id == "cB1"), "must not cross conversation boundary");
+        assert!(!hits.iter().any(|h| h.chunk_id == "cA3"), "must not return kind='pair' legacy rows");
+        // Timestamp resolved from root message
+        assert_eq!(hits[0].timestamp, Some(100));
     }
 
     #[test]

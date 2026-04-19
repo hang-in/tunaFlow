@@ -76,22 +76,27 @@ export async function executeToolRequests(requests: ToolRequest[]): Promise<stri
           }
         }
       } else if (req.type === "memory") {
-        // Tier 2 Pull: compressed conversation memory by topic
+        // Tier 2 Pull: semantic search over sliding-window chunks of current conv.
+        // Replaces prior substring match on conversation_memory (topic/summary) —
+        // that missed topically-related hits with different wording.
         const { useChatStore } = await import("@/stores/chatStore");
         const convId = useChatStore.getState().selectedConversationId;
         if (convId) {
-          const topics = await invoke<{ topic: string; summary: string }[]>(
-            "list_memory_topics", { conversationId: convId }
-          ).catch(() => []);
-          const matched = topics.filter((t) =>
-            t.topic.toLowerCase().includes(req.query.toLowerCase()) ||
-            t.summary.toLowerCase().includes(req.query.toLowerCase())
-          ).slice(0, 3);
-          if (matched.length > 0) {
-            const lines = matched.map((t) => `### ${t.topic}\n${t.summary.slice(0, 800)}`);
+          type Hit = { chunkId: string; text: string; score: number; timestamp: number | null };
+          const hits = await invoke<Hit[]>("search_memory_semantic", {
+            conversationId: convId, query: req.query, limit: 3,
+          }).catch(() => [] as Hit[]);
+          if (hits.length > 0) {
+            const lines = hits.map((h) => {
+              const when = h.timestamp
+                ? new Date(h.timestamp).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+                : "";
+              const header = when ? `### ${when} (유사도 ${h.score.toFixed(2)})` : `### 유사도 ${h.score.toFixed(2)}`;
+              return `${header}\n${h.text.slice(0, 800)}`;
+            });
             results.push(`## 🧠 대화 기억: "${req.query}"\n\n${lines.join("\n\n")}`);
           } else {
-            results.push(`> "${req.query}" 관련 대화 기억을 찾지 못했습니다.`);
+            results.push(`> "${req.query}" 관련 대화 기억을 찾지 못했습니다. (아직 인덱싱 안 됐거나 의미적으로 매칭되지 않음)`);
           }
         }
       } else if (req.type === "recent_turns") {

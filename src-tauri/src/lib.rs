@@ -378,6 +378,7 @@ pub fn run() {
             // Vector Search
             commands::vector_search::index_conversation_chunks,
             commands::vector_search::search_conversation_vectors,
+            commands::vector_search::search_memory_semantic,
             commands::vector_search::get_vector_index_status,
             // Context Hub
             commands::context_hub::context_hub_health,
