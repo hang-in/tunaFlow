@@ -143,7 +143,10 @@ export function useSubtaskProgress(plan: Plan) {
             setDesignReviewSuggested(sinceReset.some((e: { eventType: string }) => e.eventType === "design_review_suggested"));
             const fails = sinceReset.filter((e: { eventType: string }) => e.eventType === "review_failed").length;
             setFailCount(fails);
-            setDoomLoopEscalated(events.some((e: { eventType: string }) => e.eventType === "doom_loop_escalated"));
+            // doomLoopEscalated 도 sinceReset 기반으로 판정. 이전엔 events 전체에서
+            // 찾아 한 번 escalation 이 발생하면 영구히 true 로 고정되는 버그가 있었음
+            // → 새 rev 싸이클에서 Review 1회만 실패해도 "1회 연속 실패" 배너가 잘못 뜸.
+            setDoomLoopEscalated(sinceReset.some((e: { eventType: string }) => e.eventType === "doom_loop_escalated"));
           }
         }).catch((e) => console.debug("[plan-events]", e));
       }

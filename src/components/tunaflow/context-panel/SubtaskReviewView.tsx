@@ -305,10 +305,14 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
       {isDoomLoop && reviewHistory.length > 0 && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
           <p className="text-[11px] font-semibold text-amber-600">
-            ⚠️ Review {reviewHistory.length}회 연속 실패로 설계 재검토 진입
+            {reviewHistory.length === 1
+              ? `⚠️ Review 1회 실패 — 이전 싸이클 설계 재검토 이력 있음`
+              : `⚠️ Review ${reviewHistory.length}회 연속 실패로 설계 재검토 진입`}
           </p>
           <p className="text-[10px] text-foreground/60">
-            Rework으로 해결되지 않는 반복 문제입니다. 아래 이력을 참고하여 subtask 설계를 수정하세요.
+            {reviewHistory.length === 1
+              ? "동일 패턴 반복 시 설계 재검토가 또 필요할 수 있습니다. 아래 이력을 참고하세요."
+              : "Rework으로 해결되지 않는 반복 문제입니다. 아래 이력을 참고하여 subtask 설계를 수정하세요."}
           </p>
           <details className="text-[9px]">
             <summary className="cursor-pointer text-muted-foreground/60 hover:text-foreground">
@@ -374,7 +378,9 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
                   const prompt = [
                     `[설계 재검토 요청] "${plan.title}"`,
                     "",
-                    `이 Plan은 **Review ${reviewHistory.length}회 연속 실패**로 설계 재검토가 필요합니다.`,
+                    reviewHistory.length === 1
+                      ? `이 Plan 은 **Review 1회 실패** + 이전 싸이클 재검토 이력으로 설계 재검토가 필요합니다.`
+                      : `이 Plan은 **Review ${reviewHistory.length}회 연속 실패**로 설계 재검토가 필요합니다.`,
                     "",
                     `## 실패 이력`,
                     failHistoryText,
@@ -387,15 +393,22 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
                     `수정된 Plan을 \`<!-- tunaflow:plan-proposal -->\` 형식으로 제안하세요.`,
                     `특히 반복 실패한 subtask의 범위와 검증 방법을 재설계하세요.`,
                   ].join("\n");
-                  await sendWithEngine(mainEngine, prompt);
+                  await sendWithEngine(mainEngine, prompt, mainModel);
                   await planApi.updatePlanPhase(plan.id, "drafting");
                   await planApi.createPlanEvent(plan.id, "architect_redesign_requested", "user",
                     `doom loop ${reviewHistory.length} failures`);
                   // Baton moved to Architect — review branch is no longer active.
                   const { archiveReviewBranchForHandoff } = await import("@/lib/workflowOrchestration");
                   await archiveReviewBranchForHandoff(plan);
-                  // Meta notification — Architect-led redesign cycle started.
-                  window.dispatchEvent(new CustomEvent("tunaflow:meta-task"));
+                  const { dispatchMetaNotification } = await import("@/lib/metaNotifications");
+                  const redesignProjectKey = useChatStore.getState().selectedProjectKey ?? undefined;
+                  dispatchMetaNotification({
+                    kind: "architect_redesign_requested",
+                    title: `🔄 Plan "${plan.title}" Architect 재설계 시작`,
+                    summary: `사용자 요청으로 재설계 사이클 진입 (${reviewHistory.length}회 실패 후).`,
+                    projectKey: redesignProjectKey,
+                    route: { tab: "workflow", stage: "plan-check", planId: plan.id },
+                  });
                   onPlanUpdate(plan.id, { phase: "drafting" as PlanPhase });
                   onSwitchToChat?.();
                 } catch (e) { console.warn("[tunaflow]", e); }
@@ -469,7 +482,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
                     "",
                     `\`<!-- tunaflow:plan-proposal -->\` 형식으로 모든 subtask에 details가 포함된 수정 Plan을 제안하세요.`,
                   ].join("\n");
-                  await sendWithEngine(mainEngine, prompt);
+                  await sendWithEngine(mainEngine, prompt, mainModel);
                   await planApi.createPlanEvent(plan.id, "detail_design_requested", "user", "all subtasks");
                   onSwitchToChat?.();
                 } catch (e) { console.warn("[tunaflow]", e); }

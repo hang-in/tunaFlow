@@ -47,6 +47,44 @@ struct ConvThread {
     model: String,
 }
 
+// ─────────────────────────── Auth mode detection ─────────────────────────────
+
+/// Codex CLI 인증 모드. `~/.codex/auth.json` 의 `auth_mode` 필드를 읽는다.
+/// 값:
+/// - `"chatgpt"` — ChatGPT 구독 계정 (OAuth). 일부 API-전용 모델은 지원되지
+///   않음 (특히 `gpt-5-codex`, `o4-mini` 는 400 거부).
+/// - `"apikey"` — `OPENAI_API_KEY` 기반. 전 모델 허용.
+/// - `None` — auth.json 없음/파싱 실패. 보수적으로 chatgpt 가정.
+fn detect_codex_auth_mode() -> Option<String> {
+    let path = dirs::home_dir()?.join(".codex").join("auth.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("auth_mode").and_then(|x| x.as_str()).map(|s| s.to_string())
+}
+
+/// `~/.codex/models_cache.json` 에서 codex CLI 가 알고 있는 실제 slug 목록을 읽어
+/// 에러 메시지 안에 노출하기 위한 helper. 사용자 환경/계정 권한에 따라 모델 리스트가
+/// 바뀌므로 tunaFlow 가 임의로 추론하지 않고, "여기 있는 것 중 하나를 고르세요" 로
+/// 명확한 가이드를 준다.
+fn available_codex_models() -> Vec<String> {
+    let Some(home) = dirs::home_dir() else { return Vec::new(); };
+    let path = home.join(".codex").join("models_cache.json");
+    let Ok(raw) = std::fs::read_to_string(&path) else { return Vec::new(); };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return Vec::new(); };
+    let Some(models) = v.get("models").and_then(|x| x.as_array()) else { return Vec::new(); };
+    let mut out = Vec::new();
+    for m in models {
+        let vis = m.get("visibility").and_then(|x| x.as_str()).unwrap_or("");
+        let supported = m.get("supported_in_api").and_then(|x| x.as_bool()).unwrap_or(true);
+        if vis == "list" && supported {
+            if let Some(slug) = m.get("slug").and_then(|x| x.as_str()) {
+                out.push(slug.to_string());
+            }
+        }
+    }
+    out
+}
+
 // ─────────────────────────── Global State ─────────────────────────────────────
 
 lazy_static::lazy_static! {
@@ -108,17 +146,27 @@ where
     G: FnMut(String) + Send,
     C: Fn() -> bool + Send,
 {
-    // 빈 문자열 model 가드 — Some("")이 들어오면 unwrap_or가 발동하지 않아
-    // codex API에 빈 model 필드가 전달되어 RPC 에러가 발생한다 (claude와 동일 패턴).
-    //
-    // default = "gpt-5-codex": ChatGPT account/Codex 사용자 모두 호환되는 안전한 default.
-    // 이전 default였던 "o4-mini"는 OpenAI Platform API 전용 — ChatGPT account에선
-    // 400 "model is not supported" 에러 발생 (실측 확인됨).
-    let model = input.model
-        .as_deref()
-        .filter(|m| !m.is_empty())
-        .unwrap_or("gpt-5-codex")
-        .to_string();
+    // **정책**: model 이 비어 있으면 명시 에러로 종료한다. 과거엔 하드코딩된
+    // `gpt-5-codex` / `gpt-5` 등으로 조용히 fallback 했는데, codex CLI 가 ChatGPT
+    // 계정에서 이 슬러그들을 거부하면서 400 이 발생했고, 정작 원인 (Reviewer 프로필
+    // 의 model 이 체인 끝까지 전달되지 않음) 은 가려졌다. 이제 조용한 fallback 을
+    // 제거해 어느 호출자가 model 을 누락하는지 즉시 드러나게 한다.
+    let model = match input.model.as_deref().filter(|m| !m.is_empty()) {
+        Some(m) => m.to_string(),
+        None => {
+            let available = available_codex_models();
+            let hint = if available.is_empty() {
+                " (codex CLI 를 한 번 실행해 `~/.codex/models_cache.json` 을 생성하세요)".to_string()
+            } else {
+                format!(" (사용 가능한 모델: {})", available.join(", "))
+            };
+            return Err(AppError::Agent(format!(
+                "Codex 호출에 model 이 지정되지 않았습니다. Settings > Agents 에서 reviewer/developer \
+                 프로필의 model 을 선택하거나, 엔진 전환 시 model 을 함께 지정하세요.{}",
+                hint
+            )));
+        }
+    };
 
     let server = get_or_start_server().await?;
     let thread_id =

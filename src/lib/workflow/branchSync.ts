@@ -92,11 +92,23 @@ export async function autoDetectReviewVerdict(shadowConvId: string, messages: Me
     const { scanAllReviewerVerdicts } = await import("@/lib/planProposalParser");
     const { scanMessagesForMarkers, processReviewVerdict } = await import("@/lib/workflowOrchestration");
     const { aggregateReviewVerdicts } = await import("@/lib/aggregateReviewVerdicts");
+    const planApi = await import("@/lib/api/plans");
+
+    // 리뷰 브랜치 재사용(A안) 부작용 방지: 마지막 review_started 이벤트 timestamp
+    // 이후의 verdict 만 집계. 이전 라운드 fail verdict 가 현재 라운드 판정을
+    // 오염시키던 버그를 차단. (s37 재현: 단일 reviewer 가 같은 브랜치에서 3차
+    // rework 끝에 pass 해도 1차/2차 fail 때문에 "3명 중 fail" 로 Rework 결정됨)
+    const events = await planApi.listPlanEvents(plan.id).catch(() => []);
+    const lastReviewStart = [...events].reverse().find((e) => e.eventType === "review_started");
+    // plan_events.created_at 은 초 단위, messages.timestamp 는 ms. 자동 정규화.
+    const sinceTs = lastReviewStart
+      ? (lastReviewStart.createdAt < 10_000_000_000 ? lastReviewStart.createdAt * 1000 : lastReviewStart.createdAt)
+      : undefined;
 
     // Multi-reviewer path (RT): collect every reviewer verdict, aggregate, and
     // feed the consensus to processReviewVerdict. Single-reviewer path falls
     // back to the legacy last-verdict-wins behavior.
-    const all = scanAllReviewerVerdicts(messages);
+    const all = scanAllReviewerVerdicts(messages, sinceTs);
     let effectiveVerdict;
     if (all.length >= 2) {
       const agg = aggregateReviewVerdicts(all);
