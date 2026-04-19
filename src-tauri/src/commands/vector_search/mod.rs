@@ -7,7 +7,7 @@
 //! Sub-modules:
 //! - `helpers`: truncate_str, embedding_to_blob, blob_to_embedding, content classifiers
 //! - `index`: sliding-window chunking + index_conversation_chunks (Tauri command)
-//! - `query`: search_similar, vec0 KNN, brute-force, search_conversation_vectors (Tauri command)
+//! - `query`: search_similar, vec0 KNN, brute-force, search_conversation_vectors, search_memory_semantic (Tauri commands)
 
 mod backfill;
 mod helpers;

@@ -1,6 +1,5 @@
 //! Conversation indexing — builds sliding-window chunks and stores embeddings.
 
-use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::agents::embedder;
@@ -92,97 +91,6 @@ pub(super) fn build_sliding_window_chunks(
 }
 
 // ─── Core indexing functions ──────────────────────────────────────────────────
-
-/// Build and store conversation chunks with embeddings.
-///
-/// Extracts user+assistant pairs from messages, embeds each pair,
-/// and stores in `conversation_chunks`. Replaces existing chunks for the conversation.
-#[allow(dead_code)]
-pub fn index_conversation(
-    conn: &Connection,
-    conversation_id: &str,
-    project_key: &str,
-) -> Result<usize, AppError> {
-    conn.execute(
-        "DELETE FROM conversation_chunks WHERE conversation_id = ?1",
-        [conversation_id],
-    )?;
-
-    let mut stmt = conn.prepare(
-        "SELECT id, role, content FROM messages
-         WHERE conversation_id = ?1
-         ORDER BY timestamp ASC",
-    )?;
-    let messages: Vec<(String, String, String)> = stmt
-        .query_map([conversation_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    if messages.is_empty() {
-        return Ok(0);
-    }
-
-    // Build chunks: user+assistant pairs (skip workflow auto-generated prompts)
-    let mut chunks: Vec<(String, String, String)> = Vec::new();
-    let mut i = 0;
-    while i < messages.len() {
-        let (ref id, ref role, ref content) = messages[i];
-        if is_workflow_prompt(content) {
-            i += 1;
-            continue;
-        }
-        if role == "user" && i + 1 < messages.len() && messages[i + 1].1 == "assistant" {
-            let user_text = truncate_str(content, 200);
-            let asst_text = truncate_str(&messages[i + 1].2, 200);
-            let text = format!("Q: {}\nA: {}", user_text, asst_text);
-            chunks.push((id.clone(), "pair".to_string(), text));
-            i += 2;
-        } else {
-            let text = truncate_str(content, 300);
-            if text.len() >= 20 {
-                chunks.push((id.clone(), "anchor".to_string(), text));
-            }
-            i += 1;
-        }
-    }
-
-    if chunks.is_empty() {
-        return Ok(0);
-    }
-
-    let now = now_epoch_ms();
-    let mut indexed = 0;
-
-    for (root_id, kind, text) in &chunks {
-        let embedding = match embedder::embed_text(text, false) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("[vector] embed failed for chunk {}: {:?}", root_id, e);
-                continue;
-            }
-        };
-
-        let embedding_blob = embedding_to_blob(&embedding);
-        let id = Uuid::new_v4().to_string();
-
-        conn.execute(
-            "INSERT INTO conversation_chunks (id, project_key, conversation_id, kind, root_message_id, text_preview, embedding, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, project_key, conversation_id, kind, root_id, text, embedding_blob, now],
-        )?;
-        indexed += 1;
-    }
-
-    eprintln!(
-        "[vector] indexed {} chunks for {} (from {} messages)",
-        indexed,
-        conversation_id,
-        messages.len()
-    );
-    Ok(indexed)
-}
 
 /// Index a conversation's messages as vector chunks.
 /// Uses 3-phase lock strategy to prevent Mutex poison:
