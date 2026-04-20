@@ -215,12 +215,20 @@ pub fn load_context_data(
     let plan_document: Option<String> = if has_active_plan {
         if let Some(pp) = project_path {
             let plan_row = conn.query_row(
-                "SELECT title, phase FROM plans WHERE conversation_id = ?1 AND status = 'active' LIMIT 1",
+                "SELECT title, phase, slug FROM plans WHERE conversation_id = ?1 AND status = 'active' LIMIT 1",
                 [plan_lookup_conv.as_deref().unwrap_or(conversation_id)],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                )),
             ).ok();
-            plan_row.and_then(|(title, phase)| {
-                let slug = crate::commands::plans::slugify_pub(&title);
+            plan_row.and_then(|(title, phase, slug_opt)| {
+                // Prefer the canonical slug persisted in `plans.slug` (v26). Fall
+                // back to title-based slugify only for pre-v26 rows. All writers
+                // (generate_plan_document/review/result) use the same source, so
+                // the Reviewer must match their filenames exactly.
+                let slug = slug_opt.unwrap_or_else(|| crate::commands::plans::slugify_pub(&title));
                 let plans_dir = std::path::Path::new(pp).join("docs").join("plans");
                 let mut combined = String::new();
 

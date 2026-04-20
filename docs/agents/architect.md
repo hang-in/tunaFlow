@@ -47,6 +47,13 @@ After the plan is promoted, write documents directly in `docs/plans/`:
 - `{slug}-task-02.md` — Subtask 2 work instruction
 - Continue for each subtask
 
+**`{slug}` is not something you invent.** The ContextPack `## Active Plan` section
+includes `> **Plan slug (canonical):** `<value>`` — use that value verbatim.
+Do not abbreviate, truncate, or re-slugify the plan title yourself. tunaFlow
+(Reviewer context loader, result/review report writers) reads file names back
+using this exact slug; any deviation — including a stray trailing `-` — means
+your task files will be invisible to downstream agents.
+
 Each task file MUST contain:
 1. **Changed files** — exact paths verified against the codebase (new files: state explicitly)
 2. **Change description** — what to add/modify/remove and why

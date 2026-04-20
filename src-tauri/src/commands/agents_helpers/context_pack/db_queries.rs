@@ -25,17 +25,17 @@ pub fn build_plan_section(
     conn: &rusqlite::Connection,
     conversation_id: &str,
 ) -> Option<String> {
-    let plan: (String, String, Option<String>, String) = conn
+    let plan: (String, String, Option<String>, String, Option<String>) = conn
         .query_row(
-            "SELECT id, title, description, phase FROM plans
+            "SELECT id, title, description, phase, slug FROM plans
              WHERE conversation_id = ?1 AND status = 'active'
              ORDER BY updated_at DESC LIMIT 1",
             [conversation_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
         )
         .ok()?;
 
-    let (plan_id, title, description, phase) = plan;
+    let (plan_id, title, description, phase, slug) = plan;
 
     let mut stmt = conn
         .prepare(
@@ -55,6 +55,19 @@ pub fn build_plan_section(
     if let Some(desc) = &description {
         if !desc.is_empty() {
             out.push_str(&format!("{}\n", desc));
+        }
+    }
+    // Canonical slug — the only correct filename prefix for this plan's
+    // documents. Architect must write `docs/plans/{slug}-task-NN.md` using
+    // this exact value (not a slugify of the title, not a manual
+    // abbreviation). Reviewer and result/review writers all read the same
+    // source, so any other prefix will not be discovered downstream.
+    if let Some(s) = &slug {
+        if !s.is_empty() {
+            out.push_str(&format!(
+                "\n> **Plan slug (canonical):** `{}`\n> Task file prefix MUST be `{}-task-NN.md` — use this slug verbatim.\n",
+                s, s
+            ));
         }
     }
     out.push_str(&format!("\n> **Current phase: {}** — Do NOT create a new plan. Propose revisions to this plan if needed.\n", phase));

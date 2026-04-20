@@ -593,8 +593,11 @@ pub fn generate_plan_document(
     // Generate markdown
     let md = build_plan_markdown(&plan, &subtasks, &events);
 
-    // Write to file
-    let slug = slugify(&plan.title);
+    // Write to file. Canonical slug lives in plans.slug (v26); title-based
+    // slugify is kept as a fallback for pre-v26 rows that somehow missed
+    // backfill — all other paths (review, result, Reviewer context loader)
+    // must stay in sync with this source.
+    let slug = plan.slug.clone().unwrap_or_else(|| slugify(&plan.title));
     let dir = Path::new(&project_path).join("docs").join("plans");
     std::fs::create_dir_all(&dir)
         .map_err(|e| AppError::Agent(format!("Failed to create dir: {}", e)))?;
@@ -657,7 +660,7 @@ pub fn generate_review_report(
     };
 
     // Determine round number from existing files
-    let slug = slugify(&plan.title);
+    let slug = plan.slug.clone().unwrap_or_else(|| slugify(&plan.title));
     let dir = Path::new(&project_path).join("docs").join("plans");
     std::fs::create_dir_all(&dir).map_err(|e| AppError::Agent(format!("mkdir: {}", e)))?;
     let mut round = 1;
@@ -734,7 +737,7 @@ pub fn generate_result_report(
             .map_err(|_| AppError::NotFound(format!("plan {} not found", plan_id)))?
     };
 
-    let slug = slugify(&plan.title);
+    let slug = plan.slug.clone().unwrap_or_else(|| slugify(&plan.title));
     let dir = Path::new(&project_path).join("docs").join("plans");
     std::fs::create_dir_all(&dir).map_err(|e| AppError::Agent(format!("mkdir: {}", e)))?;
 
