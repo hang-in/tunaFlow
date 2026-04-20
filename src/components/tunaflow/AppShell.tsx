@@ -84,49 +84,6 @@ export function AppShell() {
     init();
   }, []);
 
-  // Plan completion auto-notify Architect
-  useEffect(() => {
-    const handler = async (e: Event) => {
-      const { restorePersonaForConversation } = await import("@/lib/personaRestore");
-      const { planId: _planId, title, conversationId } = (e as CustomEvent).detail as {
-        planId: string; title: string; conversationId: string;
-      };
-      const store = useChatStore.getState();
-      const prompt = `Plan "${title}" 완료됐습니다. 결과를 확인하고 다음 우선순위를 알려주세요.`;
-      if (store.selectedConversationId === conversationId) {
-        restorePersonaForConversation(conversationId);
-        const freshStore = useChatStore.getState();
-        const engine = freshStore.conversations.find((c) => c.id === conversationId)?.engine
-          ?? freshStore.getConversationEngine(conversationId)?.engine
-          ?? "claude";
-        freshStore.sendWithEngine(engine, prompt);
-        window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "chat" }));
-      } else {
-        import("sonner").then(({ toast }) => {
-          toast.info(`Plan 완료: ${title}`, {
-            description: "아키텍트 대화에 결과를 전달하시겠습니까?",
-            action: {
-              label: "전달",
-              onClick: async () => {
-                await store.selectConversation(conversationId);
-                restorePersonaForConversation(conversationId);
-                const freshStore = useChatStore.getState();
-                const engine = freshStore.conversations.find((c) => c.id === conversationId)?.engine
-                  ?? freshStore.getConversationEngine(conversationId)?.engine
-                  ?? "claude";
-                setTimeout(() => useChatStore.getState().sendWithEngine(engine, prompt), 300);
-                window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: "chat" }));
-              },
-            },
-            duration: 10000,
-          });
-        });
-      }
-    };
-    window.addEventListener("tunaflow:plan-completed", handler);
-    return () => window.removeEventListener("tunaflow:plan-completed", handler);
-  }, []);
-
   // Auto-hide sidebar on window resize
   useEffect(() => {
     const onResize = () => setSidebarAutoHidden(window.innerWidth < SIDEBAR_HIDE_THRESHOLD);

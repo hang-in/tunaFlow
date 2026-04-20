@@ -256,10 +256,10 @@ export async function processReviewVerdict(
       const { useChatStore } = await import("@/stores/chatStore");
       await useChatStore.getState().loadBranches(plan.conversationId);
     } catch (e) { console.debug("[loadBranches after archive]", e); }
-    // Notify: auto-send plan completion summary to Architect
-    window.dispatchEvent(new CustomEvent("tunaflow:plan-completed", {
-      detail: { planId: plan.id, title: plan.title, conversationId: plan.conversationId },
-    }));
+    // Role separation: plan completion goes to Meta inbox only (dispatchMetaNotification
+    // above + maybeTriggerMetaAnalysis for Tier 2 brief). Architect is NOT auto-invoked —
+    // 'what's next?' is Meta's oversight role, not Architect's design role. User asks
+    // via the inbox entry's askMeta button when they want the next-priority suggestion.
   } else if (verdict.verdict === "fail") {
     await planApi.updatePlanPhase(plan.id, "rework");
     await planApi.createPlanEvent(plan.id, "review_failed", "reviewer", detail);
