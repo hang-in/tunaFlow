@@ -71,20 +71,28 @@ pub async fn send_message(
         }))).into_response();
     }
 
-    // Resolve project path from DB
-    let project_path = {
+    // Resolve project path + previous resume_token from DB. The mobile HTTP
+    // path must continue the same Claude/Codex/Gemini session across requests
+    // — without the prior session id the adapter starts a fresh `-p` style
+    // run each time and the agent has no memory of earlier turns.
+    let (project_path, prior_resume_token): (Option<String>, Option<String>) = {
         let conn = lock_conn(&state.db.read);
         conn.query_row(
-            "SELECT p.path FROM projects p JOIN conversations c ON c.project_key = p.key WHERE c.id = ?1",
-            [&conv_id], |r| r.get::<_, Option<String>>(0),
-        ).unwrap_or(None)
+            "SELECT p.path, c.resume_token FROM projects p JOIN conversations c ON c.project_key = p.key WHERE c.id = ?1",
+            [&conv_id],
+            |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+        ).unwrap_or((None, None))
     };
 
     let db = state.db.clone();
     let db_post = state.db.clone();
     let conv_id_clone = conv_id.clone();
     let prompt = input.prompt.clone();
-    let model = input.model.clone();
+    // Separate clones for the blocking task (RunInput) and the DB-insert path
+    // — the former moves into `spawn_blocking`, so the outer match needs its
+    // own copy to record the real model name on the assistant message.
+    let model_for_run = input.model.clone();
+    let model_for_db = input.model.clone();
     let event_tx = state.event_tx.clone();
 
     let engine_for_db = engine.clone();
@@ -110,14 +118,16 @@ pub async fn send_message(
                 )
             };
 
-            eprintln!("[http-api] ContextPack built: prompt={}chars system={}chars",
-                enriched_prompt.len(), system_prompt.as_ref().map(|s| s.len()).unwrap_or(0));
+            eprintln!("[http-api] ContextPack built: prompt={}chars system={}chars resume={}",
+                enriched_prompt.len(),
+                system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
+                prior_resume_token.as_deref().unwrap_or("<none>"));
 
             let run_input = claude::RunInput {
                 prompt: enriched_prompt,
-                model,
+                model: model_for_run,
                 system_prompt,
-                resume_token: None,
+                resume_token: prior_resume_token,
                 project_path: project_path.clone(),
                 image_paths: Vec::new(),
             };
@@ -136,10 +146,24 @@ pub async fn send_message(
                 let now = crate::db::migrations::now_epoch_ms();
                 let conn = match db_post.write.lock() { Ok(c) => c, Err(p) => p.into_inner() };
                 {
+                    // Assistant row: `model` column holds the actual model name
+                    // (was polluted with session_id before, which broke model
+                    // badges and caused confusion when mobile clients rendered
+                    // the column as a chat-message UUID).
                     conn.execute(
                         "INSERT INTO messages (id, conversation_id, role, content, engine, model, timestamp, status) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, 'done')",
-                        rusqlite::params![msg_id, conv_id_clone, out.content, engine_for_db, out.session_id, now],
+                        rusqlite::params![msg_id, conv_id_clone, out.content, engine_for_db, model_for_db, now],
                     ).ok();
+                    // Persist session_id as the conversation's resume token so
+                    // the NEXT /api/conversations/{id}/send call hands it back
+                    // to the adapter via `RunInput.resume_token`, keeping the
+                    // Claude/Codex/Gemini session alive across mobile turns.
+                    if let Some(sid) = &out.session_id {
+                        conn.execute(
+                            "UPDATE conversations SET resume_token = ?1 WHERE id = ?2",
+                            rusqlite::params![sid, conv_id_clone],
+                        ).ok();
+                    }
                 }
                 drop(conn);
                 let _ = event_tx.send(serde_json::json!({
