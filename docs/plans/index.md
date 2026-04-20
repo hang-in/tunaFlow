@@ -135,6 +135,9 @@
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
 | [contextBudgetScalingPlan](./contextBudgetScalingPlan.md) | P2 — 단계적 context budget 상향 실험 |
 | [i18nPlan](./i18nPlan.md) | P1 — UI 한/영 분리 (react-i18next) + 프롬프트 영어 통일 + ContextPack 응답 언어 주입 |
+| [refactorRoadmap_2026-04-20](./refactorRoadmap_2026-04-20.md) | **베타 전 리팩토링 + 안정화 5-Phase 로드맵** (16~19일) — 프로덕션급 베타 기준 |
+| [refactorRoadmap_handoff_2026-04-20](./refactorRoadmap_handoff_2026-04-20.md) | 새 세션용 핸드오프 — 프로젝트 철학 / 피할 함정 / Phase 1 Finding 6 진입점 |
+| [refactorRoadmap_first_prompt](./refactorRoadmap_first_prompt.md) | 새 세션에 붙여넣을 첫 프롬프트 텍스트 |
 
 ### 기타 (IA/검토/가이드)
 
@@ -276,6 +279,9 @@
 - [projectScopedConcurrencyPlan](./projectScopedConcurrencyPlan.md)
 - [promptQualityAdoptionPlan_2026-03-30](./promptQualityAdoptionPlan_2026-03-30.md)
 - [rawqAutomationPlan](./rawqAutomationPlan.md)
+- [refactorRoadmap_2026-04-20](./refactorRoadmap_2026-04-20.md)
+- [refactorRoadmap_handoff_2026-04-20](./refactorRoadmap_handoff_2026-04-20.md)
+- [refactorRoadmap_first_prompt](./refactorRoadmap_first_prompt.md)
 - [rawqCodeReviewGraphIntegrationPlan](./rawqCodeReviewGraphIntegrationPlan.md)
 - [rawqEngineParityPlan](./rawqEngineParityPlan.md)
 - [rawqIntegrationPlan](./rawqIntegrationPlan.md)

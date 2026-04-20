@@ -221,3 +221,75 @@ meta:dismissed                      { notificationId }
 - Subtask status HTTP action
 - Active plan pointer endpoint
 - API URL 버저닝 (`/api/v1/`)
+
+---
+
+## G. Stability 태그 (데스크톱↔모바일 공유용 — 2026-04-20 추가)
+
+모바일 팀이 각 endpoint·이벤트의 **변경 위험도** 를 한눈에 파악하도록 추가. 카테고리:
+
+- **stable**: 베타 이후에도 계약 유지. 안전하게 사용
+- **planned-change**: Phase 2 에서 `/api/v1/` prefix 추가 예정. 현재 경로는 일정 기간 legacy 로 동시 지원 + deprecation header 첨부
+- **deferred**: 아직 미구현. 로드맵 `refactorRoadmap_2026-04-20.md` Phase 2 에서 추가 예정
+
+### G.1 HTTP Endpoints
+
+| Endpoint | Stability | 비고 |
+|---|---|---|
+| `GET  /api/health` | stable | 인증 제외 |
+| `GET  /api/projects` | stable | |
+| `POST /api/projects` | stable | |
+| `GET  /api/projects/{key}/documents/*` | stable | |
+| `GET  /api/conversations?projectKey=X` | stable | |
+| `POST /api/conversations` | stable | |
+| `GET  /api/conversations/{id}/messages` | stable | |
+| `POST /api/conversations/{id}/delete` | stable | |
+| `POST /api/conversations/{id}/send` | stable (내부 구현은 Phase 1 Finding 3 에서 정리 — 외부 계약 불변) | |
+| `GET  /api/conversations/{id}/memory/*` | stable | |
+| `GET  /api/conversations/{id}/session-links` | stable | |
+| `POST /api/conversations/{id}/chunks/*` | stable | |
+| `GET  /api/conversations/{id}/traces` | stable | |
+| `GET  /api/conversations/{id}/active-plan` | **deferred** | Phase 2-5. `get_active_plan_phase` Rust 로직 HTTP 노출 |
+| `GET  /api/conversations/{id}/branches` | stable | |
+| `POST /api/branches` | stable | |
+| `DELETE /api/branches/{id}` | stable | |
+| `POST /api/branches/{id}/archive` | stable | |
+| `POST /api/branches/{id}/adopt` | stable (source_message_id 옵션 추가는 post-beta) | |
+| `POST /api/branches/{id}/rename` | stable | |
+| `GET  /api/branches/{id}` | **deferred** | Phase 2-2. detail + `adopted_message_id` 컬럼 추가 (v40 migration) |
+| `GET  /api/branches/{id}/rounds` | **deferred** | Phase 2-3. system 헤더 파싱 기반 aggregate |
+| `GET  /api/plans?conversationId=X` | stable (응답 필드 확장 완료 — PR #80) | |
+| `GET  /api/plans/{id}` | stable (+`?include=subtasks,events` 지원) | |
+| `GET  /api/plans/{id}/events` | stable | |
+| `POST /api/plans/{id}/approve` | stable | |
+| `POST /api/plans/{id}/reject` | stable | |
+| `POST /api/plans/{id}/subtasks/{sid}/status` | **deferred** | Phase 2-4. Tauri `update_subtask_status` HTTP 노출 |
+| `GET  /api/artifacts` | stable | |
+| `GET  /api/agents/status` | stable | |
+| `POST /api/roundtables/run` | stable | |
+| `POST /api/roundtables/{id}/cancel` | stable | |
+| `GET  /api/meta-notifications*` | stable (PR #80 신규) | |
+| **모든 `/api/` prefix** | **planned-change** | Phase 2-1 에서 `/api/v1/` 로 재라우팅. 레거시 경로는 일정 기간 동시 지원 + `X-API-Deprecated` 헤더 |
+
+### G.2 WebSocket 이벤트
+
+| 이벤트 | Stability | 비고 |
+|---|---|---|
+| `message:new` | stable | HTTP send 핸들러 직접 broadcast |
+| `agent:completed` / `agent:error` | stable | Tauri bridge 경유 |
+| `roundtable:progress` / `roundtable:participant_status` | stable | |
+| `plan:status_changed` / `plan:phase_changed` | stable (PR #80 신규) | HTTP approve/reject 에서 broadcast |
+| `plan:created` | **deferred (bridge 리스트만 등록)** | Tauri `create_plan` 에서 emit 필요 — Phase 1 Finding 5 service 화 시 추가 |
+| `plan:subtask_status_changed` | **deferred** | Phase 2-4 와 함께 |
+| `branch:created` / `branch:archived` / `branch:adopted` | stable (PR #80 신규) | |
+| `meta:read` / `meta:dismissed` | stable (PR #80 신규) | |
+| `meta:new` | **deferred (bridge 등록 완료, emit 미연결)** | `dispatchMetaNotification` 에서 추가 필요 |
+| `/ws/events?since=<ts>` replay | **deferred** | Phase 2-6. event_log 테이블 + TTL |
+
+### G.3 권장 구현 전략 (모바일 팀 참고)
+
+- **stable** 항목 자유 소비
+- **planned-change** (URL 버저닝): 지금 `/api/` 로 구현하면 Phase 2-1 후 `/api/v1/` 로 점진 이전. 두 경로 동시 지원 기간 동안 여유 있음
+- **deferred** 항목은 Phase 2 완료까지 mock 로 진행. 실 endpoint 나오면 교체
+
+모바일 팀이 deferred 항목 우선순위 변경 필요 시, 본 문서 또는 `refactorRoadmap_2026-04-20.md` Phase 2 에 코멘트 / PR 로 의견 전달.
