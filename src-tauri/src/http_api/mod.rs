@@ -10,6 +10,7 @@
 mod auth;
 mod agents;
 mod conversations;
+mod meta;
 mod plans;
 mod state;
 mod ws;
@@ -192,6 +193,12 @@ fn build_router(state: ApiState) -> Router {
         .route("/api/plans/{id}/approve", post(plans::approve_plan))
         .route("/api/plans/{id}/reject", post(plans::reject_plan))
         .route("/api/artifacts", get(plans::list_artifacts))
+        // Meta notification endpoints (v38 table → mobile inbox)
+        .route("/api/meta-notifications", get(meta::list_meta_notifications))
+        .route("/api/meta-notifications/mark-all-read", post(meta::mark_all_read))
+        .route("/api/meta-notifications/clear", post(meta::clear))
+        .route("/api/meta-notifications/{id}/read", post(meta::mark_read))
+        .route("/api/meta-notifications/{id}/dismiss", post(meta::dismiss))
         // Agent endpoints
         .route("/api/agents/status", get(agents::agents_status))
         .route("/api/conversations/{id}/send", post(agents::send_message))
