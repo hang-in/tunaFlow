@@ -1,12 +1,11 @@
 mod agents;
+pub mod bootstrap;
 #[cfg_attr(test, allow(dead_code))]
 pub mod commands;
 pub mod db;
 mod errors;
 mod guardrail;
 mod http_api;
-
-use db::DbState;
 
 /// Thread-aware cooperative cancellation registry.
 /// Keys are conversation IDs (including branch shadow IDs like "branch:xxx").
@@ -34,90 +33,8 @@ impl CancelRegistry {
     }
 }
 
-/// Inherit the user's shell PATH + common install locations.
-///
-/// macOS .app bundles launched from Finder/Launchpad get a minimal PATH
-/// (`/usr/bin:/bin:/usr/sbin:/sbin`) and miss user-installed CLI agents such as
-/// `claude`, `codex`, `gemini`. Earlier attempt used `-l` (login) only which
-/// does not source `.zshrc`, so nvm/asdf-initialized PATH entries were missed.
-/// This version: (1) tries login+interactive, then login-only, (2) always
-/// appends well-known install dirs, (3) expands `~/.nvm/versions/node/*/bin`.
-fn inherit_shell_path() {
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-
-        // (1) Harvest PATH from shell. -l -i sources both .zprofile and .zshrc.
-        let mut shell_path = String::new();
-        for args in [
-            &["-l", "-i", "-c", "echo -n $PATH"][..],
-            &["-l", "-c", "echo -n $PATH"][..],
-        ] {
-            if let Ok(out) = std::process::Command::new(&shell).args(args).output() {
-                if out.status.success() {
-                    if let Ok(p) = String::from_utf8(out.stdout) {
-                        let trimmed = p.trim();
-                        if !trimmed.is_empty() {
-                            shell_path = trimmed.to_string();
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        // (2) Start from the shell PATH (or current PATH as fallback) and extend.
-        let current = std::env::var("PATH").unwrap_or_default();
-        let base = if shell_path.is_empty() { current } else { shell_path };
-        let mut parts: Vec<String> = base
-            .split(':')
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-
-        let push_if_dir = |parts: &mut Vec<String>, p: String| {
-            if std::path::Path::new(&p).is_dir() && !parts.iter().any(|x| x == &p) {
-                parts.push(p);
-            }
-        };
-        for extra in [
-            "/opt/homebrew/bin".to_string(),
-            "/opt/homebrew/sbin".to_string(),
-            "/usr/local/bin".to_string(),
-            "/usr/local/sbin".to_string(),
-            format!("{}/.npm-global/bin", home),
-            format!("{}/.local/bin", home),
-            format!("{}/.cargo/bin", home),
-            format!("{}/.bun/bin", home),
-            format!("{}/.deno/bin", home),
-        ] {
-            push_if_dir(&mut parts, extra);
-        }
-
-        // (3) nvm: enumerate every installed node version's bin.
-        let nvm_dir = format!("{}/.nvm/versions/node", home);
-        if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
-            for ent in entries.flatten() {
-                let bin = ent.path().join("bin");
-                if let Some(s) = bin.to_str() {
-                    push_if_dir(&mut parts, s.to_string());
-                }
-            }
-        }
-
-        let joined = parts.join(":");
-        eprintln!("[startup] PATH set ({} entries)", parts.len());
-        // Optional verbose dump; keep at info level so user can diagnose.
-        for p in &parts {
-            eprintln!("  - {}", p);
-        }
-        std::env::set_var("PATH", joined);
-    }
-}
-
 pub fn run() {
-    inherit_shell_path();
+    bootstrap::env::inherit_shell_path();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -130,126 +47,19 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             use tauri::Manager;
-            // DB storage strategy:
-            // - dev     (debug build):  ~/.tunaflow/db/tunaflow.db
-            //   AppCleaner searches by bundle id (com.tunaflow.app) so anything
-            //   under Application Support/<bundle-id>/ gets wiped when the .app
-            //   is deleted. We already lost a 37M DB this way. Moving the dev
-            //   DB under ~/.tunaflow/ (dotfile, not matched by AppCleaner)
-            //   keeps real work safe across app reinstalls.
-            // - release (release build): Application Support/<bundle-id>/tunaflow.db
-            //   Intentionally inside the bundle-id folder so that AppCleaner
-            //   (and scripts/build.sh --wipe-sandbox) can reset it on every
-            //   install, giving a fresh onboarding surface every build.
-            let db_path: std::path::PathBuf = if cfg!(debug_assertions) {
-                let home = std::env::var("HOME")
-                    .map(std::path::PathBuf::from)
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                let dir = home.join(".tunaflow").join("db");
-                std::fs::create_dir_all(&dir)?;
-                dir.join("tunaflow.db")
-            } else {
-                let dir = app
-                    .path()
-                    .app_data_dir()
-                    .unwrap_or_else(|_| std::path::PathBuf::from(".tunaflow_data"));
-                std::fs::create_dir_all(&dir)?;
-                dir.join("tunaflow.db")
-            };
-            eprintln!("[startup] DB: {}", db_path.display());
-            let (write_conn, read_conn) = db::init(db_path)?;
 
-            // Cleanup stale streaming messages from previous crash/shutdown
-            let cleaned = write_conn.execute(
-                "UPDATE messages SET status = 'error', content = CASE WHEN content = '' THEN '(이전 세션에서 중단됨)' ELSE content END WHERE status = 'streaming'",
-                [],
-            ).unwrap_or_else(|e| { eprintln!("[startup] stale message cleanup failed: {e}"); 0 });
-            let jobs = write_conn.execute(
-                "UPDATE agent_jobs SET status = 'failed', error = 'app restart' WHERE status = 'running'",
-                [],
-            ).unwrap_or_else(|e| { eprintln!("[startup] stale job cleanup failed: {e}"); 0 });
-            if cleaned > 0 || jobs > 0 {
-                eprintln!("[startup] Cleaned {} stale streaming messages, {} stale jobs", cleaned, jobs);
-            }
+            bootstrap::db::init_db(app)?;
 
-            app.manage(DbState {
-                write: std::sync::Arc::new(std::sync::Mutex::new(write_conn)),
-                read: std::sync::Arc::new(std::sync::Mutex::new(read_conn)),
-            });
-
-            let cancel_registry = CancelRegistry(std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashSet::new())));
-
-            // Start HTTP API server (E2E testing + mobile access + MCP)
-            {
-                let db_state = app.state::<DbState>().inner().clone();
-                let cancel_arc = std::sync::Arc::clone(&cancel_registry.0);
-                let api_token = http_api::start_server(db_state, app.handle().clone(), cancel_arc);
-                eprintln!("[startup] HTTP API token: {}", api_token);
-            }
-
+            // `CancelRegistry` is cross-cutting state; services (HTTP API)
+            // receive a shared Arc before we hand the registry to `app.manage`.
+            let cancel_registry = CancelRegistry(std::sync::Arc::new(parking_lot::Mutex::new(
+                std::collections::HashSet::new(),
+            )));
+            let cancel_arc = std::sync::Arc::clone(&cancel_registry.0);
+            bootstrap::services::start_background_services(app, cancel_arc)?;
             app.manage(cancel_registry);
-            app.manage(commands::pty::PtyState::new());
-            app.manage(commands::projects::RawqIndexing(std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashSet::new()))));
 
-            // Window state restoration debug + fallback centering
-            if let Some(window) = app.get_webview_window("main") {
-                // window-state plugin restores position/size BEFORE setup runs.
-                // Log actual state to diagnose restoration issues.
-                let pos = window.outer_position().unwrap_or_default();
-                let size = window.outer_size().unwrap_or_default();
-                let scale = window.scale_factor().unwrap_or(1.0);
-                eprintln!(
-                    "[window-state] restored: pos=({},{}) size={}x{} scale={:.1}",
-                    pos.x, pos.y, size.width, size.height, scale
-                );
-
-                // Only center if position is clearly unset (0,0)
-                if pos.x == 0 && pos.y == 0 {
-                    eprintln!("[window-state] no saved position — centering on primary monitor");
-                    if let Some(monitor) = window.primary_monitor().ok().flatten() {
-                        let screen = monitor.size();
-                        let mon_pos = monitor.position();
-                        let win_w = 1200.0;
-                        let win_h = 800.0;
-                        let x = mon_pos.x as f64 + (screen.width as f64 / scale - win_w) / 2.0;
-                        let y = mon_pos.y as f64 + (screen.height as f64 / scale - win_h) / 2.0;
-                        let _ = window.set_position(tauri::PhysicalPosition::new(
-                            (x * scale) as i32,
-                            (y * scale) as i32,
-                        ));
-                    }
-                }
-                let _ = window.show();
-            }
-
-            // Start rawq daemon in background — pre-loads embedding model for fast indexing/search
-            std::thread::spawn(|| {
-                crate::agents::rawq::ensure_daemon();
-            });
-
-            // Initialize bge-m3 embedder (document/conversation search)
-            // Try sync init first (if model already cached), then async download if needed
-            if let Err(e) = crate::agents::embedder::init_global_embedder() {
-                eprintln!("[startup] bge-m3 sync init error: {}", e);
-            }
-            if crate::agents::embedder::get_embedder().is_none() {
-                tauri::async_runtime::spawn(async {
-                    if let Err(e) = crate::agents::embedder::init_global_embedder_async().await {
-                        eprintln!("[startup] bge-m3 async download/init error: {}", e);
-                    }
-                });
-            }
-
-            // Backfill NULL-embedding chunks left over from v32 (bge-m3 migration).
-            // Sleeps 15s before starting to let embedder/rawq settle, then processes
-            // one conversation/project at a time with throttling.
-            // Kill orphaned sdk-url/app-server processes from previous runs.
-            // These can silently consume rate limit quota if left alive.
-            crate::agents::claude_sdk_session::kill_orphan_sdk_processes();
-
-            crate::commands::vector_search::spawn_startup_backfill(
-                app.state::<DbState>().inner().clone(),
-            );
+            bootstrap::window::restore_window_state(app)?;
 
             Ok(())
         })
