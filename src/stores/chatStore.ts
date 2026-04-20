@@ -7,6 +7,7 @@ import { createThreadSlice } from "./slices/threadSlice";
 import { createRuntimeSlice } from "./slices/runtimeSlice";
 import { createAssetSlice } from "./slices/assetSlice";
 import { createEngineModelSlice } from "./slices/engineModelSlice";
+import { createInsightSlice } from "./slices/insightSlice";
 
 export type { ChatState };
 
@@ -19,4 +20,5 @@ export const useChatStore = create<ChatState>((set, get) => ({
   ...createRuntimeSlice(set, get),
   ...createAssetSlice(set, get),
   ...createEngineModelSlice(set, get),
+  ...createInsightSlice(set, get),
 }));

@@ -18,13 +18,18 @@ import { QuadrantSection } from "./insight/InsightQuadrant";
 export function InsightPanel() {
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const projects = useChatStore((s) => s.projects);
+  // Running-analysis state lives in the store so a tab switch (which
+  // unmounts this component — see CenterPanel conditional render) does
+  // not discard the live progress log while the background Tauri
+  // command is still executing.
+  const running = useChatStore((s) => s.insightRunning);
+  const progressLines = useChatStore((s) => s.insightProgressLines);
+  const persistedActiveSessionId = useChatStore((s) => s.insightActiveSessionId);
 
   const [sessions, setSessions] = useState<InsightSession[]>([]);
   const [activeSession, setActiveSession] = useState<InsightSession | null>(null);
   const [findings, setFindings] = useState<InsightFinding[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [running, setRunning] = useState(false);
-  const [progressLines, setProgressLines] = useState<string[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<InsightCategory | "all">("all");
   const [activeFinding, setActiveFinding] = useState<InsightFinding | null>(null);
   // Previous session accordion
@@ -32,14 +37,21 @@ export function InsightPanel() {
   const [sessionFindings, setSessionFindings] = useState<Record<string, InsightFinding[]>>({});
   const progressEndRef = useRef<HTMLDivElement>(null);
 
-  // Load sessions
+  // Load sessions. When the panel remounts (user returns to the tab
+  // mid-run), prefer the session id the store is tracking so the
+  // findings list stays anchored to the latest run instead of snapping
+  // back to list[0].
   useEffect(() => {
     if (!selectedProjectKey) return;
     insightApi.listInsightSessions(selectedProjectKey).then((list) => {
       setSessions(list);
-      if (list.length > 0) setActiveSession(list[0]);
+      const preferred = persistedActiveSessionId
+        ? list.find((s) => s.id === persistedActiveSessionId)
+        : null;
+      if (preferred) setActiveSession(preferred);
+      else if (list.length > 0) setActiveSession(list[0]);
     }).catch(console.error);
-  }, [selectedProjectKey]);
+  }, [selectedProjectKey, persistedActiveSessionId]);
 
   // Load findings when session changes
   useEffect(() => {
@@ -52,7 +64,9 @@ export function InsightPanel() {
     progressEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [progressLines]);
 
-  // Run analysis
+  // Run analysis. Progress / running state routes through the store so
+  // that the background Tauri command keeps pushing updates even after
+  // the user switches tabs and the panel unmounts.
   const handleRunAnalysis = useCallback(async () => {
     if (!selectedProjectKey || running) return;
     const project = projects.find((p) => p.key === selectedProjectKey);
@@ -61,8 +75,8 @@ export function InsightPanel() {
       return;
     }
 
-    setRunning(true);
-    setProgressLines(["시작..."]);
+    const store = useChatStore.getState();
+    store.insightStartRun();
     setActiveFinding(null);
     try {
       const cats = categoryFilter !== "all" ? [categoryFilter] : undefined;
@@ -70,18 +84,17 @@ export function InsightPanel() {
         projectKey: selectedProjectKey,
         projectPath: project.path,
         categories: cats,
-        onProgress: (msg) => setProgressLines((prev) => [...prev, msg]),
+        onProgress: (msg) => useChatStore.getState().insightAppendProgress(msg),
       });
       setActiveSession(session);
       setFindings(newFindings);
       setSessions((prev) => [session, ...prev.filter((s) => s.id !== session.id)]);
-      setProgressLines((prev) => [...prev, `✓ 완료: ${newFindings.length}건 발견`]);
+      useChatStore.getState().insightAppendProgress(`✓ 완료: ${newFindings.length}건 발견`);
+      useChatStore.getState().insightFinishRun(session.id);
       toast.success(`분석 완료: ${newFindings.length}건 발견`);
     } catch (err) {
-      setProgressLines((prev) => [...prev, `✗ 실패: ${err}`]);
+      useChatStore.getState().insightFailRun(String(err));
       toast.error(`분석 실패: ${err}`);
-    } finally {
-      setRunning(false);
     }
   }, [selectedProjectKey, projects, categoryFilter, running]);
 
@@ -224,16 +237,23 @@ ${lines.join("\n\n")}`;
     }
   }, []);
 
-  // Revalidate open findings against current codebase
+  // Revalidate open findings against current codebase. Routes the same
+  // store-backed progress path as handleRunAnalysis so revalidation
+  // logs also survive tab unmounts.
   const handleRevalidate = useCallback(async () => {
     if (running || !selectedProjectKey) return;
     const openCount = findings.filter((f) => f.status === "open").length;
     if (openCount === 0) { toast.info("재검토할 open findings가 없습니다"); return; }
 
-    setRunning(true);
-    setProgressLines([`${openCount}건 재검토 중...`]);
+    const store = useChatStore.getState();
+    store.insightStartRun();
+    store.insightAppendProgress(`${openCount}건 재검토 중...`);
     try {
-      const results = await revalidateFindings(findings, selectedProjectKey, (msg) => setProgressLines((p) => [...p, msg]));
+      const results = await revalidateFindings(
+        findings,
+        selectedProjectKey,
+        (msg) => useChatStore.getState().insightAppendProgress(msg),
+      );
       const resolved = results.filter((r) => r.status === "resolved");
       const uncertain = results.filter((r) => r.status === "uncertain");
 
@@ -251,11 +271,11 @@ ${lines.join("\n\n")}`;
       const msg = resolved.length > 0
         ? `재검토 완료: ${resolved.length}건 해결됨으로 업데이트${uncertain.length > 0 ? `, ${uncertain.length}건 불확실` : ""}`
         : `재검토 완료: 모든 findings가 여전히 유효합니다`;
+      useChatStore.getState().insightFinishRun();
       toast.success(msg);
     } catch (err) {
+      useChatStore.getState().insightFailRun(String(err));
       toast.error(`재검토 실패: ${err}`);
-    } finally {
-      setRunning(false);
     }
   }, [running, findings, selectedProjectKey]);
 

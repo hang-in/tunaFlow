@@ -168,6 +168,16 @@ export interface ChatState {
   createArtifact: (input: CreateArtifactInput) => Promise<void>;
   updateArtifactStatus: (id: string, status: "draft" | "approved" | "rejected") => Promise<void>;
   deleteArtifact: (id: string) => Promise<void>;
+
+  // ─── Insight panel runtime state (survives tab unmount) ─────────────
+  insightRunning: boolean;
+  insightProgressLines: string[];
+  insightActiveSessionId: string | null;
+  insightStartRun: () => void;
+  insightAppendProgress: (line: string) => void;
+  insightFinishRun: (sessionId?: string | null) => void;
+  insightFailRun: (reason: string) => void;
+  insightSetActiveSessionId: (id: string | null) => void;
 }
 
 /** Zustand setter / getter types for slices */
