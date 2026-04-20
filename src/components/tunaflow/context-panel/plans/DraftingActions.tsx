@@ -20,10 +20,14 @@ export function DraftingActions({
   onSwitchToChat?: () => void;
 }) {
   const { sendWithEngine, selectedConversationId, getConversationEngine, projects, selectedProjectKey } = useChatStore();
+  const runningThreadIds = useChatStore((s) => s.runningThreadIds);
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const hasEmptyDetails = subtasks.some((s) => !s.details?.trim());
   const hasSubtasks = subtasks.length > 0;
+  // Architect 가 해당 plan 의 대화에서 여전히 실행 중인가. Drafting 단계에서 agent
+  // running 은 대부분 "plan 문서 작성 중" — 확정 시그널 아니지만 가장 실용적인 proxy.
+  const isArchitectWriting = runningThreadIds.includes(plan.conversationId) && hasEmptyDetails;
   const mainEngine = (() => {
     if (!selectedConversationId) return "claude";
     const saved = getConversationEngine(selectedConversationId);
@@ -116,22 +120,24 @@ export function DraftingActions({
 
   return (
     <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
-      {hasEmptyDetails && hasSubtasks && (
+      {hasEmptyDetails && hasSubtasks && !isArchitectWriting && (
         <p className="text-[9px] text-amber-600/60">일부 subtask에 상세 설계가 없습니다.</p>
       )}
       <div className="flex items-center gap-2 flex-wrap">
         {hasEmptyDetails && hasSubtasks && (
           <>
-            <button onClick={handleDetailDesign} disabled={busy || syncing} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
+            <button onClick={handleDetailDesign} disabled={busy || syncing || isArchitectWriting} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
               <FileText className="w-3 h-3" />{busy ? "요청 중..." : "상세 설계 요청"}
             </button>
-            <button onClick={handleSyncFromDocs} disabled={busy || syncing} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
+            <button onClick={handleSyncFromDocs} disabled={busy || syncing || isArchitectWriting} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
               {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
               {syncing ? "동기화 중..." : "docs에서 동기화"}
             </button>
           </>
         )}
-        {hasSubtasks && (
+        {/* Subtask 검토 버튼: 상세 설계가 모두 채워졌을 때만 노출. 문서 작성 완료 전에는
+            Dev 로 올라가는 관문이 아예 보이지 않음 — 사용자가 미완성 문서로 진행하는 사고 방지. */}
+        {hasSubtasks && !hasEmptyDetails && (
           <button onClick={handleStartReview} disabled={busy || syncing} className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
             <Search className="w-3 h-3" />{busy ? "이동 중..." : "Subtask 검토"}
           </button>
@@ -140,6 +146,13 @@ export function DraftingActions({
           <p className="text-[9px] text-muted-foreground/50">Subtask가 없습니다. Chat에서 Architect에게 Plan 수정을 요청하세요.</p>
         )}
       </div>
+      {/* 아키텍트 문서 작성 중 표시 — agent 가 해당 conv 에서 실행 중이고 아직 details 비어있을 때 */}
+      {isArchitectWriting && (
+        <div className="flex items-center gap-1.5 pt-1 text-[10px] text-muted-foreground">
+          <Loader2 className="w-3 h-3 animate-spin text-primary" />
+          <span>아키텍트 문서 작성 중...</span>
+        </div>
+      )}
     </div>
   );
 }
