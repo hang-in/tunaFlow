@@ -3,8 +3,12 @@ import { errorMessage } from "@/lib/utils";
 import { ENGINE_CONFIGS } from "@/lib/engineConfig";
 import { usePtyStore, isPtyEngine } from "@/stores/ptyStore";
 import { sendMessageViaPty } from "./ptyMessageSender";
-import { useToolStepsStore } from "@/stores/toolStepsStore";
-import { handleToolRequests, saveToolSteps } from "./agentStreamHelper";
+import {
+  handleToolRequests,
+  setupStreamLifecycle,
+  extractAndPersistFollowup,
+  type StreamLifecycleHandle,
+} from "./agentStreamHelper";
 import { autoSyncImplCompletion, autoDetectReviewVerdict } from "@/lib/workflow/branchSync";
 import { runThreadRoundtable } from "./threadRtRunner";
 import { resolveModel, createPlaceholders, buildSendInput } from "@/lib/sendPipeline";
@@ -285,11 +289,9 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       opts,
     });
 
-    // Event listeners for streaming updates
-    const { listen } = await import("@tauri-apps/api/event");
-    const progressEvent = `${engineKey}:progress`;
-    const chunkEvent = `${engineKey}:chunk`;
-
+    // Branch drawer writes progress to `progressContent` and chunks to
+    // `content` — two fields of the same row — so the spinner text stays
+    // visible while streamed content appears beneath it.
     const replaceOrAdd = (messageId: string, field: "content" | "progressContent", text: string) => {
       set((state) => {
         const existing = state.threadMessages.find((m) => m.id === messageId);
@@ -301,89 +303,89 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
       });
     };
 
-    // Guard: only update UI if this branch is still the active thread (prevents cross-project contamination)
+    // Guard: only update UI if this branch is still the active thread
+    // (prevents cross-project contamination when user switches projects
+    // mid-stream).
     const isActiveThread = () => get().threadBranchConvId === convId;
 
-    const ulP = await listen<{ messageId: string; conversationId: string; text: string }>(progressEvent, (e) => {
-      if (e.payload.conversationId !== convId) return;
-      useToolStepsStore.getState().handleProgress(e.payload.messageId, e.payload.text);
-      if (!isActiveThread()) return;
-      replaceOrAdd(e.payload.messageId, "progressContent", e.payload.text);
-    });
-    const ulC = chunkEvent ? await listen<{ messageId: string; conversationId: string; text: string }>(chunkEvent, (e) => {
-      if (e.payload.conversationId !== convId) return;
-      if (!isActiveThread()) return;
-      replaceOrAdd(e.payload.messageId, "content", e.payload.text);
-    }) : () => {};
-    const cleanup = () => { ulP(); ulC(); ulD(); ulE(); };
+    let lifecycle: StreamLifecycleHandle | undefined;
 
-    const ulD = await listen<{ messageId: string; conversationId: string }>("agent:completed", async (e) => {
-      if (e.payload.conversationId !== convId) return;
-      cleanup();
-      await saveToolSteps(e.payload.messageId);
-      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: convId });
-      set({ threadMessages });
-      // Check for tool-request markers → auto follow-up in thread.
-      // _endRun is deferred until after tool-request handling to prevent idle↔running flicker.
-      const lastMsg = threadMessages.find((m) => m.id === e.payload.messageId);
-      let toolRequestHandled = false;
-      const followUp = await handleToolRequests(lastMsg);
-      if (followUp) {
-        const saved = get().getConversationEngine(convId);
-        get()._endRun(convId, { silent: true });
-        // Persist follow-up as a system message so UI renders it as
-        // auto-generated (not user-typed) and Rust skips user-message creation.
-        // Matches runtimeSlice.ts:253-270 for the main-chat path.
-        const sysMsgId = await invoke<string>("persist_system_msg", {
-          conversationId: convId,
-          content: followUp,
-        }).catch((e) => { console.warn("[thread] persist_system_msg failed:", e); return null; });
-        get().sendThreadMessage(
-          followUp,
-          saved?.engine ?? "claude",
-          saved?.model ?? undefined,
-          sysMsgId ? { userMessageId: sysMsgId } : undefined,
-        );
-        toolRequestHandled = true;
-      }
-      // Auto-sync implementation subtasks + detect completion
-      autoSyncImplCompletion(convId, threadMessages);
-      // Auto-detect review verdict after tool-request handling
-      autoDetectReviewVerdict(convId, threadMessages);
-      // Notify thread completion
-      import("@/stores/notificationStore").then(({ notify }) => {
-        const state = get();
-        const branch = state.branches.find((b) => `branch:${b.id}` === convId);
-        const engine = state.getConversationEngine(convId)?.engine;
-        const lastAsst = threadMessages.filter((m) => m.role === "assistant").slice(-1)[0];
-        notify("completed", state.personaLabel ?? "에이전트", "응답 완료", convId, {
-          engine,
-          conversationTitle: branch?.customLabel ?? branch?.label,
-          preview: lastAsst?.content?.replace(/\n+/g, " ").slice(0, 80),
-        });
-      }).catch((e) => console.debug("[notify:completed]", e));
-      if (!toolRequestHandled) get()._endRun(convId, { silent: true });
-    });
-    const ulE = await listen<{ conversationId: string; error: string }>("agent:error", async (e) => {
-      if (e.payload.conversationId !== convId) return;
-      cleanup(); set({ error: e.payload.error });
-      import("@/stores/notificationStore").then(({ notify }) => {
-        const state = get();
-        const branch = state.branches.find((b) => `branch:${b.id}` === convId);
-        notify("error", state.personaLabel ?? "에이전트", `오류: ${e.payload.error.slice(0, 80)}`, convId, {
-          engine: state.getConversationEngine(convId)?.engine,
-          conversationTitle: branch?.customLabel ?? branch?.label,
-        });
-      }).catch((e) => console.debug("[notify:error]", e));
-      const threadMessages = await invoke<Message[]>("list_messages", { conversationId: convId });
-      set({ threadMessages }); get()._endRun(convId);
+    lifecycle = await setupStreamLifecycle({
+      convId,
+      engineKey,
+      hasChunkEvent: threadEngineConfig.hasChunkEvent,
+      onProgress: (p) => {
+        if (!isActiveThread()) return;
+        replaceOrAdd(p.messageId, "progressContent", p.text);
+      },
+      onChunk: (p) => {
+        if (!isActiveThread()) return;
+        replaceOrAdd(p.messageId, "content", p.text);
+      },
+      onCompleted: async (p) => {
+        lifecycle?.cleanup();
+        const threadMessages = await invoke<Message[]>("list_messages", { conversationId: convId });
+        set({ threadMessages });
+
+        // Tool-request follow-up — _endRun runs with { silent: true } before
+        // the recursive send so the UI does not flash idle between turns.
+        const lastMsg = threadMessages.find((m) => m.id === p.messageId);
+        const followup = await extractAndPersistFollowup(lastMsg, convId);
+        let toolRequestHandled = false;
+        if (followup) {
+          const saved = get().getConversationEngine(convId);
+          get()._endRun(convId, { silent: true });
+          get().sendThreadMessage(
+            followup.followUp,
+            saved?.engine ?? "claude",
+            saved?.model ?? undefined,
+            followup.sysMsgId ? { userMessageId: followup.sysMsgId } : undefined,
+          );
+          toolRequestHandled = true;
+        }
+
+        // Workflow auto-sync — scoped to branch path only (main chat never
+        // drives subtask status transitions). Keep as direct calls here so
+        // that their future extraction (Finding 1-5) is visible.
+        autoSyncImplCompletion(convId, threadMessages);
+        autoDetectReviewVerdict(convId, threadMessages);
+
+        import("@/stores/notificationStore").then(({ notify }) => {
+          const state = get();
+          const branch = state.branches.find((b) => `branch:${b.id}` === convId);
+          const engine = state.getConversationEngine(convId)?.engine;
+          const lastAsst = threadMessages.filter((m) => m.role === "assistant").slice(-1)[0];
+          notify("completed", state.personaLabel ?? "에이전트", "응답 완료", convId, {
+            engine,
+            conversationTitle: branch?.customLabel ?? branch?.label,
+            preview: lastAsst?.content?.replace(/\n+/g, " ").slice(0, 80),
+          });
+        }).catch((e) => console.debug("[notify:completed]", e));
+
+        if (!toolRequestHandled) get()._endRun(convId, { silent: true });
+      },
+      onError: async (p) => {
+        lifecycle?.cleanup();
+        set({ error: p.error });
+        import("@/stores/notificationStore").then(({ notify }) => {
+          const state = get();
+          const branch = state.branches.find((b) => `branch:${b.id}` === convId);
+          notify("error", state.personaLabel ?? "에이전트", `오류: ${p.error.slice(0, 80)}`, convId, {
+            engine: state.getConversationEngine(convId)?.engine,
+            conversationTitle: branch?.customLabel ?? branch?.label,
+          });
+        }).catch((e) => console.debug("[notify:error]", e));
+        const threadMessages = await invoke<Message[]>("list_messages", { conversationId: convId });
+        set({ threadMessages });
+        get()._endRun(convId);
+      },
     });
 
     try {
       const config = ENGINE_CONFIGS[engineKey] ?? ENGINE_CONFIGS.claude;
       await invoke<{ messageId: string }>(config.command, { input });
     } catch (e) {
-      cleanup();
+      lifecycle?.cleanup();
       set((state) => ({ error: errorMessage(e), threadMessages: state.threadMessages.filter((m) => !m.id.startsWith("temp-thinking-")) }));
       get()._endRun(convId);
     }

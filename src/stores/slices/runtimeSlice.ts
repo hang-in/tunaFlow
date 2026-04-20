@@ -3,10 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import { errorMessage } from "@/lib/utils";
 import { usePtyStore, isPtyEngine } from "@/stores/ptyStore";
 import { sendMessageViaPty } from "./ptyMessageSender";
-import { useToolStepsStore } from "@/stores/toolStepsStore";
-import { serializeSteps } from "@/lib/toolSteps";
 import { createRtChunkBatcher, createSingleChunkThrottler } from "./streamingUtils";
 import { resolveModel, createPlaceholders, buildSendInput } from "@/lib/sendPipeline";
+import {
+  setupStreamLifecycle,
+  extractAndPersistFollowup,
+  type StreamLifecycleHandle,
+} from "./agentStreamHelper";
 import type {
   SetState,
   GetState,
@@ -167,138 +170,111 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     }));
 
     // Helper: replace placeholder with real message on first event, update content on subsequent
+    const isStillActive = () => get().selectedConversationId === selectedConversationId;
+
+    // Replace-or-update used by both placeholder swap and chunk flush. Once
+    // the real messageId arrives, subsequent calls update its content; the
+    // first call drops the temp-thinking placeholder and inserts the real
+    // streaming row in its place.
     const replaceOrUpdate = (messageId: string, text: string) => {
       set((state) => {
         const existing = state.messages.find((m) => m.id === messageId);
         if (existing) {
           return { messages: state.messages.map((m) => m.id === messageId ? { ...m, content: text } : m) };
         }
-        // First event with real messageId — replace placeholder
         const withoutPlaceholder = state.messages.filter((m) => !m.id.startsWith("temp-thinking-"));
         return { messages: [...withoutPlaceholder, { id: messageId, conversationId: selectedConversationId, role: "assistant" as const, content: text, timestamp: Date.now(), status: "streaming" as const, engine: config.engineKey, model, persona }] };
       });
     };
 
-    // Event listeners — progress swaps placeholder, chunk updates content
-    // Guard: skip UI updates if user navigated away (backend still persists to DB)
-    const isStillActive = () => get().selectedConversationId === selectedConversationId;
-    const eventPrefix = engine === "claude" ? "claude" : engine;
-    const unlistenProgress = await listen<{ messageId: string; conversationId: string; text: string }>(
-      `${eventPrefix}:progress`, (e) => {
-        if (e.payload.conversationId !== selectedConversationId) return;
-        // Parse tool steps from __STEP__ prefix (always, even if navigated away)
-        useToolStepsStore.getState().handleProgress(e.payload.messageId, e.payload.text);
-        if (!isStillActive()) return;
-        // Swap the placeholder to real messageId (content stays empty → typing indicator)
-        set((state) => {
-          const hasReal = state.messages.some((m) => m.id === e.payload.messageId);
-          if (hasReal) return state; // already swapped
-          const withoutPlaceholder = state.messages.filter((m) => !m.id.startsWith("temp-thinking-"));
-          return { messages: [...withoutPlaceholder, { id: e.payload.messageId, conversationId: selectedConversationId, role: "assistant" as const, content: "", timestamp: Date.now(), status: "streaming" as const, engine: config.engineKey, model, persona }] };
-        });
-      },
-    );
-    // Throttle chunk updates to ~5 per second (200ms) to reduce re-renders during streaming
+    // Main-chat throttles chunk updates to ~5 per second to reduce re-renders.
+    // Branch drawer does not throttle (see threadSlice).
     const chunkThrottle = createSingleChunkThrottler(
       isStillActive,
       (messageId, text) => replaceOrUpdate(messageId, text),
     );
-    const unlistenChunk = config.hasChunkEvent
-      ? await listen<{ messageId: string; conversationId: string; text: string }>(
-          `${eventPrefix}:chunk`, (e) => {
-            if (e.payload.conversationId !== selectedConversationId) return;
-            chunkThrottle.handleChunk(e.payload);
-          },
-        )
-      : () => {};
 
-    const cleanup = () => {
-      // Flush any pending throttled chunk before cleanup
+    const eventPrefix = engine === "claude" ? "claude" : engine;
+    let lifecycle: StreamLifecycleHandle | undefined;
+    const cleanupAll = () => {
+      // Discard pending throttled chunk BEFORE listener cleanup — DB reload
+      // below has the final content, and a late flush would race the
+      // set(status:'done') applied via the completed DB reload.
       chunkThrottle.cleanup();
-      unlistenProgress(); unlistenChunk(); unlistenDone(); unlistenErr();
+      lifecycle?.cleanup();
     };
 
-    const unlistenDone = await listen<{ messageId: string; conversationId: string; durationMs?: number; inputTokens?: number; outputTokens?: number; costUsd?: number }>("agent:completed", async (e) => {
-      if (e.payload.conversationId !== selectedConversationId) return;
-      // Discard pending chunk BEFORE cleanup — DB reload has final content.
-      // Without this, the throttle flush races with the DB reload set(status:'done').
-      chunkThrottle.cleanup();
-      cleanup();
-      // Save tool steps to progressContent for lazy-load display
-      const tsStore = useToolStepsStore.getState();
-      const steps = tsStore.getSteps(e.payload.messageId);
-      if (steps.length > 0) {
-        invoke("save_progress_content", { messageId: e.payload.messageId, progressContent: serializeSteps(steps) }).catch((e) => console.debug("[save-steps]", e));
-        tsStore.clear(e.payload.messageId);
-      }
-      // Always reload from DB, apply atomically inside set to avoid race conditions
-      const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-      // Merge runtime metadata (duration, tokens) into the completed message
-      const { messageId, durationMs, inputTokens, outputTokens, costUsd } = e.payload;
-      const enriched = freshMessages.map((m) =>
-        m.id === messageId ? { ...m, durationMs, inputTokens, outputTokens, costUsd } : m
-      );
-      set((state) => {
-        if (state.selectedConversationId === selectedConversationId) {
-          return { messages: enriched };
-        }
-        const stale = new Set(state._staleConversations);
-        stale.add(selectedConversationId);
-        return { _staleConversations: stale };
-      });
-      // Check for tool-request markers in the completed message → auto follow-up.
-      // _endRun is deferred until after tool-request handling to prevent idle↔running flicker.
-      const lastMsg = enriched.find((m) => m.id === messageId);
-      if (lastMsg?.role === "assistant") {
-        try {
-          const { extractToolRequests } = await import("@/lib/planProposalParser");
-          const requests = extractToolRequests(lastMsg.content);
-          if (requests.length > 0) {
-            const { executeToolRequests } = await import("@/lib/toolRequestHandler");
-            const followUp = await executeToolRequests(requests);
-            if (followUp) {
-              // Persist as system message, then send to agent with that ID
-              // → Rust skips user message creation (userMessageId already exists)
-              // → UI shows system message as collapsible card
-              const sysMsgId = await invoke<string>("persist_system_msg", {
-                conversationId: selectedConversationId,
-                content: followUp,
-              });
-              get()._endRun(selectedConversationId);
-              get().sendWithEngine(engine, followUp, model, undefined, { userMessageId: sysMsgId });
-              return;
-            }
-          }
-        } catch (err) {
-          console.warn("[tool-request]", err);
-        }
-      }
-
-      get()._endRun(selectedConversationId);
-    });
-
-    const unlistenErr = await listen<{ messageId: string; conversationId: string; error: string }>("agent:error", async (e) => {
-      if (e.payload.conversationId !== selectedConversationId) return;
-      chunkThrottle.cleanup();
-      cleanup();
-      import("@/stores/notificationStore").then(({ notify }) => {
-        const state = get();
-        const conv = state.conversations.find((c) => c.id === selectedConversationId);
-        notify("error", state.personaLabel ?? "에이전트", `오류: ${e.payload.error.slice(0, 80)}`, selectedConversationId, {
-          engine: state.getConversationEngine(selectedConversationId)?.engine,
-          conversationTitle: conv?.customLabel ?? conv?.label,
+    lifecycle = await setupStreamLifecycle({
+      convId: selectedConversationId,
+      engineKey: eventPrefix,
+      hasChunkEvent: config.hasChunkEvent,
+      onProgress: (p) => {
+        if (!isStillActive()) return;
+        // Swap the placeholder to the real messageId (content stays empty →
+        // typing indicator). First progress event is the swap trigger.
+        set((state) => {
+          const hasReal = state.messages.some((m) => m.id === p.messageId);
+          if (hasReal) return state;
+          const withoutPlaceholder = state.messages.filter((m) => !m.id.startsWith("temp-thinking-"));
+          return { messages: [...withoutPlaceholder, { id: p.messageId, conversationId: selectedConversationId, role: "assistant" as const, content: "", timestamp: Date.now(), status: "streaming" as const, engine: config.engineKey, model, persona }] };
         });
-      }).catch((e) => console.debug("[notify:error]", e));
-      const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-      set((state) => {
-        if (state.selectedConversationId === selectedConversationId) {
-          return { error: e.payload.error, messages: freshMessages };
+      },
+      onChunk: (p) => chunkThrottle.handleChunk(p),
+      onCompleted: async (p) => {
+        cleanupAll();
+        const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
+        const { messageId, durationMs, inputTokens, outputTokens, costUsd } = p;
+        const enriched = freshMessages.map((m) =>
+          m.id === messageId ? { ...m, durationMs, inputTokens, outputTokens, costUsd } : m
+        );
+        set((state) => {
+          if (state.selectedConversationId === selectedConversationId) {
+            return { messages: enriched };
+          }
+          // User navigated away — leave their current view untouched and
+          // mark this conversation stale so the next open triggers a reload.
+          const stale = new Set(state._staleConversations);
+          stale.add(selectedConversationId);
+          return { _staleConversations: stale };
+        });
+        // Tool-request follow-up — _endRun deferred until after handling to
+        // prevent idle↔running flicker. Main chat recurses via sendWithEngine.
+        const lastMsg = enriched.find((m) => m.id === messageId);
+        const followup = await extractAndPersistFollowup(lastMsg, selectedConversationId);
+        if (followup) {
+          get()._endRun(selectedConversationId);
+          get().sendWithEngine(
+            engine,
+            followup.followUp,
+            model,
+            undefined,
+            followup.sysMsgId ? { userMessageId: followup.sysMsgId } : undefined,
+          );
+          return;
         }
-        const stale = new Set(state._staleConversations);
-        stale.add(selectedConversationId);
-        return { _staleConversations: stale };
-      });
-      get()._endRun(selectedConversationId);
+        get()._endRun(selectedConversationId);
+      },
+      onError: async (p) => {
+        cleanupAll();
+        import("@/stores/notificationStore").then(({ notify }) => {
+          const state = get();
+          const conv = state.conversations.find((c) => c.id === selectedConversationId);
+          notify("error", state.personaLabel ?? "에이전트", `오류: ${p.error.slice(0, 80)}`, selectedConversationId, {
+            engine: state.getConversationEngine(selectedConversationId)?.engine,
+            conversationTitle: conv?.customLabel ?? conv?.label,
+          });
+        }).catch((e) => console.debug("[notify:error]", e));
+        const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
+        set((state) => {
+          if (state.selectedConversationId === selectedConversationId) {
+            return { error: p.error, messages: freshMessages };
+          }
+          const stale = new Set(state._staleConversations);
+          stale.add(selectedConversationId);
+          return { _staleConversations: stale };
+        });
+        get()._endRun(selectedConversationId);
+      },
     });
 
     try {
@@ -317,7 +293,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
       });
       await invoke<{ messageId: string }>(config.command, { input });
     } catch (e) {
-      cleanup();
+      cleanupAll();
       set((state) => ({
         error: errorMessage(e),
         messages: state.messages
