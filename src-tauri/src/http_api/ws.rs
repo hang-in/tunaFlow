@@ -47,7 +47,31 @@ async fn handle_ws(mut socket: ws::WebSocket, event_tx: broadcast::Sender<String
 
 pub fn bridge_tauri_events(app: tauri::AppHandle, tx: broadcast::Sender<String>) {
     use tauri::Listener;
-    let events = ["agent:completed", "agent:error", "roundtable:progress", "roundtable:participant_status"];
+    // Canonical event list for HTTP/WS clients. Refs: docs/api-inquiry-gamma-delta.md § E.
+    // HTTP handlers also emit directly via event_tx (bypass bridge); Tauri commands
+    // that emit these names will be automatically forwarded here.
+    let events = [
+        // Messages & agents
+        "message:new",
+        "agent:completed",
+        "agent:error",
+        // Roundtable
+        "roundtable:progress",
+        "roundtable:participant_status",
+        // Plan lifecycle
+        "plan:created",
+        "plan:phase_changed",
+        "plan:status_changed",
+        "plan:subtask_status_changed",
+        // Branch lifecycle
+        "branch:created",
+        "branch:archived",
+        "branch:adopted",
+        // Meta inbox
+        "meta:new",
+        "meta:read",
+        "meta:dismissed",
+    ];
     for event_name in events {
         let tx = tx.clone();
         let name = event_name.to_string();

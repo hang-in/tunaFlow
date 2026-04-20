@@ -188,6 +188,15 @@ pub async fn approve_plan(
             "INSERT INTO plan_events (id, plan_id, event_type, actor, created_at) VALUES (?1, ?2, 'approved', 'api', ?3)",
             rusqlite::params![event_id, plan_id, now],
         ).ok();
+        drop(conn);
+        let _ = state.event_tx.send(serde_json::json!({
+            "type": "plan:status_changed",
+            "planId": plan_id, "toStatus": "active"
+        }).to_string());
+        let _ = state.event_tx.send(serde_json::json!({
+            "type": "plan:phase_changed",
+            "planId": plan_id, "toPhase": "implementation"
+        }).to_string());
         Json(serde_json::json!({"approved": true, "planId": plan_id})).into_response()
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plan not found or already done"}))).into_response()
@@ -216,6 +225,15 @@ pub async fn reject_plan(
             "INSERT INTO plan_events (id, plan_id, event_type, actor, created_at) VALUES (?1, ?2, 'rejected', 'api', ?3)",
             rusqlite::params![event_id, plan_id, now],
         ).ok();
+        drop(conn);
+        let _ = state.event_tx.send(serde_json::json!({
+            "type": "plan:status_changed",
+            "planId": plan_id, "toStatus": "rejected"
+        }).to_string());
+        let _ = state.event_tx.send(serde_json::json!({
+            "type": "plan:phase_changed",
+            "planId": plan_id, "toPhase": "done"
+        }).to_string());
         Json(serde_json::json!({"rejected": true, "planId": plan_id})).into_response()
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plan not found or already done"}))).into_response()
