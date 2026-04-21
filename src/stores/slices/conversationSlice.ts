@@ -244,6 +244,14 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
   selectConversation: async (id: string) => {
     // Save current conversation's engine state before switching
     const prevConvId = get().selectedConversationId;
+    // No-op reselect: if the same conversation is already active, skip the
+    // messages/branch/assets reset. Otherwise a re-select triggered during
+    // streaming (second turn in the same conv) wipes `messages` to [] for
+    // the duration of `list_messages`, and the user's just-sent message
+    // visually disappears mid-stream. (s38 수동 재현)
+    if (prevConvId === id) {
+      return;
+    }
     if (prevConvId) {
       // Deferred memory compression for the conversation we're leaving
       invoke("compress_conversation_memory", { conversationId: prevConvId }).catch(() => {});
