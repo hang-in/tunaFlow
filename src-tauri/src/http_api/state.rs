@@ -87,15 +87,15 @@ pub async fn index_project_documents(
                 if !r.errors.is_empty() {
                     for e in &r.errors[..r.errors.len().min(5)] { eprintln!("[doc-index]   error: {}", e); }
                 }
-                let _ = event_tx.send(serde_json::json!({
+                super::broadcast_event(&event_tx, &db, serde_json::json!({
                     "type": "document:indexed", "projectKey": pk2, "result": r,
-                }).to_string());
+                }));
             }
             Ok(Err(e)) => {
                 eprintln!("[doc-index] failed: {}", e);
-                let _ = event_tx.send(serde_json::json!({
+                super::broadcast_event(&event_tx, &db, serde_json::json!({
                     "type": "document:error", "projectKey": pk2, "error": e.to_string(),
-                }).to_string());
+                }));
             }
             Err(panic_err) => {
                 let msg = panic_err.downcast_ref::<String>()

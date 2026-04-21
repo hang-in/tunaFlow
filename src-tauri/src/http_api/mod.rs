@@ -10,10 +10,13 @@
 mod auth;
 mod agents;
 mod conversations;
+mod events;
 mod meta;
 mod plans;
 mod state;
 mod ws;
+
+pub(crate) use events::broadcast_event;
 
 use axum::{
     Router,
@@ -108,9 +111,14 @@ pub fn start_server(db: DbState, app_handle: tauri::AppHandle, cancel: CancelArc
         cancel,
     };
 
-    // Bridge Tauri events → broadcast channel
+    // Bridge Tauri events → broadcast channel. The bridge forwards through
+    // `broadcast_event`, so every event ends up in `ws_event_log` regardless
+    // of whether it originated from a Tauri command or an HTTP handler.
     let tx = event_tx.clone();
-    ws::bridge_tauri_events(app_handle, tx);
+    ws::bridge_tauri_events(app_handle, tx, db.clone());
+
+    // Background TTL cleanup for ws_event_log (Finding 2-6).
+    events::spawn_ttl_cleanup(db.clone());
 
     tauri::async_runtime::spawn(async move {
         let app = build_router(state);

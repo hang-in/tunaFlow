@@ -397,10 +397,10 @@ pub async fn create_branch(
     }
     drop(conn);
 
-    let _ = state.event_tx.send(serde_json::json!({
+    super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
         "type": "branch:created",
         "branchId": id, "conversationId": input.conversation_id, "mode": mode
-    }).to_string());
+    }));
 
     (StatusCode::CREATED, Json(serde_json::json!({
         "id": id, "label": label, "mode": mode, "shadowConversationId": shadow_id
@@ -431,9 +431,9 @@ pub async fn archive_branch(
     let updated = conn.execute("UPDATE branches SET status = 'archived' WHERE id = ?1", [&branch_id]).unwrap_or(0);
     if updated > 0 {
         drop(conn);
-        let _ = state.event_tx.send(serde_json::json!({
+        super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
             "type": "branch:archived", "branchId": branch_id
-        }).to_string());
+        }));
         Json(serde_json::json!({"archived": true, "branchId": branch_id})).into_response()
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "branch not found"}))).into_response()
@@ -487,11 +487,11 @@ pub async fn adopt_branch(
     ).ok();
     drop(conn);
 
-    let _ = state.event_tx.send(serde_json::json!({
+    super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
         "type": "branch:adopted",
         "branchId": branch_id, "summaryMessageId": msg_id,
         "conversationId": input.conversation_id
-    }).to_string());
+    }));
 
     Json(serde_json::json!({"adopted": true, "branchId": branch_id, "summaryMessageId": msg_id})).into_response()
 }

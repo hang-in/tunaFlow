@@ -145,6 +145,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 40 {
         apply_v40(conn)?;
     }
+    if current < 41 {
+        apply_v41(conn)?;
+    }
     Ok(())
 }
 
@@ -936,6 +939,38 @@ fn apply_v40(conn: &Connection) -> Result<(), AppError> {
     add_column_if_missing(conn, "branches", "adopted_message_id", "TEXT")?;
     conn.execute(
         "INSERT INTO schema_version (version, applied_at) VALUES (40, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
+fn apply_v41(conn: &Connection) -> Result<(), AppError> {
+    // Phase 2 Finding 2-6: append-only log of WS events, so a mobile
+    // client that reconnects after a brief drop can ask for `?since=<ms>`
+    // and replay the events it missed instead of forcing a full refetch.
+    //
+    // Schema is intentionally thin — `id` autoincrements for monotonic
+    // ordering; `event_type` duplicates whatever the payload's `type`
+    // field says, but having it as a column makes future filtering /
+    // indexing possible without re-parsing JSON. The index on
+    // `created_at` supports the `WHERE created_at >= ?` replay query.
+    //
+    // TTL: a background task (see http_api::events::spawn_ttl_cleanup)
+    // trims rows older than 24 h every hour. Non-goal: at-least-once
+    // delivery guarantees; reconnect windows past the TTL must re-sync
+    // from the DB through the regular REST endpoints.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS ws_event_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_ws_event_log_created_at
+            ON ws_event_log(created_at);",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (41, ?1)",
         [now_epoch_ms()],
     )?;
     Ok(())

@@ -57,12 +57,12 @@ pub async fn send_message(
     }
 
     // Notify WS clients of the new user message
-    let _ = state.event_tx.send(serde_json::json!({
+    super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
         "type": "message:new",
         "conversationId": conv_id,
         "messageId": user_msg_id,
         "role": "user",
-    }).to_string());
+    }));
 
     if input.dry_run.unwrap_or(false) {
         return (StatusCode::OK, Json(serde_json::json!({
@@ -220,15 +220,12 @@ pub async fn send_message(
                             .ok();
                         }
                     }
-                    let _ = event_tx.send(
-                        serde_json::json!({
-                            "type": "message:new",
-                            "conversationId": conv_id_clone,
-                            "messageId": assistant_msg_id,
-                            "role": "assistant",
-                        })
-                        .to_string(),
-                    );
+                    super::broadcast_event(&event_tx, &db_post, serde_json::json!({
+                        "type": "message:new",
+                        "conversationId": conv_id_clone,
+                        "messageId": assistant_msg_id,
+                        "role": "assistant",
+                    }));
                     last_assistant_msg_id = Some(assistant_msg_id.clone());
 
                     // Did the agent end its turn with tool-request markers?
@@ -263,29 +260,23 @@ pub async fn send_message(
                         )
                         .ok();
                     }
-                    let _ = event_tx.send(
-                        serde_json::json!({
-                            "type": "message:new",
-                            "conversationId": conv_id_clone,
-                            "messageId": sys_msg_id,
-                            "role": "system",
-                        })
-                        .to_string(),
-                    );
+                    super::broadcast_event(&event_tx, &db_post, serde_json::json!({
+                        "type": "message:new",
+                        "conversationId": conv_id_clone,
+                        "messageId": sys_msg_id,
+                        "role": "system",
+                    }));
 
                     current_prompt = follow_up_text;
                     depth += 1;
                 }
                 Ok(Err(e)) => {
                     eprintln!("[http-api] agent error: {}", e);
-                    let _ = event_tx.send(
-                        serde_json::json!({
-                            "type": "agent:error",
-                            "conversationId": conv_id_clone,
-                            "error": format!("{}", e),
-                        })
-                        .to_string(),
-                    );
+                    super::broadcast_event(&event_tx, &db_post, serde_json::json!({
+                        "type": "agent:error",
+                        "conversationId": conv_id_clone,
+                        "error": format!("{}", e),
+                    }));
                     return;
                 }
                 Err(e) => {
@@ -300,14 +291,11 @@ pub async fn send_message(
         // pointing at the final assistant message for any WS consumers
         // waiting on that signal.
         if let Some(final_id) = last_assistant_msg_id {
-            let _ = event_tx.send(
-                serde_json::json!({
-                    "type": "agent:completed",
-                    "conversationId": conv_id_clone,
-                    "messageId": final_id,
-                })
-                .to_string(),
-            );
+            super::broadcast_event(&event_tx, &db_post, serde_json::json!({
+                "type": "agent:completed",
+                "conversationId": conv_id_clone,
+                "messageId": final_id,
+            }));
         }
         crate::commands::agents_helpers::send_common::spawn_post_completion_tasks(
             db_post,
@@ -390,10 +378,10 @@ pub async fn start_rt_run(
                 let model = participant.model.clone();
                 let name = &participant.name;
 
-                let _ = event_tx.send(serde_json::json!({
+                super::broadcast_event(&event_tx, &db, serde_json::json!({
                     "type": "roundtable:participant_status",
                     "payload": {"conversationId": rt_input.conversation_id, "name": name, "status": "running"}
-                }).to_string());
+                }));
 
                 let run_result = {
                     use crate::agents::claude;
@@ -422,10 +410,10 @@ pub async fn start_rt_run(
                             "INSERT INTO messages (id, conversation_id, role, content, engine, model, persona, timestamp, status) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7, 'done')",
                             rusqlite::params![msg_id, rt_input.conversation_id, out.content, engine, out.session_id, name, now_epoch_ms()],
                         ).ok();
-                        let _ = event_tx.send(serde_json::json!({
+                        super::broadcast_event(&event_tx, &db, serde_json::json!({
                             "type": "roundtable:participant_status",
                             "payload": {"conversationId": rt_input.conversation_id, "name": name, "status": "done"}
-                        }).to_string());
+                        }));
                     }
                     Err(e) => {
                         eprintln!("[http-api] RT participant {} error: {}", name, e);
@@ -435,18 +423,18 @@ pub async fn start_rt_run(
                             "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) VALUES (?1, ?2, 'system', ?3, ?4, 'done')",
                             rusqlite::params![err_msg_id, rt_input.conversation_id, format!("[{}] 에이전트 실패: {}", name, e), now_epoch_ms()],
                         ).ok();
-                        let _ = event_tx.send(serde_json::json!({
+                        super::broadcast_event(&event_tx, &db, serde_json::json!({
                             "type": "agent:error",
                             "payload": {"conversationId": rt_input.conversation_id, "name": name, "error": format!("{}", e)}
-                        }).to_string());
+                        }));
                     }
                 }
             }
 
-            let _ = event_tx.send(serde_json::json!({
+            super::broadcast_event(&event_tx, &db, serde_json::json!({
                 "type": "agent:completed",
                 "payload": {"conversationId": rt_input.conversation_id}
-            }).to_string());
+            }));
 
             Ok(())
         })();

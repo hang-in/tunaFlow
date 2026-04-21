@@ -157,6 +157,80 @@ fn subtask_create_and_status_cycle() {
     assert_eq!(status, "done");
 }
 
+// ─── v41: ws_event_log ──────────────────────────────────────────────────────
+
+#[test]
+fn v41_ws_event_log_table_exists() {
+    let conn = setup_db();
+    let names: Vec<String> = conn
+        .prepare("PRAGMA table_info(ws_event_log)")
+        .unwrap()
+        .query_map([], |r| r.get::<_, String>(1))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+    for expected in ["id", "event_type", "payload", "created_at"] {
+        assert!(
+            names.iter().any(|n| n == expected),
+            "ws_event_log is missing column {} after v41; got {:?}",
+            expected,
+            names
+        );
+    }
+}
+
+#[test]
+fn v41_ws_event_log_idx_created_at() {
+    let conn = setup_db();
+    let idx: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_ws_event_log_created_at'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(idx, 1, "expected idx_ws_event_log_created_at index after v41");
+}
+
+#[test]
+fn v41_ws_event_log_since_replay_ordering() {
+    let conn = setup_db();
+    // Seed three events spanning the cursor so we can verify ordering
+    // and the `>=` boundary.
+    conn.execute(
+        "INSERT INTO ws_event_log (event_type, payload, created_at) VALUES ('a', '{\"type\":\"a\"}', 1000)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ws_event_log (event_type, payload, created_at) VALUES ('b', '{\"type\":\"b\"}', 2000)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO ws_event_log (event_type, payload, created_at) VALUES ('c', '{\"type\":\"c\"}', 3000)",
+        [],
+    )
+    .unwrap();
+
+    let payloads: Vec<String> = conn
+        .prepare(
+            "SELECT payload FROM ws_event_log
+             WHERE created_at >= ?1
+             ORDER BY created_at ASC, id ASC
+             LIMIT 2000",
+        )
+        .unwrap()
+        .query_map([2000i64], |r| r.get::<_, String>(0))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+
+    assert_eq!(payloads.len(), 2, "since=2000 should include b and c");
+    assert!(payloads[0].contains("\"b\""), "first replayed event must be b, got {}", payloads[0]);
+    assert!(payloads[1].contains("\"c\""), "second replayed event must be c, got {}", payloads[1]);
+}
+
 // ─── v40: branches.adopted_message_id ───────────────────────────────────────
 
 #[test]

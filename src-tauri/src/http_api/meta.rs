@@ -87,8 +87,9 @@ pub async fn mark_read(
         params![now, id],
     ).unwrap_or(0);
 
-    let msg = serde_json::json!({"type": "meta:read", "notificationId": id}).to_string();
-    let _ = state.event_tx.send(msg);
+    super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
+        "type": "meta:read", "notificationId": id,
+    }));
 
     Json(serde_json::json!({"read": updated > 0, "id": id})).into_response()
 }
@@ -134,8 +135,9 @@ pub async fn dismiss(
         params![now, id],
     ).unwrap_or(0);
 
-    let msg = serde_json::json!({"type": "meta:dismissed", "notificationId": id}).to_string();
-    let _ = state.event_tx.send(msg);
+    super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
+        "type": "meta:dismissed", "notificationId": id,
+    }));
 
     if updated > 0 {
         Json(serde_json::json!({"dismissed": true, "id": id})).into_response()

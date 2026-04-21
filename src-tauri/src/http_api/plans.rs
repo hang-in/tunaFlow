@@ -189,14 +189,14 @@ pub async fn approve_plan(
             rusqlite::params![event_id, plan_id, now],
         ).ok();
         drop(conn);
-        let _ = state.event_tx.send(serde_json::json!({
+        super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
             "type": "plan:status_changed",
             "planId": plan_id, "toStatus": "active"
-        }).to_string());
-        let _ = state.event_tx.send(serde_json::json!({
+        }));
+        super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
             "type": "plan:phase_changed",
             "planId": plan_id, "toPhase": "implementation"
-        }).to_string());
+        }));
         Json(serde_json::json!({"approved": true, "planId": plan_id})).into_response()
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plan not found or already done"}))).into_response()
@@ -226,14 +226,14 @@ pub async fn reject_plan(
             rusqlite::params![event_id, plan_id, now],
         ).ok();
         drop(conn);
-        let _ = state.event_tx.send(serde_json::json!({
+        super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
             "type": "plan:status_changed",
             "planId": plan_id, "toStatus": "rejected"
-        }).to_string());
-        let _ = state.event_tx.send(serde_json::json!({
+        }));
+        super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
             "type": "plan:phase_changed",
             "planId": plan_id, "toPhase": "done"
-        }).to_string());
+        }));
         Json(serde_json::json!({"rejected": true, "planId": plan_id})).into_response()
     } else {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "plan not found or already done"}))).into_response()
@@ -302,15 +302,12 @@ pub async fn update_subtask_status(
     }
     drop(conn);
 
-    let _ = state.event_tx.send(
-        serde_json::json!({
-            "type": "plan:subtask_status_changed",
-            "planId": plan_id,
-            "subtaskId": subtask_id,
-            "status": input.status,
-        })
-        .to_string(),
-    );
+    super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({
+        "type": "plan:subtask_status_changed",
+        "planId": plan_id,
+        "subtaskId": subtask_id,
+        "status": input.status,
+    }));
 
     Json(serde_json::json!({
         "planId": plan_id,
