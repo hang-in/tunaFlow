@@ -80,7 +80,8 @@ runScenario("scenario-03 branch-lifecycle", async () => {
   });
   await api(`/api/v1/branches/${br2.id}/adopt`, {
     method: "POST",
-    body: JSON.stringify({ targetConversationId: conv.id }),
+    // AdoptInput.conversation_id → serde camelCase → `conversationId`
+    body: JSON.stringify({ conversationId: conv.id }),
   });
   const detail4 = await api(`/api/v1/branches/${br2.id}`);
   assert(detail4.status === "adopted", `adopt failed, got ${detail4.status}`);

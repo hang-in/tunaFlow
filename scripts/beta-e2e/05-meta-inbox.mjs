@@ -8,8 +8,12 @@ runScenario("scenario-05 meta-inbox", async () => {
   const baseline = await api("/api/v1/meta-notifications?limit=10");
   log.info(`baseline notification count: ${baseline.length}`);
 
-  // mark-all-read is idempotent, safe on empty DB
-  await api("/api/v1/meta-notifications/mark-all-read", { method: "POST" });
+  // mark-all-read requires a JSON body (ProjectScopeInput); empty object =
+  // global scope. Without body, axum returns 400 "EOF while parsing JSON".
+  await api("/api/v1/meta-notifications/mark-all-read", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
   log.ok("mark-all-read ok");
 
   // Find any unread, mark it read explicitly
