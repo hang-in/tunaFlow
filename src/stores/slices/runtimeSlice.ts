@@ -227,16 +227,15 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         const enriched = freshMessages.map((m) =>
           m.id === messageId ? { ...m, durationMs, inputTokens, outputTokens, costUsd } : m
         );
-        set((state) => {
-          if (state.selectedConversationId === selectedConversationId) {
-            return { messages: enriched };
-          }
-          // User navigated away — leave their current view untouched and
-          // mark this conversation stale so the next open triggers a reload.
-          const stale = new Set(state._staleConversations);
-          stale.add(selectedConversationId);
-          return { _staleConversations: stale };
-        });
+        // `messages` stays a runtime-owned hot-path write (streaming
+        // placeholder swap → chunk patch → final reload). `_staleConversations`
+        // is conversationSlice-owned and goes through its action so the
+        // slice-boundary rule isn't violated.
+        if (get().selectedConversationId === selectedConversationId) {
+          set({ messages: enriched });
+        } else {
+          get().markConversationStale(selectedConversationId);
+        }
         // Tool-request follow-up — _endRun deferred until after handling to
         // prevent idle↔running flicker. Main chat recurses via sendWithEngine.
         const lastMsg = enriched.find((m) => m.id === messageId);
@@ -265,14 +264,11 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
           });
         }).catch((e) => console.debug("[notify:error]", e));
         const freshMessages = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-        set((state) => {
-          if (state.selectedConversationId === selectedConversationId) {
-            return { error: p.error, messages: freshMessages };
-          }
-          const stale = new Set(state._staleConversations);
-          stale.add(selectedConversationId);
-          return { _staleConversations: stale };
-        });
+        if (get().selectedConversationId === selectedConversationId) {
+          set({ error: p.error, messages: freshMessages });
+        } else {
+          get().markConversationStale(selectedConversationId);
+        }
         get()._endRun(selectedConversationId);
       },
     });

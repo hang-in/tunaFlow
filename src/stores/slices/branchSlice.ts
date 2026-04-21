@@ -24,12 +24,18 @@ export interface BranchSlice {
   adoptBranch: (branchId: string, conversationId: string) => Promise<void>;
   openBranchStream: (branchId: string) => Promise<void>;
   closeBranchStream: () => Promise<void>;
+  // Finding 1-1 — owner-only cleanup
+  resetBranchState: () => void;
 }
 
 export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => ({
   branches: [],
   activeBranchId: null,
   parentConversationId: null,
+
+  resetBranchState: () => {
+    set({ branches: [], activeBranchId: null, parentConversationId: null });
+  },
 
   loadBranches: async (conversationId: string) => {
     try {
@@ -72,15 +78,10 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
         return;
       }
 
-      // Close thread drawer if the deleted branch was open
+      // Close thread drawer if the deleted branch was open — threadSlice
+      // owns the drawer state, so delegate instead of bulk-set.
       if (threadBranchId === branchId) {
-        set({
-          threadBranchId: null,
-          threadBranchConvId: null,
-          threadMessages: [],
-          threadBranchLabel: null,
-          threadParentMessage: null,
-        });
+        get().closeThread();
       }
     } catch (e) {
       set({ error: errorMessage(e) });
@@ -143,9 +144,8 @@ export const createBranchSlice = (set: SetState, get: GetState): BranchSlice => 
       if (msg.includes("empty_branch")) {
         const { ask } = await import("@tauri-apps/plugin-dialog");
         if (await ask("빈 브랜치입니다. 삭제하시겠습니까?", { title: "빈 브랜치", kind: "warning" })) {
-          // Close drawer/thread if this branch is open
           if (get().threadBranchId === branchId) {
-            set({ threadBranchId: null, threadBranchConvId: null, threadMessages: [], threadBranchLabel: null, threadParentMessage: null });
+            get().closeThread();
           }
           await invoke("delete_branch", { id: branchId });
           const branches = await invoke<Branch[]>("list_branches", { conversationId });

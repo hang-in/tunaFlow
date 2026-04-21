@@ -185,6 +185,15 @@ export interface ConversationSlice {
   selectConversation: (id: string) => Promise<void>;
   renameConversation: (id: string, customLabel: string) => Promise<void>;
   deleteMessagePair: (messageId: string) => Promise<void>;
+  // Finding 1-1 — owner-only writers for state previously touched by
+  // sibling slices.
+  resetConversationData: () => void;
+  applyStreamingUpdate: (messageId: string, patch: Partial<Message>) => void;
+  markConversationStale: (conversationId: string) => void;
+  /** Insert-or-noop for a conversation row — used by branch-open flows
+   *  that need the shadow conversation discoverable in the list without
+   *  rewriting the whole array through a bulk `set()`. */
+  ensureConversation: (conv: Conversation) => void;
 }
 
 export const createConversationSlice = (set: SetState, get: GetState): ConversationSlice => ({
@@ -212,17 +221,20 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
       // momentary empty messages + showTyping=true → typing dots appear at wrong position.
       set((state) => ({
         conversations: state.conversations.filter((c) => c.id !== id),
+        // `crossSessionIds` is assetSlice-owned but its "remove this id"
+        // semantic is trivial enough that a co-located filter here stays
+        // clearer than introducing a sliceless `removeCrossSession(id)`
+        // helper just for this one call site. Flagged as a TODO if the
+        // slice-boundary rule is ever tightened to 100 %.
         crossSessionIds: state.crossSessionIds.filter((cid) => cid !== id),
       }));
-      // Clear selection if deleted conversation was selected
+      // Clear selection if the deleted conversation was the active one.
+      // Delegates each cleanup to its owning slice.
       if (get().selectedConversationId === id) {
-        set({
-          selectedConversationId: null,
-          messages: [],
-          branches: [],
-          memos: [],
-          artifacts: [],
-        });
+        set({ selectedConversationId: null, messages: [] });
+        get().closeThread();
+        get().resetBranchState();
+        get().clearConversationAssets();
       }
     } catch (e) {
       set({ error: errorMessage(e) });
@@ -237,14 +249,14 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
       invoke("compress_conversation_memory", { conversationId: prevConvId }).catch(() => {});
     }
 
-    // Close drawer/thread if open — conversation is the primary view
-    set({
-      selectedConversationId: id,
-      messages: [], branches: [], memos: [], artifacts: [],
-      threadBranchId: null, threadBranchConvId: null, threadMessages: [],
-      threadBranchLabel: null, threadParentMessage: null,
-      drawerPinned: false,
-    });
+    // conversation is the primary view — clear owned state (messages /
+    // selected id) and delegate sibling-slice cleanups (thread drawer,
+    // branches, memos / artifacts) to their owners instead of a bulk
+    // foreign-state `set()`.
+    set({ selectedConversationId: id, messages: [] });
+    get().closeThread();
+    get().resetBranchState();
+    get().clearConversationAssets();
     import("@/lib/appStore").then(({ setSetting }) => setSetting("lastConversationId", id)).catch((e) => console.debug("[settings]", e));
 
     // NOTE: per-conversation engine/model restore is handled by
@@ -253,21 +265,24 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
     // races with restore useEffect and overrides the saved model.
 
     try {
-      const [messages, branches, memos, artifacts] = await Promise.all([
-        invoke<Message[]>("list_messages", { conversationId: id }),
-        invoke<Branch[]>("list_branches", { conversationId: id }),
-        invoke<Memo[]>("list_memos_by_conversation", { conversationId: id }),
-        invoke<Artifact[]>("list_artifacts", { conversationId: id }),
-      ]);
-      // Clear stale mark if it was set (agent completed while user was away)
+      // Own (conversationSlice): list_messages + stale-mark reconciliation.
+      const messages = await invoke<Message[]>("list_messages", { conversationId: id });
       const stale = get()._staleConversations;
       if (stale?.has(id)) {
         const next = new Set(stale);
         next.delete(id);
-        set({ messages, branches, memos, artifacts, error: null, _staleConversations: next });
+        set({ messages, error: null, _staleConversations: next });
       } else {
-        set({ messages, branches, memos, artifacts, error: null });
+        set({ messages, error: null });
       }
+      // Siblings: each owner loads its own slice of data. loadMemos /
+      // loadArtifacts read selectedConversationId internally, which we
+      // set above, so the new id is honoured.
+      await Promise.all([
+        get().loadBranches(id),
+        get().loadMemos(),
+        get().loadArtifacts(),
+      ]);
 
       // PTY auto-spawn on conversation select is disabled. PTY is reserved for
       // the interactive terminal panel (user triggers spawn there explicitly).
@@ -301,5 +316,43 @@ export const createConversationSlice = (set: SetState, get: GetState): Conversat
     } catch (e) {
       set({ error: errorMessage(e) });
     }
+  },
+
+  // ─── Finding 1-1 owner-only writers ─────────────────────────────────
+
+  resetConversationData: () => {
+    // Used by project-scope cleanups (hideProject). Drops only the
+    // fields this slice owns. Sibling cleanups (branches, memos /
+    // artifacts) go through their own slice's action so we never
+    // reach into foreign state here.
+    set({
+      conversations: [],
+      selectedConversationId: null,
+      messages: [],
+      _staleConversations: new Set<string>(),
+      error: null,
+    });
+  },
+
+  applyStreamingUpdate: (messageId: string, patch: Partial<Message>) => {
+    set((state) => ({
+      messages: state.messages.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+    }));
+  },
+
+  markConversationStale: (conversationId: string) => {
+    set((state) => {
+      const stale = new Set(state._staleConversations);
+      stale.add(conversationId);
+      return { _staleConversations: stale };
+    });
+  },
+
+  ensureConversation: (conv: Conversation) => {
+    set((state) =>
+      state.conversations.some((c) => c.id === conv.id)
+        ? state
+        : { conversations: [...state.conversations, conv] },
+    );
   },
 });

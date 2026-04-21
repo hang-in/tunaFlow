@@ -76,6 +76,11 @@ export interface AssetSlice {
   /** Recommended skills from detection (null = hidden) */
   recommendedSkills: string[] | null;
   toggleCrossSession: (conversationId: string) => void;
+  /** Finding 1-1 — owner-only cleanup. Drops memos / artifacts to the
+   *  empty state so other slices don't reach in with `set()`. Leaves
+   *  long-lived caches (profiles, skills, personas) alone — those
+   *  outlive a single conversation context. */
+  clearConversationAssets: () => void;
 }
 
 export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
@@ -188,6 +193,10 @@ export const createAssetSlice = (set: SetState, get: GetState): AssetSlice => ({
         : [...state.crossSessionIds, conversationId];
       return { crossSessionIds: ids };
     });
+  },
+
+  clearConversationAssets: () => {
+    set({ memos: [], artifacts: [] });
   },
 
   // ─── Skill ───────────────────────────────────────────────────────────────

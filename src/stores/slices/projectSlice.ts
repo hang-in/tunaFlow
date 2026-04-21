@@ -58,13 +58,15 @@ export const createProjectSlice = (set: SetState, get: GetState): ProjectSlice =
       await invoke("hide_project", { key });
       const { selectedProjectKey } = get();
       await get().loadProjects();
-      // If hiding the currently selected project, clear selection
+      // If hiding the currently selected project, clear selection. Each
+      // slice owns the cleanup of its own fields (Finding 1-1). Order
+      // matters only insofar as `conversations` must be cleared after
+      // selection is dropped — handled inside resetConversationData.
       if (selectedProjectKey === key) {
-        set({
-          selectedProjectKey: null, selectedConversationId: null,
-          messages: [], branches: [], conversations: [],
-          memos: [], artifacts: [], rawqStatus: null,
-        });
+        set({ selectedProjectKey: null, rawqStatus: null });
+        get().resetConversationData();
+        get().resetBranchState();
+        get().clearConversationAssets();
         // Auto-select first remaining project
         const { projects, selectProject } = get();
         if (projects.length > 0) {

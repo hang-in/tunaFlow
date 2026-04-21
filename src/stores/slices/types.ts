@@ -169,6 +169,32 @@ export interface ChatState {
   updateArtifactStatus: (id: string, status: "draft" | "approved" | "rejected") => Promise<void>;
   deleteArtifact: (id: string) => Promise<void>;
 
+  // ─── Cross-slice write discipline (Finding 1-1) ─────────────────────
+  // Each slice owns its own state. These actions let OTHER slices keep
+  // behavior without reaching into the owner's internals with `set()`.
+
+  /** Owned by conversationSlice. Clears messages / memos / artifacts /
+   *  selectedConversationId / error / _staleConversations to the empty
+   *  state — used by hideProject, logout-style cleanups, etc. */
+  resetConversationData: () => void;
+  /** Owned by conversationSlice. Applies a streaming content patch to
+   *  a single message without rewriting the whole list. Used by the
+   *  runtime hot path that used to `set({ messages: […] })` directly. */
+  applyStreamingUpdate: (messageId: string, patch: Partial<Message>) => void;
+  /** Owned by conversationSlice. Marks a conversation as stale so the
+   *  next switch triggers a reload. Replaces inline `_staleConversations`
+   *  mutations from runtimeSlice. */
+  markConversationStale: (conversationId: string) => void;
+  /** Owned by conversationSlice. Insert-or-noop for a conversation row
+   *  (used by branch-open flows that surface the shadow conversation). */
+  ensureConversation: (conv: Conversation) => void;
+  /** Owned by branchSlice. Clears branches / activeBranchId /
+   *  parentConversationId. */
+  resetBranchState: () => void;
+  /** Owned by assetSlice. Drops memos / artifacts. Long-lived caches
+   *  (profiles, skills, personas) are left alone. */
+  clearConversationAssets: () => void;
+
   // ─── Insight panel runtime state (survives tab unmount) ─────────────
   insightRunning: boolean;
   insightProgressLines: string[];

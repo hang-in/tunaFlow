@@ -18,8 +18,6 @@ import type {
   Branch,
   Conversation,
   Message,
-  Memo,
-  Artifact,
   RoundtableParticipant,
   RtMode,
 } from "./types";
@@ -75,22 +73,20 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
         parentConvId = branchConv.parentId ?? null;
       }
 
-      // If parent conversation is not currently selected, load it first
+      // If parent conversation is not currently selected, load it via
+      // the owner (conversationSlice.selectConversation) instead of
+      // bulk-writing into foreign slices. If the parent row is missing
+      // from the conversations list (e.g. the panel never opened it),
+      // fetch + register it first.
       if (parentConvId && parentConvId !== get().selectedConversationId) {
-        const [messages, branches, memos, artifacts] = await Promise.all([
-          invoke<Message[]>("list_messages", { conversationId: parentConvId }),
-          invoke<Branch[]>("list_branches", { conversationId: parentConvId }),
-          invoke<Memo[]>("list_memos_by_conversation", { conversationId: parentConvId }),
-          invoke<Artifact[]>("list_artifacts", { conversationId: parentConvId }),
-        ]);
-        // Ensure parent conversation is in the conversations list
-        let convs = get().conversations;
-        if (!convs.some((c) => c.id === parentConvId)) {
-          const parentConv = await invoke<Conversation>("get_conversation", { id: parentConvId! });
-          convs = [...convs, parentConv];
+        if (!get().conversations.some((c) => c.id === parentConvId)) {
+          try {
+            const parentConv = await invoke<Conversation>("get_conversation", { id: parentConvId });
+            get().ensureConversation(parentConv);
+          } catch (e) { console.debug("[thread] parent conv fetch:", e); }
         }
-        set({ selectedConversationId: parentConvId, messages, branches, memos, artifacts, conversations: convs, error: null });
-        // Re-find branch from fresh data
+        await get().selectConversation(parentConvId);
+        // Re-find branch from fresh data (selectConversation reloaded branches)
         branch = get().branches.find((b) => b.id === branchId);
       }
 
@@ -114,17 +110,17 @@ export const createThreadSlice = (set: SetState, get: GetState): ThreadSlice => 
           } catch (e) { console.warn("[thread] parent branch message load failed:", e); }
         }
       }
-      set((state) => ({
+      // Own write: thread drawer state.
+      set({
         threadBranchId: branchId,
         threadBranchConvId: branchConvId,
         threadMessages: branchMessages,
         threadBranchLabel: branch?.customLabel ?? branch?.label ?? branchId.slice(0, 12),
         threadParentMessage: parentMsg,
-        // Add shadow conversation to conversations array (needed for RT detection)
-        conversations: state.conversations.some((c) => c.id === branchConvId)
-          ? state.conversations
-          : [...state.conversations, branchConv],
-      }));
+      });
+      // Sibling: shadow conversation row registration (needed for RT
+      // detection) goes through the owner.
+      get().ensureConversation(branchConv);
 
       // Auto-switch center tab when opening a plan-linked branch
       import("@/lib/api/plans").then(async ({ findPlanByBranch }) => {
