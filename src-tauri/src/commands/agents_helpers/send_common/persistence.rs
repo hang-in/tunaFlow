@@ -155,12 +155,37 @@ pub fn prepare_engine_run(
     identity_frag: Option<&str>,
     state: &DbState,
 ) -> Result<PreparedRun, crate::errors::AppError> {
-    // Phase A: DB operations under lock — persist user msg, load context data, pre-create streaming msg
-    let (mut data, project_path, msg_id, handoff_block) = {
+    // Phase A 를 3개로 분할 (2026-04-22 audit): write lock 을 최소한만 잡도록.
+    //
+    // 기존에는 user msg INSERT + load_context_data + streaming msg INSERT 를
+    // **한 write lock 안에서** 수행했다. 문제는 load_context_data 가 read-heavy
+    // (여러 SELECT · retrieval · memory) 라 수백 ms 걸리는데 그동안 write lock
+    // 을 hold. 이전 turn 의 post-completion hook (vector indexing) 이 이미
+    // write lock 을 잡고 있으면 prepare_engine_run 이 통째로 대기 → 다음 user
+    // turn 진입 실패 (sdk-session 로그 자체가 안 뜸, 45s orphan-recovery).
+    //
+    // 분할:
+    //   A0 (read):  detect_engine_handoff — 이전 assistant turn 조회
+    //   A1 (write, 수 ms): persist_user_message
+    //   A2 (read):  load_project_path + load_context_data
+    //   A3 (write, 수 ms): pre-create streaming assistant msg
+    // WAL 에서 read 는 writer 와 무관. write 를 짧게 두 번 잡는 것으로 충분.
+
+    // Phase A0: read — engine handoff 감지
+    let handoff_block = {
+        let conn = state.read.lock().map_err(|_| crate::errors::AppError::Lock)?;
+        detect_engine_handoff(&conn, &input.conversation_id, engine_key, input.persona_label.as_deref())
+    };
+
+    // Phase A1: short write — user message persist
+    {
         let conn = state.write.lock().map_err(|_| crate::errors::AppError::Lock)?;
-        // 엔진 전환 감지는 user 메시지 persist 전에 수행 — 이전 assistant 턴 기준.
-        let handoff = detect_engine_handoff(&conn, &input.conversation_id, engine_key, input.persona_label.as_deref());
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
+    }
+
+    // Phase A2: read — project path + context data (가장 시간이 많이 걸리는 구간)
+    let (mut data, project_path) = {
+        let conn = state.read.lock().map_err(|_| crate::errors::AppError::Lock)?;
         let pp = load_project_path(&conn, &input.project_key);
         let ctx_data = load_context_data(
             &conn, &input.conversation_id, &input.prompt, pp.as_deref(),
@@ -168,6 +193,12 @@ pub fn prepare_engine_run(
             input.context_mode_override.as_deref(), input.context_budget_cap,
             input.user_profile_json.as_deref(),
         );
+        (ctx_data, pp)
+    };
+
+    // Phase A3: short write — pre-create streaming assistant message
+    let msg_id = {
+        let conn = state.write.lock().map_err(|_| crate::errors::AppError::Lock)?;
         let mid = Uuid::new_v4().to_string();
         let now = now_epoch_ms();
         conn.execute(
@@ -175,8 +206,7 @@ pub fn prepare_engine_run(
              VALUES(?1,?2,'assistant','',?3,'streaming',?4,?5,?6)",
             params![mid, input.conversation_id, now, engine_key, input.model, input.persona_label],
         )?;
-        (ctx_data, pp, mid, handoff)
-        // lock released here
+        mid
     };
 
     // Session freshness: stateful 엔진(sdk-url, app-server)에서
