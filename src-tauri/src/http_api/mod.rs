@@ -11,6 +11,7 @@ mod auth;
 mod agents;
 mod conversations;
 mod events;
+mod insight;
 mod meta;
 mod plans;
 mod state;
@@ -239,7 +240,12 @@ fn build_router(state: ApiState) -> Router {
         .route("/agents/status", get(agents::agents_status))
         .route("/conversations/{id}/send", post(agents::send_message))
         .route("/roundtables/run", post(agents::start_rt_run))
-        .route("/roundtables/{id}/cancel", post(agents::cancel_rt));
+        .route("/roundtables/{id}/cancel", post(agents::cancel_rt))
+        // Insight endpoints (Phase 5 E2E — read-only + status update)
+        .route("/projects/{key}/insight/sessions", get(insight::list_sessions))
+        .route("/projects/{key}/insight/findings", get(insight::list_findings))
+        .route("/projects/{key}/insight/findings/count", get(insight::count_findings))
+        .route("/insight/findings/{id}/status", post(insight::update_finding_status));
 
     Router::new()
         .nest("/api/v1", rest.clone())

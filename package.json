@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "e2e:beta": "node scripts/beta-e2e/run-all.mjs"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.2.16",
