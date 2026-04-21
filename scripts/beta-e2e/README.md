@@ -65,5 +65,10 @@ node scripts/beta-e2e/08-ws-replay.mjs
 ## 주의
 
 - **실제 DB 에 쓰기를 수행합니다** — 테스트 프로젝트 인스턴스에서만 실행하세요
-- 스크립트는 생성한 프로젝트/대화를 **자동 정리하지 않습니다**. 세션 후 Sidebar 에서 `[E2E-*]` 라벨 항목을 수동 삭제하세요
+- 스크립트는 기본적으로 생성한 프로젝트를 남겨둡니다 (실패 디버깅 목적). 정리 방법:
+  ```bash
+  npm run e2e:beta -- --cleanup       # 실행 후 자동 soft-hide
+  npm run e2e:beta:cleanup            # 또는 사후 일괄 hide
+  E2E_CLEANUP=1 npm run e2e:beta      # env 로도 제어 가능
+  ```
 - 시나리오 1 은 실제 LLM 호출 → API 비용 발생 가능
