@@ -30,6 +30,22 @@ fn compress_semaphore() -> std::sync::Arc<tokio::sync::Semaphore> {
         .clone()
 }
 
+/// Global post-completion serialization. **전체 task (compression + session link
+/// + vector index) 를 직렬화**. 2026-04-22 재현 분석 결과, 매 turn 마다
+/// `std::thread::spawn` 으로 새 thread 를 띄우는데 이 thread 들이 compression
+/// / session link / vector index 를 각자 병렬로 진행하면서 write lock 을
+/// 쉴새 없이 번갈아 잡는다. 결과: 다음 user turn 의 `prepare_engine_run` 의
+/// A1 write lock 획득이 starvation 으로 영원히 실패. 이 세마포어로 한 번에
+/// 하나의 post-completion 만 돌도록 제한 → 다음 turn 의 A1 에게 틈을 제공.
+static POST_COMPLETION_LOCK: std::sync::OnceLock<std::sync::Arc<std::sync::Mutex<()>>> =
+    std::sync::OnceLock::new();
+
+fn post_completion_lock() -> std::sync::Arc<std::sync::Mutex<()>> {
+    POST_COMPLETION_LOCK
+        .get_or_init(|| std::sync::Arc::new(std::sync::Mutex::new(())))
+        .clone()
+}
+
 use super::super::trace_log::{insert_trace_log, insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
 use super::context_loading::{load_context_data, load_project_path};
 use super::prompt_assembly::assemble_prompt;
@@ -363,6 +379,20 @@ pub fn finalize_engine_run(
 pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: String) {
     std::thread::spawn(move || {
         let cid_short = if conversation_id.len() >= 8 { &conversation_id[..8] } else { &conversation_id };
+
+        // ⚠️ Global serialization — 한 번에 하나의 post-completion 만 실행.
+        // 기존에는 매 turn 마다 새 thread 가 compression / session link /
+        // vector index 를 각자 병렬 실행 → write lock 쉴 새 없이 잡힘 →
+        // 다음 turn 의 prepare_engine_run A1 이 영구 starvation. 이 lock 으로
+        // serialize 하면 A1 이 post-completion 사이 틈에 확실히 진입 가능.
+        let lock_arc = post_completion_lock();
+        let _guard = match lock_arc.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("[post-completion] global lock poisoned: {}", e);
+                return;
+            }
+        };
 
         // 1. Memory compression — eager trigger (P1 #3 option B, two-turn window).
         //    Runs Haiku summarization in background after every completion.
