@@ -6,11 +6,11 @@
 // Requires Node 20+ (built-in fetch + WebSocket).
 // Requires a running tunaFlow instance — either local (`npm run tauri dev`)
 // or via tunnel. Set:
-//   TUNAFLOW_BASE=http://127.0.0.1:8787      (default)
+//   TUNAFLOW_BASE=http://127.0.0.1:19840     (default; matches http_api DEFAULT_PORT)
 //   TUNAFLOW_TOKEN=<api token>               (required, from Settings > Mobile)
 
 export const env = {
-  base: process.env.TUNAFLOW_BASE ?? "http://127.0.0.1:8787",
+  base: process.env.TUNAFLOW_BASE ?? "http://127.0.0.1:19840",
   token: process.env.TUNAFLOW_TOKEN ?? "",
   verbose: process.env.VERBOSE === "1",
 };
