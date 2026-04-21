@@ -312,10 +312,11 @@ pub fn index_chunks_blocking(db: &crate::db::DbState, conversation_id: &str) -> 
         drop(conn); // explicit release — give waiting writers a chance before next chunk
         // OS 스케줄러 양보. std Mutex 는 FIFO 가 아니라 같은 thread 가 drop 직후
         // 재획득하면 waiter (예: prepare_engine_run 의 A1/A3) 가 기회 없음.
-        // 50ms sleep 은 명시적 yield 역할 — chunk 가 20개여도 총 1s 추가 오버헤드
-        // 정도라 UX 영향 적고, 2번째 user turn 의 sdk-session 진입이 즉시 가능해진다.
-        // 2026-04-22 trace 로 "A1 write.lock 획득 실패 → 45s orphan" 재현 확인.
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        // 100ms sleep 은 명시적 yield + 확실한 양보. 50ms 로 시도했으나 starvation
+        // 여전히 관찰 (2026-04-22 trace). std Mutex 의 OS context-switch 대기
+        // 시간 커버. chunk 가 많아도 총 수 초 추가라 UX 영향 제한적이고 2번째
+        // user turn 의 A1 이 즉시 획득 가능해진다.
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
     if indexed > 0 {
         eprintln!("[vector] indexed {} new chunks for {} ({} already indexed{})",
