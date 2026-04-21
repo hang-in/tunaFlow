@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "e2e:beta": "node scripts/beta-e2e/run-all.mjs",
+    "e2e:beta:cleanup": "node scripts/beta-e2e/cleanup.mjs --force",
     "eval:regression": "node evals/scripts/run-eval.mjs",
     "eval:extract": "node evals/scripts/extract-from-trace.mjs",
     "eval:report": "node evals/scripts/report.mjs"

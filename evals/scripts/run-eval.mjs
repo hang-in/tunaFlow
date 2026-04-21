@@ -366,5 +366,23 @@ function loadGolden() {
   console.log(
     `\n[eval] ${summary.passed}/${summary.total} passed · avg=${summary.avg_score.toFixed(2)} · wrote ${out}`
   );
+
+  // Cleanup scratch `eval-*` projects created during this run.
+  // Opt-in via --cleanup or EVAL_CLEANUP=1 — default off so post-mortem
+  // inspection of a specific failing run is possible.
+  if (process.argv.includes("--cleanup") || process.env.EVAL_CLEANUP === "1") {
+    console.log("\n[eval] cleaning up scratch projects");
+    const { spawnSync } = await import("node:child_process");
+    spawnSync(
+      "node",
+      [
+        resolve(REPO, "scripts/beta-e2e/cleanup.mjs"),
+        "--force",
+        "--pattern",
+        "eval-",
+      ],
+      { stdio: "inherit" }
+    );
+  }
   process.exit(summary.failed > 0 ? 1 : 0);
 })();
