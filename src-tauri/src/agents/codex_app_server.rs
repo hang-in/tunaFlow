@@ -155,11 +155,14 @@ where
         Some(m) => m.to_string(),
         None => {
             let available = available_codex_models();
-            let hint = if available.is_empty() {
+            let mut hint = if available.is_empty() {
                 " (codex CLI 를 한 번 실행해 `~/.codex/models_cache.json` 을 생성하세요)".to_string()
             } else {
                 format!(" (사용 가능한 모델: {})", available.join(", "))
             };
+            if let Some(mode) = detect_codex_auth_mode() {
+                hint.push_str(&format!(" [auth={mode}]"));
+            }
             return Err(AppError::Agent(format!(
                 "Codex 호출에 model 이 지정되지 않았습니다. Settings > Agents 에서 reviewer/developer \
                  프로필의 model 을 선택하거나, 엔진 전환 시 model 을 함께 지정하세요.{}",

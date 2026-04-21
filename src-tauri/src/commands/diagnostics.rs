@@ -64,7 +64,6 @@ fn is_stale(cached_at: &str, max_age_secs: u64) -> bool {
 
 fn chrono_parse_approx(s: &str) -> Result<u64, ()> {
     // Simple ISO 8601 parser: "2026-04-16T07:52:37Z"
-    use std::time::{SystemTime, UNIX_EPOCH};
     // Try dateutil-style parse via string matching
     if s.len() >= 19 {
         let parts: Vec<&str> = s.split(&['T', '-', ':', 'Z', '+'][..]).collect();

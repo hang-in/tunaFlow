@@ -693,8 +693,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Manual: requires model files at default path
     fn test_embedder_real() {
+        // Runtime-guarded: model files are ~2GB and only cached on dev machines.
+        // CI skips silently; local dev validates full inference pipeline.
         let model_dir = default_model_path();
         if !model_dir.join("model.onnx").exists() {
             eprintln!("skipping: model not downloaded");
@@ -715,10 +716,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Manual: requires model files
     fn test_batch_embed_real() {
+        // Runtime-guarded: see test_embedder_real above.
         let model_dir = default_model_path();
         if !model_dir.join("model.onnx").exists() {
+            eprintln!("skipping: model not downloaded");
             return;
         }
         let embedder = BgeM3Embedder::new(&model_dir).expect("BgeM3Embedder::new");

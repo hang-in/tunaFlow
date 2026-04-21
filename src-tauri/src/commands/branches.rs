@@ -4,7 +4,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::db::{
-    migrations::{now_epoch, now_epoch_ms},
+    migrations::now_epoch_ms,
     models::{Branch, Message},
     DbState,
 };
