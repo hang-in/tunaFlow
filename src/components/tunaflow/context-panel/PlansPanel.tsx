@@ -51,23 +51,25 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
   useEffect(() => { loadPlans(); }, [canonicalConvId]);
 
   // Meta 알림에서 "이동" 클릭 시 해당 plan 카드로 스크롤 + 하이라이트.
+  // Subscribe to `uiRouterSlice.focusedPlanId` directly — MetaFloatingChat
+  // writes the request via `focusPlan(id)` (Finding 1-4).
+  const focusedPlanId = useChatStore((s) => s.focusedPlanId);
+  const focusPlan = useChatStore((s) => s.focusPlan);
   useEffect(() => {
-    const handler = (e: Event) => {
-      const planId = (e as CustomEvent<string>).detail;
-      if (!planId) return;
-      loadPlans();
-      setTimeout(() => {
-        const el = containerRef.current?.querySelector(`[data-plan-id="${planId}"]`);
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.classList.add("ring-2", "ring-primary/60");
-          setTimeout(() => el.classList.remove("ring-2", "ring-primary/60"), 2000);
-        }
-      }, 150);
-    };
-    window.addEventListener("tunaflow:focus-plan", handler);
-    return () => window.removeEventListener("tunaflow:focus-plan", handler);
-  }, []);
+    if (!focusedPlanId) return;
+    loadPlans();
+    const timer = setTimeout(() => {
+      const el = containerRef.current?.querySelector(`[data-plan-id="${focusedPlanId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-primary/60");
+        setTimeout(() => el.classList.remove("ring-2", "ring-primary/60"), 2000);
+      }
+      // Clear after handling so re-selecting the same plan re-fires.
+      focusPlan(null);
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [focusedPlanId, focusPlan]);
 
   // Reload when visible
   useEffect(() => {

@@ -195,6 +195,10 @@ export interface ChatState {
    *  (profiles, skills, personas) are left alone. */
   clearConversationAssets: () => void;
 
+  // ─── UI router (Finding 1-4) — domain-level focus state ────────────
+  focusedPlanId: string | null;
+  focusPlan: (planId: string | null) => void;
+
   // ─── Insight panel runtime state (survives tab unmount) ─────────────
   insightRunning: boolean;
   insightProgressLines: string[];

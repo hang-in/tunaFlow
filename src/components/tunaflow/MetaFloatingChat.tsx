@@ -158,8 +158,12 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
     if (!r) return;
     if (r.tab) window.dispatchEvent(new CustomEvent("tunaflow:switch-tab", { detail: r.tab }));
     if (r.stage) window.dispatchEvent(new CustomEvent("tunaflow:switch-stage", { detail: r.stage }));
-    if (r.planId) window.dispatchEvent(new CustomEvent("tunaflow:focus-plan", { detail: r.planId }));
-    if (r.messageId) window.dispatchEvent(new CustomEvent("tunaflow:scroll-to-message", { detail: r.messageId }));
+    // Domain-level focus goes through uiRouterSlice rather than a window
+    // event — PlansPanel subscribes to the store directly (Finding 1-4).
+    if (r.planId) useChatStore.getState().focusPlan(r.planId);
+    // `scroll-to-message` window event had no subscribers and has been
+    // dropped. If a future UI ever needs to scroll to a specific
+    // message we'll add it to uiRouterSlice instead.
     if (!pinned) setOpen(false);
   }, [pinned]);
 
