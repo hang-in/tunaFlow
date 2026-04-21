@@ -131,10 +131,20 @@ export function RuntimeStatusBar() {
       invoke<AgentJob[]>("list_active_jobs").then((fetchedJobs) => {
         setJobs(fetchedJobs);
         // Orphan recovery: if no running jobs in DB but store has runningThreadIds,
-        // the agent:completed/error event was missed (e.g., timeout kill during tab switch).
-        // Grace period: skip threads that started less than 10s ago (DB job not yet created).
+        // the agent:completed/error event was missed (e.g., timeout kill during
+        // tab switch).
+        //
+        // Grace period: skip threads that started recently. The previous 10s
+        // window caused FALSE POSITIVES whenever post-completion hooks
+        // (vector indexing, memory compression) held the write lock for
+        // longer than that — `prepare_engine_run` couldn't insert the
+        // agent_jobs row in time, polling saw it as orphan, and the
+        // mid-stream `list_messages` swap below clobbered the in-flight
+        // streaming state. See task #82 + sample(1) finding on 2026-04-21.
+        // 45s is comfortably above observed lock-hold durations while still
+        // catching truly dead threads.
         const now = Date.now();
-        const GRACE_MS = 10_000;
+        const GRACE_MS = 45_000;
         const dbRunning = new Set(fetchedJobs.filter((j) => j.status === "running").map((j) => j.conversationId));
         const storeRunning = useChatStore.getState().runningThreadIds;
         // PTY sessions don't create agent_jobs — exclude them from orphan detection
@@ -156,20 +166,11 @@ export function RuntimeStatusBar() {
           console.warn("[orphan-recovery] Clearing stale runningThreadIds:", orphans);
           for (const id of orphans) {
             useChatStore.getState()._endRun(id, { silent: true });
-          }
-          // Reload current conversation messages to clear "streaming" status
-          const convId = useChatStore.getState().selectedConversationId;
-          if (convId) {
-            invoke<Message[]>("list_messages", { conversationId: convId }).then((msgs) => {
-              useChatStore.setState({ messages: msgs });
-            }).catch(() => {});
-          }
-          // Reload thread messages if drawer is open
-          const threadConvId = useChatStore.getState().threadBranchConvId;
-          if (threadConvId) {
-            invoke<Message[]>("list_messages", { conversationId: threadConvId }).then((msgs) => {
-              useChatStore.setState({ threadMessages: msgs });
-            }).catch(() => {});
+            // `markConversationStale` nudges the next selectConversation()
+            // to re-pull messages cleanly. The previous hot-swap via
+            // setState({ messages }) could race with legitimate ongoing
+            // streams whose agent_jobs row was simply delayed.
+            useChatStore.getState().markConversationStale(id);
           }
         }
       }).catch((e) => console.debug("[jobs]", e));
