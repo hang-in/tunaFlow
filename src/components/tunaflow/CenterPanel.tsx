@@ -138,7 +138,11 @@ export function CenterPanel() {
   const notesCount = memos.length + artifacts.length;
 
   return (
-    <div className="flex flex-col flex-1 min-w-0 h-full">
+    <div
+      role="main"
+      aria-label="메인 대화 영역"
+      className="flex flex-col flex-1 min-w-0 h-full"
+    >
       {/* ── Toolbar ── */}
       <div className="flex items-center px-3 pt-2 pb-1 shrink-0">
         {/* Tabs — scratchpad shows back button instead */}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User } from "lucide-react";
+import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User, HelpCircle } from "lucide-react";
 import { SkillsPanel } from "./context-panel/SkillsPanel";
 import { AgentsSection } from "./settings/AgentsSection";
 import { PersonasSection } from "./settings/PersonasSection";
@@ -8,8 +8,9 @@ import { RuntimeSection } from "./settings/RuntimeSection";
 import { TerminalSection } from "./settings/TerminalSection";
 import { MobileSection } from "./settings/MobileSection";
 import { ProfileSection } from "./settings/ProfileSection";
+import { HelpSection } from "./settings/HelpSection";
 
-type SettingsSection = "profile" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile";
+type SettingsSection = "profile" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile" | "help";
 
 const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <User className="w-4 h-4" /> },
@@ -19,6 +20,7 @@ const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] 
   { id: "runtime", label: "Runtime", icon: <Cpu className="w-4 h-4" /> },
   { id: "terminal", label: "Terminal", icon: <Terminal className="w-4 h-4" /> },
   { id: "mobile", label: "Mobile", icon: <Smartphone className="w-4 h-4" /> },
+  { id: "help", label: "Help", icon: <HelpCircle className="w-4 h-4" /> },
 ];
 
 interface SettingsPanelProps {
@@ -27,7 +29,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
-  const valid: SettingsSection[] = ["profile", "agents", "personas", "skills", "runtime", "terminal", "mobile"];
+  const valid: SettingsSection[] = ["profile", "agents", "personas", "skills", "runtime", "terminal", "mobile", "help"];
   const initial = (initialSection && valid.includes(initialSection as SettingsSection))
     ? (initialSection as SettingsSection)
     : "profile";
@@ -79,6 +81,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
               {activeSection === "runtime" && <RuntimeSection />}
               {activeSection === "terminal" && <TerminalSection />}
               {activeSection === "mobile" && <MobileSection />}
+              {activeSection === "help" && <HelpSection />}
             </div>
           </div>
         </div>

@@ -285,6 +285,8 @@ export function Sidebar() {
   return (
     <aside
       data-testid="sidebar"
+      role="navigation"
+      aria-label="프로젝트 사이드바"
       className="flex flex-col w-full bg-sidebar h-full overflow-hidden text-sidebar-foreground"
       onContextMenu={handleSidebarCtx}
     >

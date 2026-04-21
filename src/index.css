@@ -250,3 +250,19 @@ html.light ::-webkit-scrollbar-thumb:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ─── Focus-visible standardization (Phase 4 Finding 4-1) ─────────────
+ * Keyboard users need a visible, consistent focus indicator. Mouse
+ * users don't — we use `:focus-visible` instead of `:focus` so mouse
+ * clicks don't light up every button.
+ *
+ * Applies to every interactive element unless the element opts out by
+ * setting `outline: none` in its own styles (existing components that
+ * already ship a Tailwind `ring-*` treatment).
+ */
+:where(button, a, [role="button"], [tabindex], input, select, textarea,
+       summary, [contenteditable="true"]):focus-visible {
+  outline: 2px solid var(--color-primary, #5b8dfa);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

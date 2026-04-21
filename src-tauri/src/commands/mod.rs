@@ -8,6 +8,7 @@ pub mod context_hub;
 pub mod context_queries;
 pub mod conventions_sync;
 pub mod conversation_memory;
+pub mod crash_reports;
 pub mod diagnostics;
 pub mod memory_topics;
 pub mod memory_compression;

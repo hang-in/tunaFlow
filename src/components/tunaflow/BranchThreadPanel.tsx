@@ -118,7 +118,11 @@ export function BranchThreadPanel() {
     : null;
 
   return (
-    <div className="flex flex-col w-full h-full bg-background">
+    <div
+      role="complementary"
+      aria-label="브랜치/라운드테이블 패널"
+      className="flex flex-col w-full h-full bg-background"
+    >
       {/* Header — navigator + actions */}
       <div className="flex items-center gap-1 px-3 h-10 shrink-0">
         {/* Badge */}

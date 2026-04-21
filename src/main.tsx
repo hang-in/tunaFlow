@@ -2,6 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
+import { installCrashReporter } from "./lib/crashReporter";
+
+installCrashReporter();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

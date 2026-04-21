@@ -435,6 +435,9 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
       {/* Popup chat panel — direction flips based on position */}
       {isOpen && (
         <div
+          role="dialog"
+          aria-label="메타 에이전트 창"
+          aria-modal="false"
           className="absolute w-[360px] flex flex-col bg-background border border-border/40 rounded-xl shadow-2xl overflow-hidden"
           style={{
             width: POPUP_W,

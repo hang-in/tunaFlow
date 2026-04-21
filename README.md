@@ -138,9 +138,28 @@ Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WA
 
 ---
 
+## 알려진 제약 (Beta)
+
+- **macOS 전용** — Windows/Linux 빌드는 후속 과제
+- **ad-hoc 서명** — Gatekeeper 경고 해제 필요 (`xattr -cr /Applications/tunaFlow.app`)
+- **RT 중간 스트리밍 미지원** — Roundtable 은 라운드 단위로만 결과 표시
+- **대규모 인덱싱 시 CPU 스파이크** — 프로젝트 최초 인덱싱 시 수 분 소요 가능 (증분 이후 안정화)
+- **JSONL 완료 감지 실패(P1)** — PTY 세션에서 응답이 UI 에 반영되지 않는 경우 간헐적 발생
+
+자세한 목록: [CLAUDE.md §5](./CLAUDE.md)
+
+---
+
+## 도움말 / 단축키
+
+앱 내부 `Settings > Help` 패널에 주요 단축키, 기능 요약, 문제 해결 팁이 정리되어 있습니다.
+
+---
+
 ## 연락처
 
 - Email: d9ng@outlook.com
+- Issues: https://github.com/hang-in/tunaFlow/issues
 
 ---
 

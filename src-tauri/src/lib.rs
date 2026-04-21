@@ -35,6 +35,7 @@ impl CancelRegistry {
 
 pub fn run() {
     bootstrap::env::inherit_shell_path();
+    bootstrap::crash::install_panic_hook();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -125,6 +126,9 @@ pub fn run() {
             commands::agents::has_active_sdk_session,
             commands::agents::persist_system_msg,
             commands::diagnostics::get_rate_limit_info,
+            // Crash reports (Phase 4 Finding 4-3)
+            commands::crash_reports::list_recent_crash_reports,
+            commands::crash_reports::log_js_error,
             // Jobs
             commands::jobs::list_active_jobs,
             commands::jobs::cleanup_stale_jobs,
