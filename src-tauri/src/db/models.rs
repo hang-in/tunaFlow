@@ -226,6 +226,10 @@ pub struct Branch {
     pub mode: Option<String>,
     /// Link to plan subtask — developer lane uses this to track which task a branch implements.
     pub subtask_id: Option<String>,
+    /// Parent-conversation message id of the adoption summary turn.
+    /// Populated by `adopt_branch`; null when the branch isn't adopted
+    /// yet. Added in v40 for the mobile δ-Branch detail endpoint.
+    pub adopted_message_id: Option<String>,
     pub created_at: i64,
 }
 

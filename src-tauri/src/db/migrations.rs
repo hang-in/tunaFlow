@@ -142,6 +142,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 39 {
         apply_v39(conn)?;
     }
+    if current < 40 {
+        apply_v40(conn)?;
+    }
     Ok(())
 }
 
@@ -920,6 +923,21 @@ fn apply_v39(conn: &Connection) -> Result<(), AppError> {
     )?;
     eprintln!("[migration v39] cleaned up {} stale anchor/pair chunks (NULL embedding)", deleted);
     conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (39, ?1)", [now_epoch_ms()])?;
+    Ok(())
+}
+
+fn apply_v40(conn: &Connection) -> Result<(), AppError> {
+    // Phase 2 Finding 2-2: `adopt_branch` command currently inserts a
+    // system message into the parent conversation to mark the adoption
+    // but never records which message id that was. The mobile δ-Branch
+    // screen needs a cheap lookup for "was this branch adopted, and
+    // where does the summary live?" — so record the id on the row
+    // itself. Null = not adopted.
+    add_column_if_missing(conn, "branches", "adopted_message_id", "TEXT")?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (40, ?1)",
+        [now_epoch_ms()],
+    )?;
     Ok(())
 }
 

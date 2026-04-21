@@ -78,7 +78,8 @@ pub fn list_branches(
     let conn = state.read.lock().map_err(|_| AppError::Lock)?;
     let mut stmt = conn.prepare(
         "SELECT id, conversation_id, label, custom_label, status,
-                checkpoint_id, parent_branch_id, session_id, git_branch, mode, subtask_id, created_at
+                checkpoint_id, parent_branch_id, session_id, git_branch, mode, subtask_id,
+                adopted_message_id, created_at
          FROM branches WHERE conversation_id = ?1 ORDER BY created_at ASC",
     )?;
     let rows = stmt
@@ -95,7 +96,8 @@ pub fn list_branches(
                 git_branch: row.get(8)?,
                 mode: row.get(9)?,
                 subtask_id: row.get(10)?,
-                created_at: row.get(11)?,
+                adopted_message_id: row.get(11)?,
+                created_at: row.get(12)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -225,6 +227,7 @@ pub fn create_branch(
         git_branch,
         mode: Some(branch_mode.to_string()),
         subtask_id: input.subtask_id,
+        adopted_message_id: None,
         created_at: now,
     })
 }
@@ -563,6 +566,15 @@ pub fn adopt_branch(
         "INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine, model)
          VALUES (?1, ?2, 'assistant', ?3, ?4, 'done', ?5, ?6)",
         params![msg_id, input.conversation_id, content, now, last_engine, last_model],
+    )?;
+
+    // v40: record the summary message id on the branch row so mobile
+    // δ-Branch detail can look up "which turn landed in the parent
+    // conversation when this branch was adopted" without re-scanning
+    // messages.
+    conn.execute(
+        "UPDATE branches SET adopted_message_id = ?1 WHERE id = ?2",
+        params![msg_id, input.branch_id],
     )?;
 
     Ok(Message {
