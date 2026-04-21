@@ -1,0 +1,68 @@
+name: Eval Regression
+
+# Selective trigger: avoids burning LLM quota on every PR.
+#   1. Manual dispatch (always available)
+#   2. PR touching prompt/context/eval-related code
+#   3. PR explicitly labeled `eval:run`
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src-tauri/src/agents/**'
+      - 'src-tauri/src/commands/agents_helpers/**'
+      - 'src/lib/workflowOrchestration.ts'
+      - 'evals/golden/**'
+      - 'evals/judge/**'
+      - 'evals/scripts/**'
+      - '.github/workflows/eval-regression.yml'
+  pull_request_target:
+    types: [labeled]
+
+jobs:
+  eval:
+    # Only run on labeled event when the label is specifically `eval:run`.
+    # Other triggers (dispatch, matching-path PR) always run.
+    if: >
+      github.event_name != 'pull_request_target' ||
+      github.event.label.name == 'eval:run'
+    runs-on: [self-hosted, Linux]
+    # The eval script needs a running tunaFlow instance with reachable
+    # HTTP API. The self-hosted runner is assumed to either share the
+    # developer's instance or have a dedicated headless instance bound
+    # to TUNAFLOW_BASE (set in runner env or via `secrets.EVAL_TUNAFLOW_BASE`).
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Run prompt regression
+        env:
+          TUNAFLOW_BASE: ${{ secrets.EVAL_TUNAFLOW_BASE || 'http://127.0.0.1:19840' }}
+          TUNAFLOW_TOKEN: ${{ secrets.EVAL_API_TOKEN }}
+          EVAL_ENGINE: ${{ vars.EVAL_ENGINE || 'claude' }}
+          JUDGE_ENGINE: ${{ vars.JUDGE_ENGINE || 'claude' }}
+          JUDGE_MODEL: ${{ vars.JUDGE_MODEL || 'claude-haiku-4-5-20251001' }}
+        run: |
+          if [ -z "$TUNAFLOW_TOKEN" ]; then
+            echo "::warning::EVAL_API_TOKEN secret missing — eval skipped"
+            echo "# Prompt Regression Eval" >> $GITHUB_STEP_SUMMARY
+            echo "**Skipped** — \`EVAL_API_TOKEN\` not configured." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          node evals/scripts/run-eval.mjs || EVAL_EXIT=$?
+          node evals/scripts/report.mjs >> $GITHUB_STEP_SUMMARY
+          # Warning-only gate for the first 2-4 weeks. Flip to `exit $EVAL_EXIT`
+          # once threshold calibration stabilizes (see docs/reference/
+          # harnessMaturityAudit_2026-04-16.md §5.2 item 5).
+          echo "::notice::eval exit code was ${EVAL_EXIT:-0} (warning-only; not blocking)"
+
+      - name: Upload results snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results/
+          retention-days: 30
