@@ -47,21 +47,6 @@ struct ConvThread {
     model: String,
 }
 
-// ─────────────────────────── Auth mode detection ─────────────────────────────
-
-/// Codex CLI 인증 모드. `~/.codex/auth.json` 의 `auth_mode` 필드를 읽는다.
-/// 값:
-/// - `"chatgpt"` — ChatGPT 구독 계정 (OAuth). 일부 API-전용 모델은 지원되지
-///   않음 (특히 `gpt-5-codex`, `o4-mini` 는 400 거부).
-/// - `"apikey"` — `OPENAI_API_KEY` 기반. 전 모델 허용.
-/// - `None` — auth.json 없음/파싱 실패. 보수적으로 chatgpt 가정.
-fn detect_codex_auth_mode() -> Option<String> {
-    let path = dirs::home_dir()?.join(".codex").join("auth.json");
-    let raw = std::fs::read_to_string(&path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    v.get("auth_mode").and_then(|x| x.as_str()).map(|s| s.to_string())
-}
-
 /// `~/.codex/models_cache.json` 에서 codex CLI 가 알고 있는 실제 slug 목록을 읽어
 /// 에러 메시지 안에 노출하기 위한 helper. 사용자 환경/계정 권한에 따라 모델 리스트가
 /// 바뀌므로 tunaFlow 가 임의로 추론하지 않고, "여기 있는 것 중 하나를 고르세요" 로
@@ -155,14 +140,11 @@ where
         Some(m) => m.to_string(),
         None => {
             let available = available_codex_models();
-            let mut hint = if available.is_empty() {
+            let hint = if available.is_empty() {
                 " (codex CLI 를 한 번 실행해 `~/.codex/models_cache.json` 을 생성하세요)".to_string()
             } else {
                 format!(" (사용 가능한 모델: {})", available.join(", "))
             };
-            if let Some(mode) = detect_codex_auth_mode() {
-                hint.push_str(&format!(" [auth={mode}]"));
-            }
             return Err(AppError::Agent(format!(
                 "Codex 호출에 model 이 지정되지 않았습니다. Settings > Agents 에서 reviewer/developer \
                  프로필의 model 을 선택하거나, 엔진 전환 시 model 을 함께 지정하세요.{}",
