@@ -148,6 +148,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 41 {
         apply_v41(conn)?;
     }
+    if current < 42 {
+        apply_v42(conn)?;
+    }
     Ok(())
 }
 
@@ -971,6 +974,39 @@ fn apply_v41(conn: &Connection) -> Result<(), AppError> {
     )?;
     conn.execute(
         "INSERT INTO schema_version (version, applied_at) VALUES (41, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
+/// v42 — `meta_notifications` 복구 migration.
+///
+/// 실제 필드에서 발견된 불일치: 일부 DB 는 schema_version = 41 로 기록되어
+/// 있지만 `meta_notifications` 테이블이 존재하지 않는 상태였다. `.pre-v38.bak`
+/// 으로부터의 복원이나 과거 v38 실행 중 부분 실패로 추정됨. 결과적으로 베타
+/// 시점 HTTP API `GET /meta-notifications` 가 `db: no such table` 500 에러.
+///
+/// 해결: `CREATE TABLE IF NOT EXISTS` 를 v42 로 다시 돌려 idempotent 하게 복구.
+/// 신규 DB 는 이미 v38 이 같은 DDL 을 찍었으므로 영향 없음 (멱등).
+fn apply_v42(conn: &Connection) -> Result<(), AppError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS meta_notifications (
+            id            TEXT PRIMARY KEY,
+            project_key   TEXT,
+            kind          TEXT NOT NULL,
+            title         TEXT NOT NULL,
+            summary       TEXT,
+            route_json    TEXT,
+            created_at    INTEGER NOT NULL,
+            read_at       INTEGER,
+            dismissed_at  INTEGER,
+            FOREIGN KEY (project_key) REFERENCES projects(key) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_meta_notif_project ON meta_notifications(project_key);
+        CREATE INDEX IF NOT EXISTS idx_meta_notif_created ON meta_notifications(created_at DESC);",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (42, ?1)",
         [now_epoch_ms()],
     )?;
     Ok(())
