@@ -48,17 +48,17 @@ runScenario("scenario-03 branch-lifecycle", async () => {
   assert(detail.id === br.id, "detail id mismatch");
   log.ok(`branch detail ok`);
 
-  // Rename
+  // Rename — writes to `custom_label`; original `label` stays for history.
   await api(`/api/v1/branches/${br.id}/rename`, {
     method: "POST",
     body: JSON.stringify({ label: "test-branch-renamed" }),
   });
   const detail2 = await api(`/api/v1/branches/${br.id}`);
   assert(
-    detail2.label === "test-branch-renamed",
-    `rename failed, got ${detail2.label}`
+    detail2.customLabel === "test-branch-renamed",
+    `rename failed, customLabel=${detail2.customLabel}`
   );
-  log.ok(`rename ok`);
+  log.ok(`rename ok (customLabel updated)`);
 
   // Archive
   await api(`/api/v1/branches/${br.id}/archive`, { method: "POST" });
