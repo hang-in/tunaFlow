@@ -116,6 +116,12 @@ export function ChatPanel() {
           const freshLast = fresh[fresh.length - 1];
           // DB 에도 streaming 이면 아직 persist 전. 덮어쓰면 in-flight chunk 손실.
           if (freshLast?.status === "streaming") return;
+          // 핵심 가드: store 가 fresh 보다 길면 optimistic user + thinking
+          // placeholder 가 아직 DB 에 insert 되지 않은 상태. orphan-recovery 의
+          // false-positive 가 runningThreadIds 를 털어버렸지만 실제로는 write
+          // lock 경합 중인 상황. 덮어쓰면 현재 turn 의 user/assistant 가 통째로
+          // 사라진다. 2026-04-21 debug-messages 191→189 재현으로 확인.
+          if (fresh.length < store.messages.length) return;
           useChatStore.setState({ messages: fresh });
         } catch {}
       }, 10000); // 10s grace — orphan-recovery 와 경쟁 회피
