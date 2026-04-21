@@ -91,18 +91,34 @@ export function ChatPanel() {
   }, [isRoundtable, selectedConversationId]);
 
   // Auto-recover from missed agent:completed events
-  // If Idle (not running) but last message is still "streaming", reload from DB
+  // If Idle (not running) but last message is still "streaming", reload from DB.
+  //
+  // Extra guards (s38 메시지 사라짐 재현 대응):
+  //   1. RuntimeStatusBar 의 orphan-recovery 가 false-positive 로 runningThreadIds
+  //      에서 id 를 털어버리면 여기서 `isIdle = true` 로 오인해 in-flight 스트림을
+  //      DB 의 미완 상태로 덮어썼었다. 10s 로 grace 를 늘리고, 타이머가 실제로
+  //      발동하는 시점에 다시 store 를 확인해 여전히 idle 인지 재검증.
+  //   2. DB 에서 읽어온 최신 last msg 도 streaming 이면 아직 persist 전이라
+  //      overwrite 하지 않고 그냥 돌아간다 (다음 주기 orphan-recovery 가 처리).
   useEffect(() => {
     if (!selectedConversationId) return;
     const isIdle = !runningThreadIds.includes(selectedConversationId);
     const lastMsg = messages[messages.length - 1];
     if (isIdle && lastMsg?.status === "streaming") {
       const timer = setTimeout(async () => {
+        const store = useChatStore.getState();
+        if (store.selectedConversationId !== selectedConversationId) return;
+        if (store.runningThreadIds.includes(selectedConversationId)) return;
+        const current = store.messages[store.messages.length - 1];
+        if (current?.status !== "streaming") return;
         try {
           const fresh = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
+          const freshLast = fresh[fresh.length - 1];
+          // DB 에도 streaming 이면 아직 persist 전. 덮어쓰면 in-flight chunk 손실.
+          if (freshLast?.status === "streaming") return;
           useChatStore.setState({ messages: fresh });
         } catch {}
-      }, 2000); // 2s grace period for late events
+      }, 10000); // 10s grace — orphan-recovery 와 경쟁 회피
       return () => clearTimeout(timer);
     }
   }, [runningThreadIds, messages, selectedConversationId]);
