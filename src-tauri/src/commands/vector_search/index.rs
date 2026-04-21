@@ -268,12 +268,20 @@ pub fn index_chunks_blocking(db: &crate::db::DbState, conversation_id: &str) -> 
     }
     if embedded.is_empty() { return Ok(0); }
 
-    // Phase 3: insert results with NULL-row recovery (write lock — fast)
-    let conn = db.write.lock().map_err(|_| AppError::Lock)?;
+    // Phase 3: insert results with NULL-row recovery.
+    //
+    // ⚠️ 각 chunk 마다 write lock 을 **새로 획득 / 해제** 한다. 과거엔 전체
+    // `embedded` loop 을 하나의 lock scope 로 묶었는데, 메시지가 많아질수록
+    // loop 이 길어져 그동안 `prepare_engine_run` 같은 다른 write 요청이 lock
+    // 을 잡지 못해 다음 user turn 의 `start_claude_stream` 이 hang 됐다
+    // (2026-04-22 audit: 테스트2 이후 trace 로그 전혀 없음 + UI streaming
+    // 잔상). chunk 단위 lock 으로 잘게 쪼개면 다른 writer 가 사이사이 끼어들
+    // 수 있다. SQLite WAL 모드에서 reader 는 영향 없음.
     let now = now_epoch_ms();
     let mut indexed = 0;
     let mut recovered = 0;
     for (root_id, kind, text, blob) in &embedded {
+        let conn = db.write.lock().map_err(|_| AppError::Lock)?;
         // Cleanup NULL-embedding rows for this root_message_id (recovery path).
         let stale_rowids: Vec<i64> = conn.prepare(
             "SELECT rowid FROM conversation_chunks
@@ -301,6 +309,7 @@ pub fn index_chunks_blocking(db: &crate::db::DbState, conversation_id: &str) -> 
         let chunk_rowid: i64 = conn.query_row("SELECT rowid FROM conversation_chunks WHERE id = ?1", [&id], |r| r.get(0)).unwrap_or(0);
         if chunk_rowid > 0 { conn.execute("INSERT INTO vec_chunks(rowid, embedding) VALUES (?1, ?2)", rusqlite::params![chunk_rowid, blob]).ok(); }
         indexed += 1;
+        drop(conn); // explicit release — give waiting writers a chance before next chunk
     }
     if indexed > 0 {
         eprintln!("[vector] indexed {} new chunks for {} ({} already indexed{})",

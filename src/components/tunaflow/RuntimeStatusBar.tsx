@@ -6,7 +6,6 @@ import { usePtyStore } from "@/stores/ptyStore";
 import { Activity, Loader2, Zap, Terminal, Settings, Moon, Sun } from "lucide-react";
 import { SettingsPanel } from "./SettingsPanel";
 import { TraceModal } from "./TraceModal";
-import type { Message } from "@/types";
 import { getSetting, setSetting } from "@/lib/appStore";
 
 function ThemeToggleButton() {
@@ -131,10 +130,22 @@ export function RuntimeStatusBar() {
       invoke<AgentJob[]>("list_active_jobs").then((fetchedJobs) => {
         setJobs(fetchedJobs);
         // Orphan recovery: if no running jobs in DB but store has runningThreadIds,
-        // the agent:completed/error event was missed (e.g., timeout kill during tab switch).
-        // Grace period: skip threads that started less than 10s ago (DB job not yet created).
+        // the agent:completed/error event was missed.
+        //
+        // Audit 2026-04-22 수정:
+        //   1. GRACE 10s → 45s. 이전 turn 의 post-completion hook (vector
+        //      indexing 등) 이 write lock 을 오래 hold 하면 prepare_engine_run
+        //      의 agent_jobs INSERT 가 지연된다. 10s 는 이 경우 false positive
+        //      유발 → FP orphan 처리로 in-flight 메시지를 덮어쓰는 회귀 발생.
+        //   2. `setState({ messages })` 로 직접 덮어쓰지 않음. markConversationStale
+        //      만 호출해 다음 select 시 자연스럽게 재조회되게 한다. Zustand
+        //      wrapper 를 우회하는 하드 overwrite 는 streaming 중 in-flight
+        //      state 를 날릴 위험이 크다.
+        //   3. ChatPanel 의 auto-recover useEffect 는 이 로직과 경쟁했는데
+        //      같은 커밋에서 제거됨 — recovery 는 이 곳 단일 경로로만 한다.
+        //   See: `docs/reference/refactor-regression-audit_2026-04-22.md`.
         const now = Date.now();
-        const GRACE_MS = 10_000;
+        const GRACE_MS = 45_000;
         const dbRunning = new Set(fetchedJobs.filter((j) => j.status === "running").map((j) => j.conversationId));
         const storeRunning = useChatStore.getState().runningThreadIds;
         // PTY sessions don't create agent_jobs — exclude them from orphan detection
@@ -156,20 +167,10 @@ export function RuntimeStatusBar() {
           console.warn("[orphan-recovery] Clearing stale runningThreadIds:", orphans);
           for (const id of orphans) {
             useChatStore.getState()._endRun(id, { silent: true });
-          }
-          // Reload current conversation messages to clear "streaming" status
-          const convId = useChatStore.getState().selectedConversationId;
-          if (convId) {
-            invoke<Message[]>("list_messages", { conversationId: convId }).then((msgs) => {
-              useChatStore.setState({ messages: msgs });
-            }).catch(() => {});
-          }
-          // Reload thread messages if drawer is open
-          const threadConvId = useChatStore.getState().threadBranchConvId;
-          if (threadConvId) {
-            invoke<Message[]>("list_messages", { conversationId: threadConvId }).then((msgs) => {
-              useChatStore.setState({ threadMessages: msgs });
-            }).catch(() => {});
+            // markConversationStale 만 — 사용자가 re-select 할 때 다시 DB 에서
+            // 최신 messages 를 가져오도록 한다. 진짜 orphan 이 아니라 FP 였으면
+            // 사용자 화면은 건드리지 않는 쪽이 안전.
+            useChatStore.getState().markConversationStale(id);
           }
         }
       }).catch((e) => console.debug("[jobs]", e));

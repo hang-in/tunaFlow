@@ -260,7 +260,11 @@ html.light ::-webkit-scrollbar-thumb:hover {
  * setting `outline: none` in its own styles (existing components that
  * already ship a Tailwind `ring-*` treatment).
  */
-:where(button, a, [role="button"], [tabindex], input, select, textarea,
+/* textarea / input 은 caret + 기존 border/ring 으로 포커스가 이미 명확. 전역
+ * outline 을 추가하면 chat input 의 Tailwind ring-* 위에 덧그려져 파란
+ * 테두리가 이중으로 보임. 키보드 사용자도 caret 으로 포커스 인지 가능해
+ * a11y 지장 없음. */
+:where(button, a, [role="button"], [tabindex], select,
        summary, [contenteditable="true"]):focus-visible {
   outline: 2px solid var(--color-primary, #5b8dfa);
   outline-offset: 2px;

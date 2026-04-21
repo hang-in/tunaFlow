@@ -90,22 +90,11 @@ export function ChatPanel() {
     setView(isRoundtable ? "roundtable" : "stream");
   }, [isRoundtable, selectedConversationId]);
 
-  // Auto-recover from missed agent:completed events
-  // If Idle (not running) but last message is still "streaming", reload from DB
-  useEffect(() => {
-    if (!selectedConversationId) return;
-    const isIdle = !runningThreadIds.includes(selectedConversationId);
-    const lastMsg = messages[messages.length - 1];
-    if (isIdle && lastMsg?.status === "streaming") {
-      const timer = setTimeout(async () => {
-        try {
-          const fresh = await invoke<Message[]>("list_messages", { conversationId: selectedConversationId });
-          useChatStore.setState({ messages: fresh });
-        } catch {}
-      }, 2000); // 2s grace period for late events
-      return () => clearTimeout(timer);
-    }
-  }, [runningThreadIds, messages, selectedConversationId]);
+  // NOTE: 과거에 여기에 또 다른 "idle + last streaming → list_messages 덮어
+  // 쓰기" 자동 recovery useEffect 가 있었음. RuntimeStatusBar 의 orphan-
+  // recovery 와 완전히 같은 패턴이라 두 경로가 경쟁하며 in-flight messages
+  // 를 덮어쓰는 회귀 유발 (2026-04-22 audit). Recovery 는 이제 한 곳
+  // (RuntimeStatusBar) 으로 일원화 — 여기서는 제거.
 
   // Scroll to specific message (memo click, etc.)
   useEffect(() => {
