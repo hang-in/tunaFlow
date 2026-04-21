@@ -71,128 +71,248 @@ pub async fn send_message(
         }))).into_response();
     }
 
-    // Resolve project path + previous resume_token from DB. The mobile HTTP
-    // path must continue the same Claude/Codex/Gemini session across requests
-    // — without the prior session id the adapter starts a fresh `-p` style
-    // run each time and the agent has no memory of earlier turns.
-    let (project_path, prior_resume_token): (Option<String>, Option<String>) = {
+    // Resolve project path once. The previous resume_token is re-read at the
+    // top of every loop iteration below (it can change between iterations
+    // because we persist the new session_id after each agent turn), so we
+    // don't need to capture it here.
+    let project_path: Option<String> = {
         let conn = lock_conn(&state.db.read);
         conn.query_row(
-            "SELECT p.path, c.resume_token FROM projects p JOIN conversations c ON c.project_key = p.key WHERE c.id = ?1",
+            "SELECT p.path FROM projects p JOIN conversations c ON c.project_key = p.key WHERE c.id = ?1",
             [&conv_id],
-            |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
-        ).unwrap_or((None, None))
+            |r| r.get::<_, Option<String>>(0),
+        ).unwrap_or(None)
     };
 
     let db = state.db.clone();
     let db_post = state.db.clone();
     let conv_id_clone = conv_id.clone();
     let prompt = input.prompt.clone();
-    // Separate clones for the blocking task (RunInput) and the DB-insert path
-    // — the former moves into `spawn_blocking`, so the outer match needs its
-    // own copy to record the real model name on the assistant message.
-    let model_for_run = input.model.clone();
-    let model_for_db = input.model.clone();
+    // The desktop client runs tool-request handling in JS; the HTTP API
+    // path needs to do it server-side (see tool_request.rs). We loop the
+    // agent call up to MAX_TOOL_LOOP_DEPTH times, re-entering with a
+    // synthesized follow-up system message whenever the response contains
+    // one or more `<!-- tunaflow:tool-request:… -->` markers.
+    let model = input.model.clone();
     let event_tx = state.event_tx.clone();
-
-    let engine_for_db = engine.clone();
+    let engine_outer = engine.clone();
     let conv_id_for_ctx = conv_id.clone();
     tokio::spawn(async move {
-        let result = tokio::task::spawn_blocking(move || {
-            use crate::agents::claude;
-            use crate::commands::agents_helpers::send_common::build_normalized_prompt_with_budget;
+        use crate::commands::agents_helpers::tool_request::{
+            execute_tool_requests, extract_tool_requests,
+        };
 
-            let (enriched_prompt, system_prompt, _meta) = {
-                let conn = match db.read.lock() { Ok(c) => c, Err(p) => p.into_inner() };
-                build_normalized_prompt_with_budget(
-                    &conn,
-                    &conv_id_for_ctx,
-                    &prompt,
-                    project_path.as_deref(),
-                    &[],  // active_skills
-                    &[],  // cross_session_ids
-                    None, // persona_fragment
-                    None, // context_mode_override
-                    None, // context_budget_cap
-                    None, // user_profile_json (HTTP API path — not available)
+        const MAX_TOOL_LOOP_DEPTH: u32 = 3;
+
+        let mut current_prompt = prompt;
+        let mut depth: u32 = 0;
+        // Tracks the most recent assistant msg id across loop iterations so
+        // the final `agent:completed` event can point at the last turn. The
+        // `None` initializer is intentional: if `spawn_blocking` errors on
+        // iteration 0 we return early via the `Ok(Err(_))` / `Err(_)` arms
+        // and the completed event is never emitted.
+        #[allow(unused_assignments)]
+        let mut last_assistant_msg_id: Option<String> = None;
+
+        loop {
+            // Per-iteration clones — spawn_blocking takes ownership of these
+            // values, and the next loop iteration would otherwise see them
+            // moved.
+            let db_iter = db.clone();
+            let conv_ctx_iter = conv_id_for_ctx.clone();
+            let engine_iter = engine_outer.clone();
+            let model_iter = model.clone();
+            let project_iter = project_path.clone();
+            let prompt_iter = current_prompt.clone();
+
+            // Re-read resume_token at the top of each iteration — the previous
+            // iteration may have just written it. Doing this outside the
+            // blocking task keeps the lock short.
+            let prior_resume_token_iter: Option<String> = {
+                let conn = match db_iter.read.lock() {
+                    Ok(c) => c,
+                    Err(p) => p.into_inner(),
+                };
+                conn.query_row(
+                    "SELECT resume_token FROM conversations WHERE id = ?1",
+                    [&conv_ctx_iter],
+                    |r| r.get::<_, Option<String>>(0),
                 )
+                .ok()
+                .flatten()
             };
 
-            eprintln!("[http-api] ContextPack built: prompt={}chars system={}chars resume={}",
-                enriched_prompt.len(),
-                system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
-                prior_resume_token.as_deref().unwrap_or("<none>"));
+            let result = tokio::task::spawn_blocking(move || {
+                use crate::agents::claude;
+                use crate::commands::agents_helpers::send_common::build_normalized_prompt_with_budget;
 
-            let run_input = claude::RunInput {
-                prompt: enriched_prompt,
-                model: model_for_run,
-                system_prompt,
-                resume_token: prior_resume_token,
-                project_path: project_path.clone(),
-                image_paths: Vec::new(),
-            };
-            match engine.as_str() {
-                "claude" => claude::run(run_input),
-                "codex" => crate::agents::codex::run(run_input),
-                "gemini" => crate::agents::gemini::run(run_input),
-                "ollama" => crate::agents::openai_compat::run(run_input),
-                _ => claude::run(run_input),
-            }
-        }).await;
+                let (enriched_prompt, system_prompt, _meta) = {
+                    let conn = match db_iter.read.lock() {
+                        Ok(c) => c,
+                        Err(p) => p.into_inner(),
+                    };
+                    build_normalized_prompt_with_budget(
+                        &conn,
+                        &conv_ctx_iter,
+                        &prompt_iter,
+                        project_iter.as_deref(),
+                        &[],
+                        &[],
+                        None,
+                        None,
+                        None,
+                        None,
+                    )
+                };
 
-        match result {
-            Ok(Ok(out)) => {
-                let msg_id = uuid::Uuid::new_v4().to_string();
-                let now = crate::db::migrations::now_epoch_ms();
-                let conn = match db_post.write.lock() { Ok(c) => c, Err(p) => p.into_inner() };
-                {
-                    // Assistant row: `model` column holds the actual model name
-                    // (was polluted with session_id before, which broke model
-                    // badges and caused confusion when mobile clients rendered
-                    // the column as a chat-message UUID).
-                    conn.execute(
-                        "INSERT INTO messages (id, conversation_id, role, content, engine, model, timestamp, status) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, 'done')",
-                        rusqlite::params![msg_id, conv_id_clone, out.content, engine_for_db, model_for_db, now],
-                    ).ok();
-                    // Persist session_id as the conversation's resume token so
-                    // the NEXT /api/conversations/{id}/send call hands it back
-                    // to the adapter via `RunInput.resume_token`, keeping the
-                    // Claude/Codex/Gemini session alive across mobile turns.
-                    if let Some(sid) = &out.session_id {
-                        conn.execute(
-                            "UPDATE conversations SET resume_token = ?1 WHERE id = ?2",
-                            rusqlite::params![sid, conv_id_clone],
-                        ).ok();
-                    }
-                }
-                drop(conn);
-                let _ = event_tx.send(serde_json::json!({
-                    "type": "message:new",
-                    "conversationId": conv_id_clone,
-                    "messageId": msg_id,
-                    "role": "assistant",
-                }).to_string());
-                let _ = event_tx.send(serde_json::json!({
-                    "type": "agent:completed",
-                    "conversationId": conv_id_clone,
-                    "messageId": msg_id,
-                }).to_string());
-                crate::commands::agents_helpers::send_common::spawn_post_completion_tasks(
-                    db_post, conv_id_clone,
+                eprintln!(
+                    "[http-api] ContextPack built: prompt={}chars system={}chars resume={} depth={}",
+                    enriched_prompt.len(),
+                    system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
+                    prior_resume_token_iter.as_deref().unwrap_or("<none>"),
+                    depth,
                 );
-            }
-            Ok(Err(e)) => {
-                eprintln!("[http-api] agent error: {}", e);
-                let _ = event_tx.send(serde_json::json!({
-                    "type": "agent:error",
-                    "conversationId": conv_id_clone,
-                    "error": format!("{}", e),
-                }).to_string());
-            }
-            Err(e) => {
-                eprintln!("[http-api] agent task panicked: {:?}", e);
+
+                let run_input = claude::RunInput {
+                    prompt: enriched_prompt,
+                    model: model_iter,
+                    system_prompt,
+                    resume_token: prior_resume_token_iter,
+                    project_path: project_iter.clone(),
+                    image_paths: Vec::new(),
+                };
+                match engine_iter.as_str() {
+                    "claude" => claude::run(run_input),
+                    "codex" => crate::agents::codex::run(run_input),
+                    "gemini" => crate::agents::gemini::run(run_input),
+                    "ollama" => crate::agents::openai_compat::run(run_input),
+                    _ => claude::run(run_input),
+                }
+            })
+            .await;
+
+            match result {
+                Ok(Ok(out)) => {
+                    let assistant_msg_id = uuid::Uuid::new_v4().to_string();
+                    let now = crate::db::migrations::now_epoch_ms();
+                    {
+                        let conn = match db_post.write.lock() {
+                            Ok(c) => c,
+                            Err(p) => p.into_inner(),
+                        };
+                        conn.execute(
+                            "INSERT INTO messages (id, conversation_id, role, content, engine, model, timestamp, status) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, 'done')",
+                            rusqlite::params![
+                                assistant_msg_id,
+                                conv_id_clone,
+                                out.content,
+                                engine_outer,
+                                model,
+                                now,
+                            ],
+                        )
+                        .ok();
+                        if let Some(sid) = &out.session_id {
+                            conn.execute(
+                                "UPDATE conversations SET resume_token = ?1 WHERE id = ?2",
+                                rusqlite::params![sid, conv_id_clone],
+                            )
+                            .ok();
+                        }
+                    }
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "message:new",
+                            "conversationId": conv_id_clone,
+                            "messageId": assistant_msg_id,
+                            "role": "assistant",
+                        })
+                        .to_string(),
+                    );
+                    last_assistant_msg_id = Some(assistant_msg_id.clone());
+
+                    // Did the agent end its turn with tool-request markers?
+                    // If so — and we haven't busted the recursion depth —
+                    // synthesize the follow-up system message and re-enter.
+                    let requests = extract_tool_requests(&out.content);
+                    if requests.is_empty() || depth >= MAX_TOOL_LOOP_DEPTH {
+                        break;
+                    }
+
+                    let follow_up = {
+                        let conn = match db_post.read.lock() {
+                            Ok(c) => c,
+                            Err(p) => p.into_inner(),
+                        };
+                        execute_tool_requests(&conn, &conv_id_clone, &requests)
+                    };
+                    let Some(follow_up_text) = follow_up else {
+                        break;
+                    };
+
+                    let sys_msg_id = uuid::Uuid::new_v4().to_string();
+                    let now2 = crate::db::migrations::now_epoch_ms();
+                    {
+                        let conn = match db_post.write.lock() {
+                            Ok(c) => c,
+                            Err(p) => p.into_inner(),
+                        };
+                        conn.execute(
+                            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) VALUES (?1, ?2, 'system', ?3, ?4, 'done')",
+                            rusqlite::params![sys_msg_id, conv_id_clone, follow_up_text, now2],
+                        )
+                        .ok();
+                    }
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "message:new",
+                            "conversationId": conv_id_clone,
+                            "messageId": sys_msg_id,
+                            "role": "system",
+                        })
+                        .to_string(),
+                    );
+
+                    current_prompt = follow_up_text;
+                    depth += 1;
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[http-api] agent error: {}", e);
+                    let _ = event_tx.send(
+                        serde_json::json!({
+                            "type": "agent:error",
+                            "conversationId": conv_id_clone,
+                            "error": format!("{}", e),
+                        })
+                        .to_string(),
+                    );
+                    return;
+                }
+                Err(e) => {
+                    eprintln!("[http-api] agent task panicked: {:?}", e);
+                    return;
+                }
             }
         }
+
+        // Exited the loop because the last response contained no markers
+        // (or we hit the depth ceiling). Emit a single agent:completed
+        // pointing at the final assistant message for any WS consumers
+        // waiting on that signal.
+        if let Some(final_id) = last_assistant_msg_id {
+            let _ = event_tx.send(
+                serde_json::json!({
+                    "type": "agent:completed",
+                    "conversationId": conv_id_clone,
+                    "messageId": final_id,
+                })
+                .to_string(),
+            );
+        }
+        crate::commands::agents_helpers::send_common::spawn_post_completion_tasks(
+            db_post,
+            conv_id_clone,
+        );
     });
 
     (StatusCode::ACCEPTED, Json(serde_json::json!({
