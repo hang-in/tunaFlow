@@ -16,6 +16,7 @@ import { RoundtableControls } from "./input/RoundtableControls";
 import { ContextBadges } from "./input/ContextBadges";
 import { useSendActions } from "./input/useSendActions";
 import { saveAttachment, deleteAttachment, type Attachment, MAX_ATTACHMENT_SIZE } from "@/lib/attachments";
+import { formatError } from "@/lib/errors/userFriendlyMessage";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { readFile as readFsFile } from "@tauri-apps/plugin-fs";
 
@@ -255,7 +256,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         } catch (e) {
           console.warn("[attach]", path, e);
           const { toast } = await import("sonner");
-          toast.error(`첨부 실패: ${e}`);
+          toast.error(`첨부 실패: ${formatError(e)}`);
         }
       }
     } finally {
@@ -285,7 +286,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         } catch (e) {
           console.warn("[attach]", f.name, e);
           const { toast } = await import("sonner");
-          toast.error(`첨부 실패: ${e}`);
+          toast.error(`첨부 실패: ${formatError(e)}`);
         }
       }
     } finally {

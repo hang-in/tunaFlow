@@ -9,6 +9,7 @@ import {
 import type { InsightSession, InsightFinding, InsightCategory, InsightSeverity } from "@/types";
 import * as insightApi from "@/lib/api/insight";
 import { runInsightAnalysis, revalidateFindings } from "@/lib/insightOrchestration";
+import { formatError } from "@/lib/errors/userFriendlyMessage";
 import { toast } from "sonner";
 import { CATEGORY_META, SEVERITY_META, classifyQuadrant } from "./insight/insightConstants";
 import type { QuadrantKey } from "./insight/insightConstants";
@@ -94,7 +95,7 @@ export function InsightPanel() {
       toast.success(`분석 완료: ${newFindings.length}건 발견`);
     } catch (err) {
       useChatStore.getState().insightFailRun(String(err));
-      toast.error(`분석 실패: ${err}`);
+      toast.error(`분석 실패: ${formatError(err)}`);
     }
   }, [selectedProjectKey, projects, categoryFilter, running]);
 
@@ -129,7 +130,7 @@ export function InsightPanel() {
       setExpandedSessionIds((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
       toast.success("이전 분석 삭제됨");
     } catch (err) {
-      toast.error(`삭제 실패: ${err}`);
+      toast.error(`삭제 실패: ${formatError(err)}`);
     }
   }, []);
 
@@ -166,7 +167,7 @@ export function InsightPanel() {
       const count = await insightApi.exportInsightToFiles(activeSession.id, project.path);
       toast.success(`${count}개 파일 저장 완료 (docs/insight/)`);
     } catch (err) {
-      toast.error(`파일 저장 실패: ${err}`);
+      toast.error(`파일 저장 실패: ${formatError(err)}`);
     }
   }, [activeSession, selectedProjectKey, projects]);
 
@@ -233,7 +234,7 @@ ${lines.join("\n\n")}`;
 
       toast.success(`Architect Review Branch 생성 → ${targetFindings.length}건 전달`);
     } catch (err) {
-      toast.error(`브랜치 생성 실패: ${err}`);
+      toast.error(`브랜치 생성 실패: ${formatError(err)}`);
     }
   }, []);
 
@@ -275,7 +276,7 @@ ${lines.join("\n\n")}`;
       toast.success(msg);
     } catch (err) {
       useChatStore.getState().insightFailRun(String(err));
-      toast.error(`재검토 실패: ${err}`);
+      toast.error(`재검토 실패: ${formatError(err)}`);
     }
   }, [running, findings, selectedProjectKey]);
 
