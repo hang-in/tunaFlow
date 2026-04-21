@@ -441,22 +441,32 @@ const VALID_PHASES: &[&str] = &[
 
 /// Update the orchestration phase of a plan.
 /// Returns an error if the requested phase is not in the canonical list.
+///
+/// ⚠️ async + spawn_blocking. Plan 승인 UI 클릭 경로. sync 버전은 동시에
+/// 돌고 있는 post-completion hook (vector indexing 등) 이 write lock 을
+/// hold 하면 main thread freeze → beach ball. 자세한 설명은
+/// `messages::save_progress_content` doc 참조.
 #[tauri::command]
-pub fn update_plan_phase(
+pub async fn update_plan_phase(
     id: String,
     phase: String,
-    state: State<DbState>,
+    state: State<'_, DbState>,
 ) -> Result<(), AppError> {
     if !VALID_PHASES.contains(&phase.as_str()) {
         return Err(AppError::BadRequest(format!("invalid plan phase: {phase}")));
     }
-    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    let now = now_epoch_ms();
-    conn.execute(
-        "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
-        params![phase, now, id],
-    )?;
-    Ok(())
+    let write = state.write.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let conn = write.lock().map_err(|_| AppError::Lock)?;
+        let now = now_epoch_ms();
+        conn.execute(
+            "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
+            params![phase, now, id],
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
 }
 
 /// Create a plan event (history log entry).
