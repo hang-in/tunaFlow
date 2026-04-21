@@ -219,6 +219,7 @@ fn build_router(state: ApiState) -> Router {
         .route("/plans/{id}/events", get(plans::list_plan_events))
         .route("/plans/{id}/approve", post(plans::approve_plan))
         .route("/plans/{id}/reject", post(plans::reject_plan))
+        .route("/plans/{id}/subtasks/{sid}/status", post(plans::update_subtask_status))
         .route("/artifacts", get(plans::list_artifacts))
         // Meta notification endpoints (v38 table → mobile inbox)
         .route("/meta-notifications", get(meta::list_meta_notifications))

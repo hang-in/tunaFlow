@@ -240,6 +240,87 @@ pub async fn reject_plan(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSubtaskStatusInput {
+    pub status: String,
+    pub outcome: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+/// Phase 2 Finding 2-4: change a subtask's status over HTTP and
+/// broadcast `plan:subtask_status_changed` to WS subscribers so mobile
+/// clients don't need to poll.
+pub async fn update_subtask_status(
+    State(state): State<ApiState>,
+    Path((plan_id, subtask_id)): Path<(String, String)>,
+    Json(input): Json<UpdateSubtaskStatusInput>,
+) -> impl IntoResponse {
+    // Guard: the known states match the desktop enum in `types/index.ts`.
+    // Reject unknown values up front instead of letting them land in the
+    // DB where they'd confuse every reader.
+    const VALID: &[&str] = &["todo", "approved", "in_progress", "done", "abandoned"];
+    if !VALID.contains(&input.status.as_str()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "invalid status", "allowed": VALID})),
+        )
+            .into_response();
+    }
+    // Verify the subtask actually belongs to this plan — `update_subtask_status`
+    // on the Tauri command path doesn't enforce this because the desktop
+    // UI can't send a mismatched pair, but HTTP callers can.
+    let conn = lock_conn(&state.db.write);
+    let owner_check: Result<String, _> = conn.query_row(
+        "SELECT plan_id FROM plan_subtasks WHERE id = ?1",
+        [&subtask_id],
+        |r| r.get(0),
+    );
+    let owner = match owner_check {
+        Ok(v) => v,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "subtask not found"})),
+            )
+                .into_response()
+        }
+    };
+    if owner != plan_id {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "subtask does not belong to plan"})),
+        )
+            .into_response();
+    }
+    let now = crate::db::migrations::now_epoch_ms();
+    if let Err(e) = conn.execute(
+        "UPDATE plan_subtasks SET status = ?1, outcome = ?2, last_updated_by = ?3, updated_at = ?4 WHERE id = ?5",
+        rusqlite::params![input.status, input.outcome, input.updated_by, now, subtask_id],
+    ) {
+        return db_error(e);
+    }
+    drop(conn);
+
+    let _ = state.event_tx.send(
+        serde_json::json!({
+            "type": "plan:subtask_status_changed",
+            "planId": plan_id,
+            "subtaskId": subtask_id,
+            "status": input.status,
+        })
+        .to_string(),
+    );
+
+    Json(serde_json::json!({
+        "planId": plan_id,
+        "subtaskId": subtask_id,
+        "status": input.status,
+        "updatedAt": now,
+    }))
+    .into_response()
+}
+
 pub async fn list_artifacts(
     State(state): State<ApiState>,
     Query(q): Query<ArtifactQuery>,
