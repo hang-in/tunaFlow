@@ -141,6 +141,33 @@ pub async fn list_branches(
     Json(serde_json::json!(rows)).into_response()
 }
 
+/// Phase 2 Finding 2-5: active plan pointer for the conversation.
+/// Returns `{ planId, phase, title }` for the most recent non-done /
+/// non-abandoned plan on this conversation, or `null` when none.
+/// Mirrors `commands::plans::get_active_plan_phase` but includes the
+/// plan id and title so mobile can route directly to the plan view.
+pub async fn get_active_plan(
+    State(state): State<ApiState>,
+    Path(conv_id): Path<String>,
+) -> impl IntoResponse {
+    let conn = lock_conn(&state.db.read);
+    let row: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT id, title, phase FROM plans
+             WHERE conversation_id = ?1 AND status != 'done' AND status != 'abandoned'
+             ORDER BY updated_at DESC LIMIT 1",
+            [&conv_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok();
+    match row {
+        Some((id, title, phase)) => Json(serde_json::json!({
+            "planId": id, "title": title, "phase": phase,
+        })).into_response(),
+        None => Json(serde_json::json!(null)).into_response(),
+    }
+}
+
 /// Phase 2 Finding 2-2: branch detail endpoint for mobile δ-Branch.
 /// Consolidates the fields a single-branch detail view needs in one
 /// call: labels / status / mode / parent, the rt_config (participants)

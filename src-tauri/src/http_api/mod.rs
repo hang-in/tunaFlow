@@ -211,6 +211,7 @@ fn build_router(state: ApiState) -> Router {
         .route("/conversations/{id}/chunks/index", post(conversations::index_chunks))
         .route("/conversations/{id}/chunks/search", post(conversations::search_chunks))
         .route("/conversations/{id}/traces", get(conversations::list_conv_traces))
+        .route("/conversations/{id}/active-plan", get(conversations::get_active_plan))
         // Plan / artifact endpoints
         .route("/plans", get(plans::list_plans))
         .route("/plans/{id}", get(plans::get_plan))
