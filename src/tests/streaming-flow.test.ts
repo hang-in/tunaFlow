@@ -121,6 +121,14 @@ function createMockStore(overrides: Partial<ChatState> = {}) {
     // Stubs for methods
     getEffectiveSkills: () => ["skill-a"],
     getConversationEngine: () => null,
+    // conversationSlice owner actions consumed by runtimeSlice (Finding 1-1)
+    markConversationStale: (convId: string) => {
+      set((state) => {
+        const stale = new Set(state._staleConversations);
+        stale.add(convId);
+        return { _staleConversations: stale };
+      });
+    },
     ...overrides,
   } as unknown as ChatState;
 
