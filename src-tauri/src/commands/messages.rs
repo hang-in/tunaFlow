@@ -265,18 +265,31 @@ pub fn get_progress_content(
 /// Save thinking/tool-use progress content for a message.
 /// Called by frontend after streaming completes, to persist progressContent to DB.
 /// This data is NOT included in context building — display only.
+///
+/// ⚠️ **async + spawn_blocking 필수**. 동기 Tauri command 는 main thread
+/// (Tao/AppKit event loop) 에서 실행되므로 `write.lock()` 이 block 되면
+/// UI 가 beach ball 로 freeze 된다. streaming 중 frontend 가 chunk 마다
+/// 이 command 를 호출하고, 동시에 on_run_completed 의 3-stage hook
+/// (compression/session-links/vector-index) 이 write lock 을 장시간
+/// 점유하면 정확히 이 패턴이 재현된다. sample(1) stack 에서 1635/1635
+/// 샘플이 여기서 block 된 것으로 2026-04-21 확인.
 #[tauri::command]
-pub fn save_progress_content(
+pub async fn save_progress_content(
     message_id: String,
     progress_content: String,
-    state: State<DbState>,
+    state: State<'_, DbState>,
 ) -> Result<(), AppError> {
-    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    conn.execute(
-        "UPDATE messages SET progress_content = ?1 WHERE id = ?2",
-        params![progress_content, message_id],
-    )?;
-    Ok(())
+    let write = state.write.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let conn = write.lock().map_err(|_| AppError::Lock)?;
+        conn.execute(
+            "UPDATE messages SET progress_content = ?1 WHERE id = ?2",
+            params![progress_content, message_id],
+        )?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
 }
 
 /// Delete a user+assistant message pair.
