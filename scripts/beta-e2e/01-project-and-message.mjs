@@ -51,12 +51,11 @@ runScenario("scenario-01 project-and-message", async () => {
     }),
   });
 
-  // Wait for any message:completed event scoped to this conv
+  // Wait for `agent:completed` — emitted after the tool-request loop exits
+  // (see src-tauri/src/http_api/agents.rs:294).
   const done = await socket.waitFor(
-    (e) =>
-      (e.type === "message:completed" || e.type === "stream:completed") &&
-      (e.conversationId === conv.id || e.conversation_id === conv.id),
-    60000
+    (e) => e.type === "agent:completed" && e.conversationId === conv.id,
+    120000
   );
   log.ok(`received completion event: ${done.type}`);
 

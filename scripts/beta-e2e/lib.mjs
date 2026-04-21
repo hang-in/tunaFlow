@@ -138,7 +138,9 @@ export function runScenario(name, fn) {
       process.exit(0);
     } catch (e) {
       log.fail(`${name}: ${e.message}`);
-      if (e.body) console.error(e.body);
+      if (e.body) console.error("  body:", e.body);
+      // undici TypeError: fetch failed 는 실제 원인을 cause 체인에 숨긴다
+      if (e.cause) console.error("  cause:", e.cause.code ?? e.cause.message ?? e.cause);
       if (env.verbose) console.error(e.stack);
       process.exit(1);
     }

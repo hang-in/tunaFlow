@@ -13,10 +13,15 @@ const scenarios = readdirSync(here)
   .sort();
 
 const results = [];
-for (const file of scenarios) {
+for (const [idx, file] of scenarios.entries()) {
   console.log(`\n═══════ ${file} ═══════`);
   const res = spawnSync("node", [join(here, file)], { stdio: "inherit" });
   results.push({ file, ok: res.status === 0, code: res.status });
+  // Brief cooldown between scenarios so backgrounded agent runs from the
+  // previous scenario can drain before the next HTTP call hits the server.
+  if (idx < scenarios.length - 1) {
+    await new Promise((r) => setTimeout(r, 1500));
+  }
 }
 
 console.log("\n═══════ Summary ═══════");
