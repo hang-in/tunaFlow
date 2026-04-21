@@ -112,24 +112,34 @@ pub fn on_run_completed(conversation_id: String, state: State<DbState>) -> Resul
 }
 
 /// Cleanup stale jobs: mark 'running' jobs as 'stale' and fix orphaned streaming messages.
-/// Called on app startup to recover from interrupted runs.
+/// Called on app startup and webview reload to recover from interrupted runs.
+///
+/// ⚠️ async + spawn_blocking — webview 리로드 시 AppShell init 에서 invoke
+/// 되는데 sync 버전은 main thread 에서 write lock 대기 → beach ball. 이전 turn
+/// 의 post-completion hook (vector indexing) 이 lock hold 중이면 정확히 재현.
+/// 2026-04-22 sample(1) stack 으로 재확인.
 #[tauri::command]
-pub fn cleanup_stale_jobs(state: State<DbState>) -> Result<i64, AppError> {
-    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
-    let now = now_epoch_ms();
+pub async fn cleanup_stale_jobs(state: State<'_, DbState>) -> Result<i64, AppError> {
+    let write = state.write.clone();
+    tokio::task::spawn_blocking(move || -> Result<i64, AppError> {
+        let conn = write.lock().map_err(|_| AppError::Lock)?;
+        let now = now_epoch_ms();
 
-    // Mark all running jobs as stale
-    let job_count = conn.execute(
-        "UPDATE agent_jobs SET status = 'stale', updated_at = ?1 WHERE status = 'running'",
-        params![now],
-    )?;
+        // Mark all running jobs as stale
+        let job_count = conn.execute(
+            "UPDATE agent_jobs SET status = 'stale', updated_at = ?1 WHERE status = 'running'",
+            params![now],
+        )?;
 
-    // Fix orphaned streaming messages (from interrupted background threads)
-    conn.execute(
-        "UPDATE messages SET status = 'error', content = CASE WHEN content = '' THEN '(interrupted)' ELSE content END
-         WHERE status = 'streaming'",
-        [],
-    )?;
+        // Fix orphaned streaming messages (from interrupted background threads)
+        conn.execute(
+            "UPDATE messages SET status = 'error', content = CASE WHEN content = '' THEN '(interrupted)' ELSE content END
+             WHERE status = 'streaming'",
+            [],
+        )?;
 
-    Ok(job_count as i64)
+        Ok(job_count as i64)
+    })
+    .await
+    .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
 }
