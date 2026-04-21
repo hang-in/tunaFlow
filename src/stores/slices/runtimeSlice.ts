@@ -108,7 +108,18 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
 
   sendWithEngine: async (engine: string, prompt: string, model?: string, systemPrompt?: string, opts?: { userMessageId?: string; imagePaths?: string[] }) => {
     const { selectedProjectKey, selectedConversationId, runningThreadIds } = get();
-    if (!selectedProjectKey || !selectedConversationId) return;
+    console.warn("[send-debug] entry", {
+      engine,
+      promptHead: prompt.slice(0, 30),
+      selectedProjectKey,
+      selectedConversationId,
+      runningThreadIds: [...runningThreadIds],
+      model,
+    });
+    if (!selectedProjectKey || !selectedConversationId) {
+      console.warn("[send-debug] early-return: no project/conv");
+      return;
+    }
 
     if (!model) {
       model = resolveModel(get(), selectedConversationId, engine);
@@ -119,6 +130,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
 
     // Queue if already running
     if (runningThreadIds.includes(selectedConversationId)) {
+      console.warn("[send-debug] QUEUED (already running)", selectedConversationId);
       get()._enqueue(selectedConversationId, prompt.slice(0, 30), () =>
         get().sendWithEngine(engine, prompt, model, systemPrompt, opts),
       );
@@ -274,6 +286,7 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
     });
 
     try {
+      console.warn("[send-debug] buildSendInput start", { cmd: config.command, engine, model });
       const input = await buildSendInput({
         projectKey: selectedProjectKey,
         conversationId: selectedConversationId,
@@ -287,8 +300,12 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
         getEffectiveSkills: get().getEffectiveSkills,
         opts,
       });
-      await invoke<{ messageId: string }>(config.command, { input });
+      console.warn("[send-debug] buildSendInput done → invoke", config.command);
+      const invokeStart = Date.now();
+      const result = await invoke<{ messageId: string }>(config.command, { input });
+      console.warn("[send-debug] invoke returned", { cmd: config.command, tookMs: Date.now() - invokeStart, result });
     } catch (e) {
+      console.warn("[send-debug] invoke catch", errorMessage(e));
       cleanupAll();
       set((state) => ({
         error: errorMessage(e),

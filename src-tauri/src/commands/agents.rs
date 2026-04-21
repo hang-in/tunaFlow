@@ -146,11 +146,18 @@ pub async fn start_claude_stream(
     let mo = input.model.clone();
 
     // DB-heavy work off main thread
+    eprintln!("[send-rust] start_claude_stream entry conv={}", &cid[..cid.len().min(12)]);
     let (prep, system_prompt) = tokio::task::spawn_blocking(move || -> Result<_, AppError> {
+        eprintln!("[send-rust] spawn_blocking → prepare_engine_run");
+        let t0 = std::time::Instant::now();
         let prep = prepare_engine_run("claude-code", &input, id_frag.as_deref(), &db)?;
+        eprintln!("[send-rust] prepare_engine_run done in {}ms", t0.elapsed().as_millis());
 
         let system_prompt = {
+            eprintln!("[send-rust] acquire write.lock for assemble_system_prompt");
+            let t1 = std::time::Instant::now();
             let _conn = db.write.lock().map_err(|_| AppError::Lock)?;
+            eprintln!("[send-rust] write.lock acquired after {}ms", t1.elapsed().as_millis());
             let agent_sp = assemble_system_prompt(
                 input.agent_name.as_deref(), prep.project_path.as_deref(), input.system_prompt.as_deref(),
             );
