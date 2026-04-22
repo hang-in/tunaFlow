@@ -315,3 +315,13 @@ description: 세션별 전체 작업 이력. 새 세션 시작 시 또는 과거
 - InsightPanel: 재검토(revalidateFindings) + Architect 검토(handleSendToArchitect) + summary strip
 - Auto Fix → 메타에이전트 도입 후 구현으로 연기, 문서 업데이트
 - CLAUDE.md 경량화 (53KB → sessionHistory.md 분리)
+
+### 🐞 Incident 2026-04-23: SDK 30s connect timeout (sessionContinuityFixPlan followup)
+- **증상**: Branch Dev → Reviewer → Dev 수정 페이즈 진입 시 `sdk-session: claude did not connect within 30s`
+- **발견 시점**: PR #132~#134 (Session Continuity Fix) 머지 후 최초 사용자 재현
+- **로그 단서**: `[sdk-session] resuming with session_id=2d86ea63-...` → 30006ms 후 guardrail err. model=claude-sonnet-4-6, prompt_chars=25561
+- **현재 상태**: 원인 미확정. 4개 가설 (stderr null / `--session-id` vs `--resume` 인자 충돌 / conv_id 전환 오배선 / 대형 트랜스크립트 로드 지연)
+- **대응 (완료)**: stderr 캡처 임시 패치 (`[claude-cli stderr conv=...] ...` eprintln) + escape hatch (`TUNAFLOW_DISABLE_RESUME_BOOTSTRAP=1`) 적용. 근본 수정 후 두 패치 모두 제거 예정
+- **claude CLI**: 2.1.117 (Claude Code)
+- **다음**: 사용자 재현 → stderr 로그 Architect 공유 → 가설 확정 → plan 작성 → 근본 수정
+- **영향**: userWorldviewInjectionPlan subtask-02 (DB v46 migration) 머지는 본 이슈 해결 후 진행 권고 (Architect 의견)
