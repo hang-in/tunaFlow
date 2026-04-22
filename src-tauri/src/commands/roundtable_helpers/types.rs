@@ -94,15 +94,24 @@ fn role_guidance(role: &str) -> &'static str {
         "proposer" => {
             "**Proposer guidelines:**\n\
              - Form your analysis independently — do not converge toward other participants' views.\n\
-             - Lead with your conclusion, then provide supporting evidence.\n\
              - Flag assumptions explicitly; do not treat them as facts.\n\
-             - **Emit an `## Invariants` section** listing constraints the implementation MUST NEVER violate.\n\
-             - Format each invariant as: `- [INV-N] <short statement> — <why it matters>`\n\
-             - Examples:\n\
-               - [INV-1] Do not call db.write.lock() inside broadcast_event — same-thread re-entrant deadlock risk.\n\
-               - [INV-2] Do not release streaming subscription during adopt — message loss risk.\n\
-             - Prefer 0 to 7 invariants. If you cannot state any concrete invariant, write `None` and explain why.\n\
-             - Invariants must be checkable by reading code or running a test — not subjective quality claims."
+             - **Output structure (required — four sections, in this exact order):**\n\
+               1. `## TL;DR for Developer` — 5~20 lines. Execution-only directives. What to change, where, in what\n\
+                  order. No rationale, no alternatives. This is the section Developer actually reads.\n\
+               2. `## Specification` — concrete contracts: function signatures, file paths, expected behavior,\n\
+                  edge cases. Enough for Developer to implement without questions.\n\
+               3. `## Invariants` — constraints the implementation MUST NEVER violate. Format each as:\n\
+                  `- [INV-N] <short statement> — <why it matters>`\n\
+                  Examples:\n\
+                  - [INV-1] Do not call db.write.lock() inside broadcast_event — same-thread re-entrant deadlock.\n\
+                  - [INV-2] Do not release streaming subscription during adopt — message loss risk.\n\
+                  Prefer 0 to 7 invariants. If none apply, write `None` and explain briefly.\n\
+                  Each invariant must be checkable by reading code or running a test — not subjective quality.\n\
+               4. `## Rationale (reviewer-only)` — design decisions, alternatives considered, trade-offs, why\n\
+                  this approach over others. This section is NOT included in the Developer ContextPack; it is\n\
+                  reviewed by the Reviewer/Verifier for audit purposes.\n\
+             - Lead with the conclusion in TL;DR — not in Rationale.\n\
+             - Do NOT duplicate content between sections. TL;DR stays terse; put full reasoning in Rationale."
         }
         "reviewer" | "critic" => {
             "**Reviewer guidelines:**\n\
@@ -468,5 +477,54 @@ mod tests {
         let r = make_participant("R", Some("codex"), false, Some("reviewer"));
         let id_r = participant_identity(&r);
         assert!(!id_r.contains("divergence"), "reviewer must not inherit divergence guidance");
+    }
+
+    // ─── Architect 2-track output (Phase 4 of harnessVerificationGapPlan) ──────
+
+    #[test]
+    fn proposer_guidance_requires_tldr_section() {
+        let p = make_participant("P", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("## TL;DR for Developer"), "proposer must emit TL;DR section");
+        assert!(id.contains("5~20 lines") || id.contains("5-20 lines"),
+            "proposer must know TL;DR length bound");
+    }
+
+    #[test]
+    fn proposer_guidance_requires_specification_section() {
+        let p = make_participant("P", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("## Specification"), "proposer must emit Specification section");
+    }
+
+    #[test]
+    fn proposer_guidance_requires_rationale_reviewer_only() {
+        let p = make_participant("P", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("## Rationale"), "proposer must emit Rationale section");
+        assert!(
+            id.contains("reviewer-only") || id.contains("NOT included in the Developer"),
+            "Rationale must be flagged as reviewer-only (excluded from Developer ContextPack)"
+        );
+    }
+
+    #[test]
+    fn proposer_guidance_forbids_content_duplication() {
+        let p = make_participant("P", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("Do NOT duplicate") || id.contains("duplicate content"),
+            "proposer must be told not to duplicate TL;DR and Rationale"
+        );
+    }
+
+    #[test]
+    fn proposer_guidance_keeps_invariants_in_structure() {
+        // Phase 4 reorganizes the structure but invariants guidance must remain intact
+        let p = make_participant("P", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("## Invariants"), "invariants section still required");
+        assert!(id.contains("[INV-"), "INV-N format still required");
+        assert!(id.contains("0 to 7 invariants"), "invariant count bound still applies");
     }
 }
