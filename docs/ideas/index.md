@@ -4,7 +4,7 @@
 > 성격: 구현 확정된 plan으로 가기 전의 탐색·설계·분석 메모. `status: idea` 가 기본.
 > 완료·해결된 idea는 `docs/archive/ideas/completed/` 로 이동.
 
-## 📄 활성 ideas (54개)
+## 📄 활성 ideas (56개)
 
 | 문서 | 요약 |
 |------|------|
@@ -13,6 +13,7 @@
 | [architectEnhancementIdea](./architectEnhancementIdea.md) | — |
 | [artifactAndFailureLearningIdea](./artifactAndFailureLearningIdea.md) | | 타입 | DB 테이블 | 실제 사용 | |
 | [artifactsTabDesignReviewIdea](./artifactsTabDesignReviewIdea.md) | ```sql |
+| [bgeM3QuantizationAndAcceleratorIdea](./bgeM3QuantizationAndAcceleratorIdea.md) | | 항목 | 값 | |
 | [blog-contextpack-draft](./blog-contextpack-draft.md) | tunaFlow는 Claude, Codex, Gemini, OpenCode 같은 CLI 에이전트를 하나의 앱에서 오케스트레이션하는 데스크톱 클라이언트입니다. 에이전트 하나만 쓸 때는 비교적 단순합니 |
 | [ciExecutionLoopIdea](./ciExecutionLoopIdea.md) | — |
 | [ciMultiOsPlan](./ciMultiOsPlan.md) | - `.github/workflows/ci.yml`: windows-latest 단일, Node 20, actions v4 |
@@ -34,6 +35,7 @@
 | [insightWorkflowIdea](./insightWorkflowIdea.md) | 1. Insight 분석 결과가 DB에만 있고, **에이전트가 접근할 수 없음** — 아키텍트에게 "Insight 탭 볼 수 있어?"라고 물으면 "볼 수 없다"고 답함 |
 | [knowledgeLayerArchitectureIdea](./knowledgeLayerArchitectureIdea.md) | ```rust |
 | [larksuiteCliArchitectureReferenceIdea](./larksuiteCliArchitectureReferenceIdea.md) | - 작성: 2026-04-06 |
+| [litertLmIntegrationIdea](./litertLmIntegrationIdea.md) | Google `LiteRT-LM` (구 TFLite-LM) — WebGPU/Wasm 환경에서 LLM 온디바이스 추론에 최적화된 런타임. 주로 Gemma 계열과 소형 LLM 대상. |
 | [mexContextScaffoldIdea](./mexContextScaffoldIdea.md) | AI 에이전트를 위한 **프로젝트 컨텍스트 스캐폴드 관리 도구**. 에이전트가 세션 간에 프로젝트를 "기억"할 수 있도록 구조화된 마크다운 문서를 유지하고, 문서와 실제 코드의 **drift(불일치 |
 | [mobileArchitectureIdea](./mobileArchitectureIdea.md) | — |
 | [modernSqliteFeaturesIdea](./modernSqliteFeaturesIdea.md) | ```rust |
