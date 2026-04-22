@@ -151,6 +151,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 42 {
         apply_v42(conn)?;
     }
+    if current < 43 {
+        apply_v43(conn)?;
+    }
     Ok(())
 }
 
@@ -1012,6 +1015,37 @@ fn apply_v42(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v43 — `agent_session_audit` 테이블 추가.
+///
+/// Phase 3a (harnessVerificationGapPlan §4) — 에이전트 세션의 commit/rollback
+/// 이력을 기록. 중간 실패 시 어떤 세션이 어떤 상태로 끝났는지 추적 가능해야
+/// State Pollution (half-formed row 잔존) 디버깅이 실현된다.
+///
+/// 본 migration 은 **스키마만 추가**. 실제 persistence.rs 와 연결하는 로직은
+/// Phase 3b 에서 wrapper 와 함께 도입.
+fn apply_v43(conn: &Connection) -> Result<(), AppError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS agent_session_audit (
+            session_id    TEXT PRIMARY KEY,
+            conversation_id TEXT,
+            started_at    INTEGER NOT NULL,
+            ended_at      INTEGER,
+            outcome       TEXT NOT NULL DEFAULT 'in_progress',
+            -- 'committed' | 'rolled_back' | 'in_progress' | 'panic'
+            rollback_reason TEXT,
+            savepoint_name TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_asa_outcome ON agent_session_audit(outcome);
+        CREATE INDEX IF NOT EXISTS idx_asa_conv ON agent_session_audit(conversation_id);
+        CREATE INDEX IF NOT EXISTS idx_asa_started ON agent_session_audit(started_at DESC);",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (43, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1019,4 +1053,101 @@ pub fn now_epoch_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// Apply ONLY v43 in isolation — `run()` triggers earlier migrations that
+    /// depend on sqlite-vec `vec0` module which isn't loaded in the unit-test
+    /// harness. We prepare `schema_version` manually then call `apply_v43`
+    /// directly.
+    fn open_with_v43_only() -> Connection {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(schema::CREATE_SCHEMA_VERSION).expect("schema_version");
+        apply_v43(&conn).expect("apply_v43");
+        conn
+    }
+
+    fn table_exists(conn: &Connection, name: &str) -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+            [name],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n > 0)
+        .unwrap_or(false)
+    }
+
+    #[test]
+    fn v43_creates_agent_session_audit() {
+        let conn = open_with_v43_only();
+        assert!(table_exists(&conn, "agent_session_audit"),
+            "v43 migration must create agent_session_audit table");
+    }
+
+    #[test]
+    fn v43_schema_has_expected_columns() {
+        let conn = open_with_v43_only();
+        let mut stmt = conn.prepare("PRAGMA table_info(agent_session_audit)").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        for expected in ["session_id", "conversation_id", "started_at", "ended_at", "outcome", "rollback_reason", "savepoint_name"] {
+            assert!(cols.contains(&expected.to_string()),
+                "column {} missing from agent_session_audit, cols={:?}", expected, cols);
+        }
+    }
+
+    #[test]
+    fn v43_indexes_exist() {
+        let conn = open_with_v43_only();
+        for idx in ["idx_asa_outcome", "idx_asa_conv", "idx_asa_started"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?1",
+                    [idx],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 1, "index {} missing", idx);
+        }
+    }
+
+    #[test]
+    fn v43_default_outcome_is_in_progress() {
+        let conn = open_with_v43_only();
+        conn.execute(
+            "INSERT INTO agent_session_audit (session_id, started_at) VALUES (?1, ?2)",
+            params!["s1", now_epoch_ms()],
+        )
+        .expect("insert with defaults");
+        let outcome: String = conn
+            .query_row(
+                "SELECT outcome FROM agent_session_audit WHERE session_id='s1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(outcome, "in_progress", "default outcome should be in_progress");
+    }
+
+    #[test]
+    fn v43_records_schema_version() {
+        let conn = open_with_v43_only();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=43",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "schema_version must record v43 application");
+    }
 }

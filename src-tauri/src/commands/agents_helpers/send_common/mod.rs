@@ -2,6 +2,7 @@ mod context_loading;
 mod prompt_assembly;
 mod persistence;
 pub mod session_freshness;
+pub mod agent_session_tx;
 
 // Re-export everything so external `use crate::commands::agents_helpers::send_common::*` still works
 #[allow(unused_imports)]
