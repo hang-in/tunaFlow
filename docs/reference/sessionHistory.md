@@ -342,7 +342,13 @@ description: 세션별 전체 작업 이력. 새 세션 시작 시 또는 과거
 **orphan 프로세스 정리**
 - 며칠에 걸쳐 누적된 codex app-server/exec 40+건 TERM 정리
 
+**3-round Codex 루프 종료 (PR #140)**
+- userWorldviewInjectionPlan: BLOCKER 3 → MAJOR 1 → resolved, round-1/2/3 findings 전부 반영
+- designReviewGatePlan subtask-04 신설 (post-pass Architect review 4 액션)
+- Review verdict routing: metaAgent → Architect 이동
+- **Architect pass 선언** — 구현 진입 가능
+
 **다음**
 - SDK hot fix 사용자 재현 검증 → stderr 로그 확인
-- userWorldview Codex round-2 결과 → pass 시 01→02→03→04 구현 착수
+- 구현 순서 권고: userWorldview 01 → 02 → designReviewGate 01 → (03/04 병렬)
 - TEMP 제거 PR (stderr null 원복 + escape hatch 제거)
