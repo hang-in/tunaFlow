@@ -102,6 +102,7 @@ pub fn run() {
             commands::messages::save_progress_content,
             commands::messages::delete_message_pair,
             commands::messages::search_messages,
+            commands::search::unified::search_unified,
             // Branch
             commands::branches::list_branches,
             commands::branches::create_branch,
