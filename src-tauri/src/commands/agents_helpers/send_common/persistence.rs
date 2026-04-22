@@ -188,25 +188,18 @@ pub fn prepare_engine_run(
     // WAL 에서 read 는 writer 와 무관. write 를 짧게 두 번 잡는 것으로 충분.
 
     // Phase A0: read — engine handoff 감지
-    let ta = std::time::Instant::now();
     let handoff_block = {
         let conn = state.read.lock().map_err(|_| crate::errors::AppError::Lock)?;
         detect_engine_handoff(&conn, &input.conversation_id, engine_key, input.persona_label.as_deref())
     };
-    eprintln!("[prep] A0 read(handoff) {}ms", ta.elapsed().as_millis());
 
     // Phase A1: short write — user message persist
-    let tb = std::time::Instant::now();
     {
-        eprintln!("[prep] A1 acquire write.lock...");
         let conn = state.write.lock().map_err(|_| crate::errors::AppError::Lock)?;
-        eprintln!("[prep] A1 write.lock acquired after {}ms", tb.elapsed().as_millis());
         persist_user_message(&conn, &input.conversation_id, &input.prompt, &input.user_message_id)?;
     }
-    eprintln!("[prep] A1 done in {}ms", tb.elapsed().as_millis());
 
     // Phase A2: read — project path + context data (가장 시간이 많이 걸리는 구간)
-    let tc = std::time::Instant::now();
     let (mut data, project_path) = {
         let conn = state.read.lock().map_err(|_| crate::errors::AppError::Lock)?;
         let pp = load_project_path(&conn, &input.project_key);
@@ -218,14 +211,10 @@ pub fn prepare_engine_run(
         );
         (ctx_data, pp)
     };
-    eprintln!("[prep] A2 read(context) {}ms", tc.elapsed().as_millis());
 
     // Phase A3: short write — pre-create streaming assistant message
-    let td = std::time::Instant::now();
     let msg_id = {
-        eprintln!("[prep] A3 acquire write.lock...");
         let conn = state.write.lock().map_err(|_| crate::errors::AppError::Lock)?;
-        eprintln!("[prep] A3 write.lock acquired after {}ms", td.elapsed().as_millis());
         let mid = Uuid::new_v4().to_string();
         let now = now_epoch_ms();
         conn.execute(
@@ -235,7 +224,6 @@ pub fn prepare_engine_run(
         )?;
         mid
     };
-    eprintln!("[prep] A3 done in {}ms", td.elapsed().as_millis());
 
     // Session freshness: stateful 엔진(sdk-url, app-server)에서
     // 같은 세션이 연속되면 recent_context + compressed_memory 섹션을 **drop** 한다.
@@ -454,26 +442,10 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
             }
         }
 
-        // 3. Vector indexing — 진단 차단 (2026-04-22).
-        //
-        // A1 write.lock 영구 starvation 의 주범 확인 실험: 여기만 임시로 끄고
-        // 다음 user turn 이 정상 진입하는지 검증. 지금까지 밝혀진 사실:
-        //   - post-completion global serialize 적용됨
-        //   - per-chunk lock + 100ms sleep 적용됨
-        //   - sample(1) 에서 모든 thread 가 lock() 에서 park, holder 안 보임
-        //     → 정상적 lock 경합으로 설명 안 되는 상태
-        //
-        // vector indexing 을 완전히 끄면 A1 이 정상 진입하는지 확인.
-        // → 진입 정상: vector indexing 이 주범 → 별도 background job 으로 분리
-        //                (post-completion 이 아닌 idle timer + fs watcher 기반)
-        // → 여전히 stuck: compression 또는 session link 경로 재수사
-        //
-        // 이 차단은 진단용. 재검증 후 결과에 따라 정식 재설계.
-        if std::env::var("TUNAFLOW_POST_COMPLETION_VECTOR")
-            .map(|v| v == "1")
-            .unwrap_or(false)
-            && crate::agents::rawq::is_daemon_ready()
-        {
+        // 3. Vector indexing (rawq embed — skip if daemon not ready).
+        // Semaphore ensures only 1 ONNX embedding job runs at a time, preventing CPU spikes
+        // when multiple agents complete concurrently (e.g. RT or rapid sequential sends).
+        if crate::agents::rawq::is_daemon_ready() {
             let sem = embed_semaphore();
             let acquired = sem.try_acquire();
             if acquired.is_ok() {
@@ -485,8 +457,6 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
             } else {
                 eprintln!("[post-completion] embed semaphore busy, skipping indexing for {} (will catch up next completion)", cid_short);
             }
-        } else {
-            eprintln!("[post-completion] vector indexing DISABLED (diagnostic) for {}", cid_short);
         }
 
         // 4. Document re-indexing is NOT triggered here — too expensive for every agent completion.
