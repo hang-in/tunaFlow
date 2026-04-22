@@ -4,12 +4,13 @@
 > 성격: 구현 확정된 plan으로 가기 전의 탐색·설계·분석 메모. `status: idea` 가 기본.
 > 완료·해결된 idea는 `docs/archive/ideas/completed/` 로 이동.
 
-## 📄 활성 ideas (57개)
+## 📄 활성 ideas (58개)
 
 | 문서 | 요약 |
 |------|------|
 | [abtopAnalysisForTunaFlow](./abtopAnalysisForTunaFlow.md) | `abtop`에서 tunaFlow에 가져올 만한 핵심은 **에이전트 런타임 관측/진단 모델**이다. |
 | [agentSkillsReferenceIdea](./agentSkillsReferenceIdea.md) | `agent-skills`는 tunaFlow의 **전체 아키텍처 레퍼런스**로는 맞지 않다. |
+| [agentTemplateVersioningIdea](./agentTemplateVersioningIdea.md) | | 문서 영역 | 버전관리 상태 | 평가 | |
 | [architectEnhancementIdea](./architectEnhancementIdea.md) | — |
 | [artifactAndFailureLearningIdea](./artifactAndFailureLearningIdea.md) | | 타입 | DB 테이블 | 실제 사용 | |
 | [artifactsTabDesignReviewIdea](./artifactsTabDesignReviewIdea.md) | ```sql |
