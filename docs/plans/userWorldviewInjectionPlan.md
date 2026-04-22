@@ -22,6 +22,8 @@ triggered_by:
 
 > 에이전트가 사용자의 실존적 의도(세계관, Vibe 변천, 업 karma)와 동기화되어 "말은 있으되 달리지 못하는" 상태를 벗어나게 한다. 세 층을 한 plan 에 묶는 이유: 각각 독립이 아니라 상호 강화 (worldview 없이는 stance-conflict 판정 불가, preference_timeline 없이는 conflict 대조 불가, background insight job 없이는 proactive 제안 불가).
 
+> **적용 범위**: 본 plan 의 모든 로직 (worldview 주입 / preference_timeline / stance-conflict / background insight job) 은 **sdk-session 경로 (Branch chat) 한정**. RT (`-p` one-shot) 는 매 turn full ContextPack 을 재주입하는 것이 정상 동작이며 본 plan 대상 아님. INV-1 이하의 모든 invariant, ContextPack 주입 변경, tool-request 핸들링은 `claude_sdk_session::spawn_session` 경로에만 영향을 준다. RT 경로 (`roundtable_helpers/*`, `agents/claude.rs::run_one_shot`) 는 본 plan 이 건드리지 않는다.
+
 ---
 
 ## TL;DR for Developer
