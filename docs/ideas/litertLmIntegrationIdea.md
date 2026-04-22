@@ -20,9 +20,11 @@ Gemini 제안 요지:
 
 ## 2. 결론 요약
 
+- **tunaFlow 본류에서는 도입하지 않음**. tunaFlow 는 **상용 터미널 에이전트(Claude/Codex/Gemini CLI) 오케스트레이션** 이 정체성. 소형 LLM 내장은 이 궤도에서 벗어남.
 - **데스크톱 앱의 5번째 엔진으로 추가는 권하지 않음** — Ollama/LMStudio와 기능 중복, 4-engine parity 유지 비용만 증가.
-- **tunaflow-mobile (웹/모바일 클라이언트)** 에서는 fit — 여기가 진짜 용도.
-- **보조 레이어 (분류/요약/reranking)** 로는 조건부 OK. **Judge 로는 권하지 않음** — 품질 리스크.
+- **tunaflow-mobile 의 standalone 에이전트화도 X** — 모바일은 어디까지나 데스크톱 원격 컨트롤러. "폰 하나로 agent orchestration" 은 tunaFlow 목표 아님.
+- **보조 레이어 (분류/요약/reranking)** 로는 조건부 OK — 오답이 실행 실패가 아닌 작업만. **Judge 로는 권하지 않음** — 품질 리스크.
+- 소형 LLM 오케스트레이션 자체가 제품 주제라면 **별도 프로덕트 (예: `tunaMicro` 가칭) 로 브랜치**. RT 전용 보조 판정, offline memo 보조 등 다른 포지션.
 
 ---
 

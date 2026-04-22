@@ -123,10 +123,13 @@ SDP 가 길어서 QR 버전이 높아짐 → 읽기 어려워질 수 있음.
 - OS keychain, native notification, background sync
 - 리스크: Tauri Mobile 플러그인 ecosystem 미성숙
 
-### Phase 3 (1년 이상): Standalone 모바일 에이전트
-- 데스크톱 없이 모바일 자체가 agent 실행 주체
-- 여기서 **LiteRT-LM + WebGPU** 재등장 (`litertLmIntegrationIdea.md` 참고)
-- "폰 하나로 agent orchestration" — tunaFlow 의 궁극 포지션 중 하나
+### Phase 3 는 없음 — 데스크톱 필수
+
+tunaFlow 의 정체성은 **상용 터미널 에이전트(Claude/Codex/Gemini CLI)를 잘 부리는 것**. 이건 데스크톱 없이 성립 안 함 (CLI 바이너리·파일시스템·PTY 접근). 따라서:
+
+- **모바일은 데스크톱의 원격 컨트롤러** 역할에 항상 고정
+- "폰 하나로 agent orchestration" 은 tunaFlow 의 목표가 **아님**
+- 소형 LLM 을 폰에서 직접 돌리는 것은 다른 용도(예: RT 전용 보조 판정자, offline memo 보조) — 별도 프로덕트(`tunaMicro` 같은 가칭) 로 브랜치. tunaFlow 본류로 끌고 들어오지 않음
 
 ### Phase-independent 설계 원칙
 
