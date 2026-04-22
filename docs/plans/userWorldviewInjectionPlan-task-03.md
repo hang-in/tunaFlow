@@ -1,13 +1,14 @@
 # Subtask 03 — Stance-conflict detection (rule-first + small model verify + modal)
 
 > 상위 plan: [userWorldviewInjectionPlan.md](./userWorldviewInjectionPlan.md)
+> Codex round-1 / round-2 review 2026-04-23 반영 — partial-shift 감지 / Unknown fallback / composite key marker / hyphen-safe regex.
 
 ## Changed files
 
-- `src-tauri/src/commands/agents_helpers/send_common/stance_check.rs` (신규) — rule precheck + model verify orchestration.
+- `src-tauri/src/commands/agents_helpers/send_common/stance_check.rs` (신규) — rule precheck (partial-shift 감지 포함) + model verify + `Unknown` fallback.
 - `src-tauri/src/commands/agents_helpers/send_common/prompt_assembly.rs` — stance-check 결과를 compact fragment 로 주입.
 - `src-tauri/src/commands/agents_helpers/send_common/persistence.rs` — prepare 단계에서 stance_check 호출 + 결과 저장.
-- `src/lib/stanceConflictMarker.ts` (신규) — `<!-- tunaflow:stance-conflict:... -->` 마커 파서.
+- `src/lib/stanceConflictMarker.ts` (신규) — `<!-- tunaflow:stance-conflict:... -->` 마커 파서 (composite key).
 - `src/components/tunaflow/StanceConflictModal.tsx` (신규) — 사용자 confirmation UI.
 - `src/components/tunaflow/chat/*` — 메시지 렌더 파이프라인에서 marker 감지 시 modal 트리거.
 
@@ -28,11 +29,10 @@ pub fn precheck(
     snapshots: &[PreferenceSnapshot],
     recent_events: &[PreferenceEvent],
 ) -> PrecheckResult {
-    let tokens = simple_tokenize(user_prompt);            // lowercase whitespace split
+    let tokens = simple_tokenize(user_prompt);
     let mut matched: Vec<(PreferenceSnapshot, Vec<String>)> = Vec::new();
 
     for snap in snapshots {
-        // field 이름 + stance 값에서 keyword 추출
         let keywords = extract_keywords(&snap.field, &snap.current_stance);
         let overlap: Vec<_> = keywords.iter()
             .filter(|kw| tokens.contains(&kw.to_lowercase()))
@@ -45,12 +45,16 @@ pub fn precheck(
     match matched.len() {
         0 => PrecheckResult::NoConflict,
         1 => {
-            // 단일 매칭 — 사용자 요청이 이 stance 의 반대를 명시하는지 검사
             let (snap, kws) = &matched[0];
+            // Codex review 반영 — 부분 전환 silent pass 방지.
+            // 단일 매칭이라도 partial-shift 키워드 있으면 Ambiguous 강제.
+            if has_partial_shift_signal(user_prompt) {
+                return PrecheckResult::Ambiguous { candidates: vec![snap.clone()] };
+            }
             if contradicts_stance(user_prompt, snap) {
                 PrecheckResult::Conflict { snapshot: snap.clone(), matched_keywords: kws.clone() }
             } else {
-                PrecheckResult::NoConflict    // 같은 키워드지만 긍정 방향
+                PrecheckResult::NoConflict
             }
         }
         _ => PrecheckResult::Ambiguous {
@@ -60,16 +64,32 @@ pub fn precheck(
 }
 
 fn contradicts_stance(prompt: &str, snap: &PreferenceSnapshot) -> bool {
-    // 간단한 부정어 휴리스틱:
-    //   prompt 에 "바꾸", "말고", "대신", "포기", "새로", "change", "instead" 등이 있고
-    //   current_stance 키워드와 함께 등장하면 contradicts=true
-    // MVP 구현 — false negative 허용, false positive 는 model verify 가 catch
+    // 부정어 휴리스틱 — "바꾸", "말고", "대신", "포기", "새로", "change", "instead" 등
+    // MVP: false negative 허용, false positive 는 model verify 가 catch
+}
+
+/// Codex review — 부분 전환 패턴 감지.
+/// "CLI 유지하면서 SDK 실험만" 같은 요청을 NoConflict 로 잘못 판정하지 않도록 Ambiguous escalate.
+fn has_partial_shift_signal(prompt: &str) -> bool {
+    const KEYWORDS: &[&str] = &[
+        "유지하면서", "유지한 채", "실험만", "실험으로",
+        "먼저", "병행", "같이", "도 해보",
+        "only", "for now", "alongside", "try",
+    ];
+    let lower = prompt.to_lowercase();
+    KEYWORDS.iter().any(|kw| lower.contains(*kw))
 }
 ```
 
-### 2. Model verify (ambiguous 케이스)
+### 2. Model verify (ambiguous 케이스) — Unknown fallback
 
 ```rust
+pub enum VerifyResult {
+    Conflict { snapshot: PreferenceSnapshot, reason: String },
+    NoConflict,
+    Unknown { reason: String },   // timeout / model error
+}
+
 pub async fn verify_ambiguous(
     user_prompt: &str,
     candidates: &[PreferenceSnapshot],
@@ -91,11 +111,18 @@ pub async fn verify_ambiguous(
     ).await;
 
     match output {
-        Ok(Ok(resp)) => parse_verify_response(&resp.content),
-        _ => VerifyResult::ConflictSafe,   // timeout / error → 안전측 (conflict 로 처리)
+        Ok(Ok(resp)) => Ok(parse_verify_response(&resp.content)),
+        Err(_) => Ok(VerifyResult::Unknown { reason: "timeout".into() }),
+        Ok(Err(_)) => Ok(VerifyResult::Unknown { reason: "model_error".into() }),
     }
 }
 ```
+
+**Unknown 의 UI 처리**: modal 을 띄우지 않는다. 대신 응답 상단 inline warning:
+
+> ⚠ 선호도 검증 미완료 (model {timeout|error}) — 진행하되 사후 검토 권장
+
+사용자 "확인" 클릭 시 warning 닫힘. DB write 없음.
 
 ### 3. Compact fragment 주입
 
@@ -105,11 +132,12 @@ pub async fn verify_ambiguous(
 let stance_result = stance_check::run(&data.user_prompt, &snapshots, &recent_events, &app).await;
 let stance_fragment = match stance_result {
     CheckResult::NoConflict => None,
-    CheckResult::Conflict { snapshot, matched } =>
+    CheckResult::Conflict { snapshot, .. } =>
         Some(format!("⚠ Stance conflict detected: user previously stated `{}={}`. \
                       Current request may contradict. Ask for explicit confirmation.",
                      snapshot.field, snapshot.current_stance)),
-    // model verify 결과는 동일 포맷
+    CheckResult::Unknown { reason } =>
+        Some(format!("⚠ Preference check incomplete ({}). Proceed cautiously.", reason)),
 };
 if let Some(frag) = stance_fragment {
     sections.insert(after_worldview_idx, ("stance_check", frag));
@@ -118,38 +146,50 @@ if let Some(frag) = stance_fragment {
 
 ### 4. Marker-based modal
 
-Agent 응답에 `<!-- tunaflow:stance-conflict:<snapshot_id>:<rationale> -->` 마커 출현 시 UI 가 intercept. 이 마커는 agent 가 자체 판단 (추가 명시적 거부권) 으로 낼 수도 있음 — rule precheck 주입된 경우에도 agent 가 "이건 실제 conflict 맞다" 며 재확인 요청 가능.
+Agent 응답에 `<!-- tunaflow:stance-conflict:<memory_name>:<field>:<rationale> -->` 마커 출현 시 UI 가 intercept. composite key 는 `preference_snapshots` 의 PK 와 정합. rationale 은 하이픈/개행 포함 허용 (non-greedy parsing).
 
 ```ts
 // src/lib/stanceConflictMarker.ts
+// Codex review 반영 — hyphen-safe non-greedy + composite key 파싱.
+
 export function extractStanceConflict(text: string):
-    { snapshotId: string; rationale: string } | null {
-    const m = text.match(/<!-- tunaflow:stance-conflict:([^:]+):([^-]+) -->/);
-    return m ? { snapshotId: m[1], rationale: m[2].trim() } : null;
+    { memoryName: string; field: string; rationale: string } | null {
+    // 포맷: <!-- tunaflow:stance-conflict:<memory_name>:<field>:<rationale> -->
+    // memory_name/field 는 ':' 금지 (task-02 sanitization). rationale 은 non-greedy 로 '-->' 직전까지.
+    const m = text.match(/<!--\s*tunaflow:stance-conflict:([^:]+):([^:]+):([\s\S]*?)\s*-->/);
+    return m ? { memoryName: m[1], field: m[2], rationale: m[3].trim() } : null;
 }
 
 export function stripStanceConflictMarker(text: string): string {
-    return text.replace(/<!-- tunaflow:stance-conflict:[^>]* -->/g, "");
+    return text.replace(/<!--\s*tunaflow:stance-conflict:[\s\S]*?-->/g, "");
 }
 ```
 
 Agent 메시지 렌더 경로:
 - streaming 완료 시 `extractStanceConflict` 호출
-- match 있으면 StanceConflictModal 표시 + 메시지 본문은 `stripStanceConflictMarker` 로 clean 한 버전 렌더 (INV-6)
+- match 있으면 StanceConflictModal 표시 + 메시지 본문은 `stripStanceConflictMarker` 로 clean 렌더 (INV-6)
 
 ### 5. StanceConflictModal
 
 ```tsx
-export function StanceConflictModal({ snapshotId, rationale, onClose }: Props) {
+// Codex review 반영 — props 를 composite key 기반으로.
+type Props = {
+    memoryName: string;
+    field: string;
+    rationale: string;
+    onClose: (result: { action: 'confirm_change' | 'keep_existing' | 'ignore' }) => void;
+};
+
+export function StanceConflictModal({ memoryName, field, rationale, onClose }: Props) {
     const [snapshot, setSnapshot] = useState<PreferenceSnapshot | null>(null);
     useEffect(() => {
-        invoke<PreferenceSnapshot | null>('get_preference_snapshot', { id: snapshotId })
+        invoke<PreferenceSnapshot | null>('get_preference_snapshot', { memoryName, field })
             .then(setSnapshot);
-    }, [snapshotId]);
+    }, [memoryName, field]);
 
     const confirmChange = async (newStance: string, reason: string) => {
         await invoke('record_user_preference_change', {
-            memoryName: snapshot?.memory_name, field: snapshot?.field,
+            memoryName, field,
             stanceFrom: snapshot?.current_stance, stanceTo: newStance,
             reasonText: reason, reasonTags: []
         });
@@ -161,7 +201,7 @@ export function StanceConflictModal({ snapshotId, rationale, onClose }: Props) {
     return (
         <Modal>
             <h3>Stance conflict 감지</h3>
-            <p>이전 선호: <code>{snapshot?.field} = {snapshot?.current_stance}</code></p>
+            <p>이전 선호: <code>{snapshot?.memory_name}.{snapshot?.field} = {snapshot?.current_stance}</code></p>
             <p>Agent 근거: {rationale}</p>
             <div className="actions">
                 <button onClick={() => { /* prompt for new stance + reason */ }}>
@@ -182,31 +222,42 @@ depends_on: [02]
 ## Verification
 
 - `cargo test --lib commands::agents_helpers::send_common::stance_check`:
-  - `precheck` 반환값 3 가지 케이스:
+  - `precheck` 3 가지 케이스:
     - 명확한 no-conflict (무관한 요청) → NoConflict
     - 명확한 conflict ("Rust 대신 Go 로 바꾸자") → Conflict
-    - 애매 (키워드 매칭하지만 부정어 없음) → Ambiguous
-  - INV-2 검증: no-conflict / conflict 케이스에서 model API 호출 mock 이 0 회 호출
-  - Ambiguous 케이스에서만 model 호출 1 회
+    - 애매 (키워드 매칭하지만 부정어 없음, 혹은 partial-shift 키워드) → Ambiguous
+  - `has_partial_shift_signal`:
+    - "CLI 유지하면서 SDK 실험만" → true (single-match 에서 Ambiguous 강제)
+    - "Rust 도 좋은데 Go 를 먼저 해보자" → true
+    - "그냥 구현만 해줘" → false
+  - INV-2 검증: no-conflict / conflict 결정적 케이스에서 model mock 0 회 호출
+  - Ambiguous 케이스에서만 model 1 회 호출
+  - `verify_ambiguous` timeout → `VerifyResult::Unknown { reason: "timeout" }`
 - `cargo test --lib commands::agents_helpers::send_common::prompt_assembly`:
   - stance_fragment 가 worldview 와 identity 사이에 삽입
+  - Unknown 상태도 fragment 주입 (소프트 경고)
 - `npx vitest run src/lib/stanceConflictMarker.test.ts`:
-  - extractStanceConflict — 정상 / malformed 케이스
-  - stripStanceConflictMarker — 메시지에서 마커 제거
+  - 평범한 marker — `{memoryName, field, rationale}` 반환
+  - rationale 에 하이픈 포함 (`sdk-first - cost risk`) → 전체 복원
+  - multi-line rationale → 복원
+  - 잘못된 포맷 → null
+  - stripStanceConflictMarker — 모든 marker 제거
 - `npx vitest run src/components/tunaflow/StanceConflictModal.test.tsx`:
+  - mount 시 `get_preference_snapshot` invoke
   - "확정" 클릭 시 `record_user_preference_change` invoke
   - "무시" 클릭 시 invoke 호출 없음 (INV-5)
 - 수동 E2E:
-  1. Settings 에서 "engine_preference = CLI" 로 수동 stance 등록
-  2. 새 대화에서 "SDK 로 해줘" 요청
-  3. 첫 응답 전에 StanceConflictModal 표시 확인
+  1. Settings 에서 `engine_preference.cli_vs_sdk = CLI` 로 수동 등록
+  2. 새 대화에서 "SDK 로 해줘"
+  3. StanceConflictModal 표시 확인 — `engine_preference.cli_vs_sdk = CLI` 노출
   4. "기존 선호 유지" 선택 → agent 재질문 확인
-  5. `SELECT COUNT(*) FROM preference_events WHERE ...` = 1 (원래 user 등록 하나만, ignore/keep 은 event 없음)
+  5. `SELECT COUNT(*) FROM preference_events` = 1 (원래 user 등록분만)
 
 ## Risks
 
-- **Rule precheck false negative**: 한국어 부정어 체계가 복잡 — "~말고" / "~보다는" / "~대신" 외에도 다양. MVP 는 주요 패턴만 커버하고 ambiguous 로 fallback. 실측 로그 기반 개선.
-- **Model verify 비용**: Haiku 호출이 매 ambiguous turn 마다 발화. 대화 빈도 높은 사용자는 누적 비용 체감 가능 — 본 plan 은 "rule 이 대다수 결정, ambiguous 는 드물다" 가정. 실측 후 ambiguous 기준 강화 필요 시 조정.
-- **Timeout 시 ConflictSafe**: 안전 측 (false positive 증가). 사용자가 modal 을 자주 보면 피로도. Timeout 5s → 10s 조정 고려.
-- **Marker 위치**: agent 가 응답 중간에 마커 넣으면 streaming 중 modal 뜨기 전에 텍스트 일부 렌더. streaming 완료 후 intercept 가 가장 깔끔 — 본 plan 이 이를 전제.
-- **Modal race**: 같은 session 에서 여러 stance-conflict 가 연속 발화되면 modal queue 필요. MVP 는 한 번에 하나, 이전 modal open 중이면 신규 무시 (사용자 로그에 경고).
+- **Rule precheck false negative**: 한국어 부정어 체계 복잡. MVP 는 주요 패턴 + partial-shift 키워드만 커버. 실측 로그 기반 개선.
+- **partial-shift 키워드 과다 매칭**: "먼저" 가 NoConflict 케이스에서도 자주 등장. false positive 로 model verify 호출 증가. 실측 후 ambiguous 분기 진입율 추적 필요.
+- **Unknown 상태 처리**: UI 는 inline warning 만 — 사용자가 무시하고 진행 가능. 후속 PR 에서 "Unknown 이 연속 N 회면 Settings 이동 제안" 등의 degrade 경로 가능.
+- **Marker 위치**: agent 가 응답 중간에 마커 넣으면 streaming 중 modal 뜨기 전에 텍스트 일부 렌더. streaming 완료 후 intercept 가 기본 — 본 plan 전제.
+- **Modal race**: 같은 session 여러 conflict 연속 시 modal queue 필요. MVP 는 1개만, 이전 modal open 중이면 신규 무시.
+- **composite key `:` 금지**: task-02 에 sanitization 규약 추가됨. 위반 시 marker 파싱 오류. 실수 방지용.

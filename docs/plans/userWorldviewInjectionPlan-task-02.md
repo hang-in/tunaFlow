@@ -65,6 +65,22 @@ fn apply_v46(conn: &mut Connection) -> Result<(), AppError> {
 
 **INV-3** 준수: embedding 관련 테이블/컬럼은 본 migration 에 추가하지 않음.
 
+**Sanitization 규약** (Codex round-2 review 2026-04-23 반영):
+`memory_name` 과 `field` 컬럼은 **`:` (colon) 를 포함하지 않는다**. Write helper 진입부에서 validation:
+
+```rust
+pub fn validate_pref_identifier(s: &str) -> Result<(), AppError> {
+    if s.contains(':') {
+        return Err(AppError::Agent(format!(
+            "memory_name/field must not contain ':' (got {:?})", s
+        )));
+    }
+    Ok(())
+}
+```
+
+이유: stance-conflict marker (`<!-- tunaflow:stance-conflict:<memory_name>:<field>:<rationale> -->`) 의 구분자가 `:` 이므로 두 필드에 `:` 가 들어가면 parser 가 rationale 경계를 오판. future 값 보호 목적의 스키마 레벨 규약화.
+
 ### 2. Write path helper
 
 ```rust
@@ -80,6 +96,13 @@ pub fn record_event(
     confidence: f64,
     source: EventSource,      // enum: User, AgentInferred
 ) -> Result<String, AppError> {
+    // Codex round-3 review 반영 — colon 금지 규약을 공용 helper 진입부에서 강제.
+    // 모든 write 경로 (user 명시 / agent_inferred 자동 감지 / migration backfill 등) 가
+    // 이 helper 를 거치도록 설계하면 wrapper command 층에서의 validation 누락이 있어도
+    // 일관된 보호가 가능.
+    validate_pref_identifier(memory_name)?;
+    validate_pref_identifier(field)?;
+
     let event_id = Uuid::new_v4().to_string();
     let now = now_epoch_ms();
     let tags_json = serde_json::to_string(reason_tags).unwrap_or_else(|_| "[]".into());
@@ -144,10 +167,28 @@ pub fn record_user_preference_change(
     reason_text: Option<String>, reason_tags: Vec<String>,
     state: State<DbState>,
 ) -> Result<String, AppError> {
+    validate_pref_identifier(&memory_name)?;
+    validate_pref_identifier(&field)?;
     let w = state.write.lock().map_err(|_| AppError::Lock)?;
     let tags: Vec<&str> = reason_tags.iter().map(AsRef::as_ref).collect();
     record_event(&w, &memory_name, &field, stance_from.as_deref(), &stance_to,
                  reason_text.as_deref(), &tags, 1.0, EventSource::User)
+}
+
+/// Codex round-1/2 review 반영 — stance-conflict modal 이 단일 snapshot 조회용.
+#[tauri::command]
+pub fn get_preference_snapshot(
+    memory_name: String,
+    field: String,
+    state: State<DbState>,
+) -> Result<Option<PreferenceSnapshot>, AppError> {
+    let r = state.read.lock().map_err(|_| AppError::Lock)?;
+    r.query_row(
+        "SELECT memory_name, field, current_stance, last_event_id, updated_at
+           FROM preference_snapshots
+          WHERE memory_name = ?1 AND field = ?2",
+        params![memory_name, field], row_to_snapshot,
+    ).optional().map_err(Into::into)
 }
 ```
 
@@ -165,6 +206,7 @@ depends_on: 없음 (v45 까지 적용된 DB 기준).
   - `record_event` — user source 는 snapshot upsert, agent_inferred 저신뢰는 snapshot 변경 없음
   - `load_recent_events` — limit 적용 + 최신순 정렬
   - 동일 memory_name/field 재기록 시 upsert 동작
+  - **Codex round-3 review 반영**: colon validation 강제 — `record_event(conn, "engine:prefs", "field", ...)` 시 `Err` 반환 확인. `record_event(conn, "memory", "a:b", ...)` 시 `Err`. wrapper command (`record_user_preference_change`) 를 우회해 helper 직접 호출 시에도 보호 확인.
 - `cargo check` — exit 0.
 
 ## Risks

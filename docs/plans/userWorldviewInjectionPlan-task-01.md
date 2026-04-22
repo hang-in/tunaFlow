@@ -47,11 +47,14 @@ let worldview_fragment = worldview::load_worldview(data.project_path.as_deref())
     .map(|text| truncate_to_tokens(text, 500))     // 토큰 상한
     .filter(|t| !t.trim().is_empty());
 
+// 실제 prompt_assembly 는 project/platform/agent-role 등을 identity 앞에 먼저 push.
+// worldview 는 그들과 identity 사이 — 즉 identity 바로 앞에 들어간다 (Codex review 2026-04-23 반영).
 let mut sections: Vec<(&str, String)> = Vec::new();
+// ... project, platform, agent-role push (기존) ...
 if let Some(wv) = worldview_fragment {
-    sections.push(("worldview", wv));               // ★ 맨 앞
+    sections.push(("worldview", wv));               // ★ identity 바로 앞
 }
-sections.push(("identity", identity_fragment));     // 기존 위치 (2번째)
+sections.push(("identity", identity_fragment));     // 기존 위치
 // ... skills, recent_context, etc.
 ```
 
@@ -92,7 +95,7 @@ export function WorldviewSettings() {
         <section>
             <h3>User Worldview</h3>
             <p className="hint">
-                에이전트가 매 요청 시 ContextPack 의 맨 앞에서 참조하는 사용자 stance 문서입니다.
+                에이전트가 매 요청 시 ContextPack 의 identity 바로 앞에서 참조하는 사용자 stance 문서입니다.
                 최대 500 tokens.
             </p>
             <textarea
@@ -143,7 +146,7 @@ depends_on: 없음.
   - `resolve_worldview_path` — project override 우선, fallback global
   - `load_worldview` — 파일 없으면 None, 있으면 trimmed content
 - `cargo test --lib commands::agents_helpers::send_common::prompt_assembly`:
-  - Worldview fragment 주입 시 sections 순서 첫 번째가 `"worldview"` (INV-1)
+  - Worldview fragment 주입 시 sections 에서 `"worldview"` 가 `"identity"` **바로 앞** 인덱스에 위치 (INV-1). project/platform/agent-role 등 identity 앞 섹션들이 worldview 앞에 유지됨도 함께 assert — Codex round-3 review 반영.
   - Worldview 비어있으면 sections 에 `"worldview"` 없음
 - `npx vitest run src/components/settings/WorldviewSettings.test.tsx`:
   - 저장 후 버튼 disabled
