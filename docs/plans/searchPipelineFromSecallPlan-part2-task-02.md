@@ -57,6 +57,31 @@ conn.execute(
 - `tool_request.rs:354, 379`
 - `send_common/persistence.rs:124, 142, 494`
 
+### 2a. Content-only UPDATE 3 사이트 (Codex review 2026-04-22 반영)
+
+초안은 이 사이트들을 고려하지 않아 INV-5 실효성이 깨졌다. 해결: **Rust 쪽 코드는 변경하지 않고** migration v45 의 `messages_fts_update_content` trigger (subtask-01 §2) 가 FTS 를 resync. 즉 아래 사이트들은 content_tokenized 를 채우지 않아도 trigger 가 fallback indexing 수행:
+
+| 파일:라인 | UPDATE 문 | 조치 |
+|---|---|---|
+| `src-tauri/src/commands/messages.rs:221` (`update_message_status`) | `UPDATE messages SET status=?1, content=?2 WHERE id=?3` | **변경 없음**. trigger 가 content 기준 FTS resync. 이 경로는 사용자가 편집한 메시지나 agent 취소 메시지 content 치환 용. 빈도 낮음. tokenize 없이 whitespace 인덱싱이라도 기존 stale 대비 개선. |
+| `src-tauri/src/commands/jobs.rs:136` (`cleanup_stale_jobs`) | `UPDATE messages SET status='error', content=CASE WHEN content='' THEN '(interrupted)' ELSE content END WHERE status='streaming'` | **변경 없음**. content 가 바뀐 경우만 trigger 발화. 값이 유지되는 CASE 에서는 `NEW.content IS NOT OLD.content` false 로 no-op. |
+| `src-tauri/src/bootstrap/db.rs:19` (startup stale cleanup) | 위와 동일 패턴 | **변경 없음**. 위와 동일 이유. |
+
+**권장 follow-up (별도 이슈)**: 이 3 사이트가 content_tokenized 를 갱신하지 않으면 `rebuild_messages_fts` 가 다음 실행 시 `WHERE content_tokenized IS NULL` 로 잡지 못해 남는다. 대응:
+- (a) `UPDATE messages` 할 때 `content_tokenized = NULL` 도 SET 해 "reset" — rebuild 가 다음 실행 시 재tokenize. 간단하나 모든 사이트 touch.
+- (b) `rebuild_messages_fts` 에 "재tokenize" 플래그 추가 — `WHERE content <> '' AND (content_tokenized IS NULL OR content_tokenized != expected)` 같은 강제 재tokenize 경로. 복잡.
+- 본 subtask 는 (a) 를 **선택 적용** 권장 — 세 사이트 모두 `content_tokenized=NULL` 을 추가 SET 하여 rebuild-on-change 루프를 닫는다. 1 라인 추가 × 3.
+
+```rust
+// messages.rs:221 before
+"UPDATE messages SET status = ?1, content = ?2 WHERE id = ?3"
+// after
+"UPDATE messages SET status = ?1, content = ?2, content_tokenized = NULL WHERE id = ?3"
+// jobs.rs:136 / bootstrap/db.rs:19 동일 패턴으로 content_tokenized = NULL 추가
+```
+
+이 1 라인 변경 후에는 `AFTER UPDATE OF content_tokenized` trigger 도 발화 (NULL→NULL 은 no-op 처리 여부는 SQLite 문서 확인 — 안전하게는 `WHEN NEW.content_tokenized IS NOT OLD.content_tokenized` 조건 추가 필요할 수 있음).
+
 ### 3. Streaming 경로 (`send_common/persistence.rs`)
 
 두 가지 케이스 구분:
@@ -98,6 +123,28 @@ depends_on: [01] — `content_tokenized` 컬럼이 먼저 존재해야 함.
 
 ## Verification
 
+- **INV-2 동치성 test (Developer review 로 추가)**:
+  ```rust
+  // src-tauri/src/commands/search/tokenizer.rs::tests
+  #[test]
+  fn tokenize_helpers_stay_in_sync() {
+      for input in [
+          "플랜",
+          "Rust workspace",
+          "seCall의 BM25 검색",
+          "아키텍처를 설계한다",
+          "",
+          "   ",
+      ] {
+          assert_eq!(
+              super::tokenize_for_index(input),
+              super::tokenize_query_for_fts(input),
+              "index/query tokenize diverged on input: {:?}", input
+          );
+      }
+  }
+  ```
+  이 테스트가 실패하면 recall 이 silent 0 이 되므로 CI 에서 반드시 green 요구.
 - `cargo test --lib commands::messages` — user insert 테스트. 신규 assertion: insert 직후 `SELECT content_tokenized FROM messages WHERE id=?` 가 non-null.
 - `cargo test --lib commands::agents_helpers::send_common::persistence` — finalize 경로 테스트. 스트리밍 시뮬레이션:
   ```rust

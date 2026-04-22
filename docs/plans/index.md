@@ -19,6 +19,7 @@
 | [betaRtUpgradeSprintPlan_2026-04-15](./betaRtUpgradeSprintPlan_2026-04-15.md) | — |
 | [cicdReleasePlan](./cicdReleasePlan.md) | — |
 | [contextBudgetScalingPlan](./contextBudgetScalingPlan.md) | P2 — 단계적 context budget 상향 실험 |
+| [designReviewGatePlan](./designReviewGatePlan.md) | **P1** — Plan 승인 시 Architect↔Codex RT 선택 경로 (PlanProposalCard 2버튼 + branch.mode=design_review + plan 문서 adopt) |
 | [conventionsContextSyncPlan](./conventionsContextSyncPlan.md) | — |
 | [engineServerModePlan](./engineServerModePlan.md) | — |
 | [geminiSdkIntegrationPlan](./geminiSdkIntegrationPlan.md) | P1 — Google AI SDK 직접 통합 (CLI 대체, SSE/token/function calling) |
@@ -30,6 +31,7 @@
 | [perProjectDatabaseSplitPlan](./perProjectDatabaseSplitPlan.md) | — |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
+| [roleAssignmentCoverageUxPlan](./roleAssignmentCoverageUxPlan.md) | P2 — Settings 역할 커버리지 UX (inferred 저장 명시화 + stale ID 자동 정리 + assertRoleReady 원클릭 적용) |
 | [refactorRoadmap_2026-04-20](./refactorRoadmap_2026-04-20.md) | **베타 전 리팩토링 + 안정화 5-Phase 로드맵** (16~19일) — 프로덕션급 베타 기준 |
 | [refactorRoadmap_first_prompt](./refactorRoadmap_first_prompt.md) | 새 세션에 붙여넣을 첫 프롬프트 텍스트 |
 | [refactorRoadmap_handoff_2026-04-20](./refactorRoadmap_handoff_2026-04-20.md) | 새 세션용 핸드오프 — 프로젝트 철학 / 피할 함정 / Phase 1 Finding 6 진입점 |
@@ -41,6 +43,7 @@
 | [structuralImprovementPlan](./structuralImprovementPlan.md) | — |
 | [systemMessageChannelPlan](./systemMessageChannelPlan.md) | — |
 | [toolCallHandlerPlan](./toolCallHandlerPlan.md) | P1 — function calling으로 마커 대체 |
+| [userWorldviewInjectionPlan](./userWorldviewInjectionPlan.md) | **P1** — Identity/Interface/Continuity 3축 번들: worldview 주입 + preference_timeline (event+snapshot) + stance-conflict (rule-first) + low-priority visible background job |
 | [traceOverhaulPlan_2026-04-16](./traceOverhaulPlan_2026-04-16.md) | — |
 
 ## 🟡 부분 완료 — 추가 구현 필요

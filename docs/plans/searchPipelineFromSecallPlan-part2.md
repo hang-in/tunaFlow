@@ -75,8 +75,22 @@ CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
     VALUES (NEW.rowid, COALESCE(NEW.content_tokenized, NEW.content), NEW.id);
 END;
 
+-- tokenize 결과가 갱신될 때 발화 (streaming finalize, rebuild, user edit 등)
 CREATE TRIGGER messages_fts_update_tokenized
     AFTER UPDATE OF content_tokenized ON messages BEGIN
+    DELETE FROM messages_fts WHERE rowid = OLD.rowid;
+    INSERT INTO messages_fts(rowid, content, message_id)
+    VALUES (NEW.rowid, COALESCE(NEW.content_tokenized, NEW.content), NEW.id);
+END;
+
+-- ★ content-only UPDATE 경로 (streaming 중간 chunk UPDATE, stale-cleanup 등) 에서도 FTS 동기화.
+--   Lindera tokenize 는 호출하지 않고 NEW.content 를 fallback 으로 사용한다 (INV-5 참조).
+--   streaming finalize 는 content + content_tokenized 를 동시에 UPDATE 하므로 이 trigger 와
+--   update_tokenized trigger 둘 다 발화하여 FTS 가 2회 재삽입되지만 결과는 멱등.
+CREATE TRIGGER messages_fts_update_content
+    AFTER UPDATE OF content ON messages
+    WHEN NEW.content IS NOT OLD.content
+    BEGIN
     DELETE FROM messages_fts WHERE rowid = OLD.rowid;
     INSERT INTO messages_fts(rowid, content, message_id)
     VALUES (NEW.rowid, COALESCE(NEW.content_tokenized, NEW.content), NEW.id);
@@ -86,6 +100,8 @@ CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
     DELETE FROM messages_fts WHERE rowid = OLD.rowid;
 END;
 ```
+
+> **설계 변경 (Codex review 2026-04-22 반영)**: 초안은 `AFTER UPDATE OF content` trigger 를 제거했으나, 실제 content-only UPDATE 사이트 (`update_message_status` messages.rs:221, `cleanup_stale_jobs` jobs.rs:136, `bootstrap/db.rs:19`) 에서 FTS 가 stale 해진다. 이를 trigger 레벨에서 resync 하되 tokenize 호출은 Rust 쪽 finalize 경로로 제한한다.
 
 **중요**: migration 안에서 `INSERT INTO messages_fts ... SELECT FROM messages` 는 하지 않는다. 앱 기동 블로킹 방지 목적. 기존 corpus 는 별도 `rebuild_messages_fts` 명령으로 backfill.
 
@@ -236,33 +252,35 @@ let fts_query = if crate::commands::search::morphological_query_enabled() {
 
 이미 분기 있음 (Part 1). 변경 불필요. 단 주석에서 "until Phase C Part 2 rebuild" 언급을 제거한다.
 
-### 6. App-level snippet
+### 6. App-level snippet — char-window 추출 (하이라이트 없음)
 
-`src-tauri/src/commands/search/snippet.rs` (신규):
+`src-tauri/src/commands/search/snippet.rs` (신규). **Codex review 2026-04-22 (2차) 반영**: 초안의 byte-offset 기반 역매핑 + `**..**` 하이라이트 마커 주입은 Unicode case expansion 에서 boundary panic 위험. 순수 char-window 추출로 단순화하고, 하이라이트는 UI 측 client-side 렌더로 위임.
 
 ```rust
-/// secall bm25.rs:191 패턴을 tunaFlow 에 맞춰 이식.
-/// FTS5 snippet() 이 tokenized 텍스트를 반환하는 문제를 우회.
 pub fn extract_snippet(content: &str, query: &str, max_chars: usize) -> String {
-    // 1) query 를 whitespace split → 첫 매칭 term
-    // 2) content 안에서 해당 term 의 byte offset 찾기 (대소문자 무시)
-    // 3) offset 중심으로 ±max_chars/2 char window, char boundary 보존
-    // 4) 앞뒤 ellipsis 추가
-    // 매칭 없으면 content 의 앞 max_chars char 반환
+    // 1) query 의 첫 term 을 **char-level** case-insensitive 로 content 에서 탐색 (byte offset 사용 X)
+    // 2) 매칭 지점 중심 ±(max_chars/2) char window
+    // 3) 양 끝 ellipsis `…`
+    // 4) 매칭 없으면 앞 max_chars char
+    // 5) Unicode case expansion (İ→i̇, ß→ss) 은 first-char 비교로 false negative 수용 (panic 은 없음)
 }
 ```
 
-`search_messages` / `fts_conversation_search` (unified.rs:96) 의 `snippet(messages_fts, 0, '**', '**', '…', 40)` SQL 호출을 제거하고, `SELECT m.content` 로 바꾼 뒤 Rust 측에서 `extract_snippet(content, query, 120)` 호출. 하이라이트 마커 (`**..**`) 를 중심 term 에 주입.
+**변경 적용지**:
+- `search_messages` (messages.rs:381) — `snippet(messages_fts, 0, '**', '**', '…', 40)` SQL 호출을 제거, `SELECT m.content` 로 바꾸고 Rust 측에서 `extract_snippet(content, effective_query, 120)` 호출. **반환값은 하이라이트 마커를 포함하지 않는다**.
+- `fts_conversation_search` (unified.rs:96) — 동일 패턴.
 
-> **비고**: secall 은 snippet 을 200 char 로 자른다. tunaFlow 기존 `…` + 40 char 는 화면 폭과 어긋나지 않게 `120` 권장 (subtask 05 에서 UI 와 조율).
+**UI 하이라이트**: 검색 결과 컴포넌트가 `query` 를 별도 prop 으로 받아 React 단에서 client-side `<mark>` 렌더. 기존 `**...**` markdown 경로는 해체. 상세는 Subtask 05 에서 조율.
+
+> **비고**: secall 은 snippet 을 200 char 로 자른다. tunaFlow 기존 `…` + 40 char 는 화면 폭과 어긋나지 않게 `120` 권장 (Subtask 05 에서 Frontend 조율).
 
 ### 7. Settings UI
 
 `src/components/settings/SearchSettings.tsx` (신규) 또는 기존 `SettingsPanel` 확장.
 
 - 섹션 타이틀: "검색 / Search"
-- 토글: "한국어 형태소 검색 활성화" — 내부적으로 localStorage `tunaflow.search.morphEnabled` + 런타임 env injection.
-  - 이 토글만으로는 env 가 프로세스에 주입되지 않으므로, **`morphological_query_enabled()` 판단 로직을 env var 외에 DB flag 도 OR 체크하도록 확장** (subtask 05 스펙 참조).
+- 토글: "한국어 형태소 검색 활성화" — FE localStorage `tunaflow.search.morphEnabled` 에 persist. Backend 는 `SEARCH_MORPH_FLAG: AtomicBool` 로 런타임 관리. Toggle 시 `invoke('set_morphological_query_enabled', { enabled })` → AtomicBool set. 앱 재시작 후 FE startup hook 이 localStorage 값을 읽어 같은 invoke 로 AtomicBool 에 주입.
+  - **DB 저장 없음** (Q-4 확정). `morphological_query_enabled()` 는 env var 우선 → AtomicBool fallback.
 - 버튼: "인덱스 재구축 (Rebuild search index)" → `invoke('rebuild_messages_fts')`
 - 진행률 바: `messages_fts_rebuild_progress` 이벤트 구독, `done/total * 100%`
 - 취소 버튼: `invoke('cancel_rebuild_messages_fts')`
@@ -282,11 +300,13 @@ pub fn extract_snippet(content: &str, query: &str, max_chars: usize) -> String {
 
 - **[INV-4]** 신규 `messages` INSERT 사이트에서 `content_tokenized` 를 누락한 경우, `COALESCE(NEW.content_tokenized, NEW.content)` trigger 덕분에 기존 whitespace 동작으로 **graceful fallback** 한다 (검색 miss 아님). **이유**: 점진적 write-path 마이그레이션 허용. **검증**: `cargo test` — content_tokenized 를 주지 않고 INSERT 한 뒤 `SELECT * FROM messages_fts WHERE content MATCH ?` 로 원본 content 기반 매칭 성공 확인.
 
-- **[INV-5]** 스트리밍 중간 UPDATE (`content` 만 바뀌고 `content_tokenized` 는 NULL/고정) 는 FTS 를 재인덱싱하지 않는다. **이유**: chunk 당 Lindera 호출 시 CPU 폭증. **검증**: trigger 문법 (`AFTER UPDATE OF content_tokenized` 만 존재, `OF content` 는 없음) 확인 + finalize 경로에서만 re-index 되는지 integration 테스트.
+- **[INV-5]** 스트리밍 중간 UPDATE (`content` 만 바뀌고 `content_tokenized` 는 NULL/고정) 경로에서 **Lindera tokenize 를 호출하지 않는다**. FTS 재삽입 자체는 `messages_fts_update_content` trigger 로 수행되며, 그 값은 `NEW.content` fallback (tokenize 결과가 아님). **이유**: chunk 당 Lindera 호출 시 CPU 폭증. trigger 는 순수 SQL 이라 tokenize 를 호출할 수단이 없으므로 이 경로는 "tokenize 없이 content 원본으로 fallback indexing". **검증**: (a) Rust 코드에서 streaming 경로의 UPDATE 문에 `tokenize_for_index` 호출이 없음을 grep 확인. (b) Integration 테스트에서 streaming 시뮬레이션 후 Lindera 호출 카운트가 finalize 시점 1회만임을 확인 (카운터 mock).
 
 - **[INV-6]** `rebuild_messages_fts` 취소 시 이미 tokenized 된 row 는 원복하지 않는다 (idempotent). 재실행 시 `WHERE content_tokenized IS NULL` 로 skip. **이유**: 대규모 corpus 에서 재시도 비용 최소화. **검증**: 테스트 — 100건 중 50건 처리 후 취소 → 재실행 → 나머지 50건만 처리 확인.
 
-- **[INV-7]** Feature flag `TUNAFLOW_MORPH_QUERY` 를 OFF 로 되돌리면 `search_messages` / `search_unified` 둘 다 원본 쿼리로 FTS MATCH 수행. Rebuild 결과는 whitespace 쿼리로도 유효하다 (tokenized content 안에 원본 단어도 보존되는 경우가 많음). **이유**: 비상 롤백 경로. **검증**: 동일 corpus 에서 flag ON/OFF 쿼리 결과가 최소한 빈 배열은 아닌지 smoke test.
+- **[INV-7]** Feature flag `TUNAFLOW_MORPH_QUERY` 를 OFF 로 되돌리면 `search_messages` / `search_unified` 둘 다 원본 쿼리를 **그대로** FTS MATCH 에 넘긴다 (query 경로만 원복). 단 rebuilt index 가 tokenized 상태라면 원본 surface form (예: "아키텍처를") 에 대한 매칭은 miss 할 수 있다. 완전한 rollback (인덱스까지 whitespace 로 되돌림) 은 별도 `rebuild_messages_fts_whitespace` 커맨드가 필요하며 본 plan 의 scope 가 아니다. **이유**: 부분 rollback 은 "코드 변경 없이 env var 만으로 query 동작 원복" 의 실용 경로로 충분. **검증**: query 경로에서 `morphological_query_enabled()=false` 일 때 tokenize 가 호출되지 않음을 unit test 로 확인. rebuilt index 에 대한 재매칭 보장은 하지 않는다 (Developer 설명 문서화).
+
+- **[INV-8]** Migration v45 전체는 **단일 SQLite transaction** 안에서 실행된다 (`conn.transaction()` 또는 명시 `BEGIN; ... COMMIT;`). DROP TRIGGER × 3 / DROP TABLE / CREATE VIRTUAL TABLE / CREATE TRIGGER × 3 / ALTER TABLE ADD COLUMN / INSERT INTO schema_version 모두 실패 시 rollback. **이유**: 앱이 중간에 크래시하면 `messages_fts` 가 DROP 된 채 다음 기동에서 `CREATE IF NOT EXISTS` 로 재생성되기 전까지 다른 경로가 `messages_fts` 를 참조하다 에러. SQLite 는 FTS5 virtual table DROP/CREATE 를 포함해 대부분 DDL 을 transactional 로 지원한다. **검증**: 마이그레이션 중간에 강제 panic 을 주입한 integration test — panic 후 재기동 시 schema_version=44, `messages_fts` 가 여전히 v15 external-content 스키마로 남아있는지 확인.
 
 ---
 
@@ -310,7 +330,15 @@ secall 이 `CREATE VIRTUAL TABLE turns_fts USING fts5(content, session_id UNINDE
 
 ### 비용/위험
 
-- **Storage overhead**: 한국어 corpus 기준 tokenized 텍스트는 원문의 60~80% (조사/어미 제거 + 단일글자 드롭). 전체 overhead ~1.6x. SSD 환경 허용 범위.
+- **Storage overhead (재계산, 2026-04-22 Developer 지적 반영)**: 초안의 ~1.6x 는 `content_tokenized` 컬럼만 센 오산. standalone FTS5 의 shadow tables 포함 시:
+  | 컴포넌트 | 배수 | 설명 |
+  |---|---|---|
+  | `messages.content` (원본) | 1.0x | 기존 |
+  | `messages.content_tokenized` | ~0.7x | 조사/어미 제거 + 1글자 드롭 |
+  | `messages_fts_content` | ~0.7x | standalone FTS5 가 자체 보유 (external content 모드에는 없던 shadow table) |
+  | `messages_fts_idx` + `_data` + `_docsize` + `_config` | ~0.5x | inverted postings + metadata |
+  | **합계** | **~2.9x** | 기존 대비. 대용량 corpus 에서 non-trivial. |
+  Subtask 05 Settings UI 에 "재구축 후 예상 추가 용량" 을 `pending_content_bytes × 1.9` (rough estimate) 로 사전 표시해 사용자 동의 절차를 둔다. 초안의 "DB 파일 크기 × 2" 는 Codex review 2차 반영으로 corpus-based 계산으로 교정됨.
 - **Tokenize CPU**: Lindera ko-dic 은 건당 마이크로초 단위. 스트리밍 finalize 시 1회만 호출하므로 hot-path 영향 미미. Rebuild 시 500 row/chunk 기준 chunk 당 <1 초 예상 (로컬 benchmark 필요).
 - **Write lock 경합**: INV-3 으로 완화. 실측 후 chunk size 조정 여지.
 - **점진적 마이그레이션 실수**: INV-4 (COALESCE fallback) 로 silent miss 대신 legacy 동작 유지.
@@ -323,17 +351,30 @@ secall 이 `CREATE VIRTUAL TABLE turns_fts USING fts5(content, session_id UNINDE
 - **FTS index 를 per-project DB 로 sharding** — `perProjectDatabaseSplitPlan.md` 와 합산 설계 필요.
 - **Snippet 하이라이트 멀티-term 지원** — secall extract_snippet 은 first term 기준. 후속 UX 작업.
 
-### Open questions (Developer 확정 필요)
+### Codex review 반영 (2026-04-22, 2차)
 
-1. **Tokenized 저장 시점 (Q-1)**: `messages.content_tokenized` 를 `INSERT` 시 계산 vs `AFTER INSERT` Rust callback 으로 계산 후 `UPDATE` — 전자가 1 write, 후자가 2 write. spec §3.1 은 전자 권장. Developer 가 persistence.rs hot-path 에서 Lindera latency 측정 후 확정.
+Codex blind verifier 가 BLOCKER 2건 / MAJOR 1건 / MINOR 1건 식별:
+
+1. **BLOCKER (resolved)** — `AFTER UPDATE OF content` trigger 제거 시 content-only UPDATE 3 사이트 (`update_message_status`, `jobs::cleanup_stale`, `bootstrap/db::stale_cleanup`) 에서 FTS stale. → `messages_fts_update_content` trigger 를 추가해 tokenize 없이 `NEW.content` fallback 으로 resync. INV-5 의 의미를 "Lindera 호출 없음" 으로 축소.
+2. **BLOCKER (resolved)** — `extract_snippet` 의 `content.to_lowercase()` 가 Unicode case expansion (Turkish `İ`→`i̇`, German `ß`→`ss`) 시 byte length 가 변해 lowered string 의 byte offset 을 원본에 역매핑하면 boundary panic. → 하이라이트 마커 `**...**` 를 제거하고 **순수 char-window 추출** 로 단순화. Unicode 하이라이트는 후속 plan 으로 분리 (UI 측 클라이언트 하이라이트 또는 별도 safe impl).
+3. **MAJOR (resolved)** — INV-7 의 "OFF 시 빈 배열 아님" 주장은 tokenizer 가 조사/어미를 drop 하므로 근거 부족. → INV-7 의미를 "query path 만 원복" 으로 축소, 인덱스 측 rollback 은 별도 커맨드 영역으로 분리.
+4. **MINOR (resolved)** — Storage estimate 가 DB 전체 파일 크기 × 2 였으나 corpus 무관. → `SUM(length(content))` 기반으로 교정.
+
+### Open questions
+
+> **Developer 1차 검토 (2026-04-22) 로 Q-1, Q-4, Q-6 해소**. 나머지는 구현 단계에서 결정.
+
+1. ~~**Tokenized 저장 시점 (Q-1)**~~ — **Resolved**. Developer 합의: INSERT-time 계산. Lindera 건당 마이크로초 수준이므로 스트리밍 I/O noise 이내. Spec §3.1 원안 확정.
 
 2. **Rebuild 실패 시 content_tokenized 정합성 (Q-2)**: 중간 실패 row 가 부분적으로 tokenized 된 상태에서 다음 rebuild 시 재처리 필요 여부. 현재 설계는 `IS NULL` 체크만 하므로 "partial tokenized" 는 건너뜀. 재처리 강제는 별도 "force" 플래그로.
 
 3. **Search index 크기 한계 (Q-3)**: 현재 tunaFlow 는 단일 SQLite. 대용량 프로젝트에서 messages 가 100만건 이상이 될 때 rebuild 시간 (~수 분) 이 허용 가능한지. 허용 불가능하면 per-project DB 분리가 선결 조건.
 
-4. **Flag 활성화 UX (Q-4)**: env var (`TUNAFLOW_MORPH_QUERY=1`) 강제 vs Settings DB flag. 후자가 편하지만 `morphological_query_enabled()` 를 DB state 의존으로 바꾸는 건 Part 1 계약 변경. subtask 05 에서 "env var 우선 + DB flag 보조" 로 제안하나 Developer 합의 필요.
+4. ~~**Flag 활성화 UX (Q-4)**~~ — **Resolved** (2026-04-22 2차 Codex review 반영). **Env var 우선 + `SEARCH_MORPH_FLAG: AtomicBool` 런타임 + FE localStorage (persist)**. `morphological_query_enabled()` 는 env 값이 있으면 env, 없으면 AtomicBool 반환. FE 는 startup hook 에서 localStorage 값을 읽어 `invoke('set_morphological_query_enabled', { enabled })` 로 AtomicBool 에 주입. **DB 저장 없음** — 기존 codebase 에 `app_settings` 테이블 부재, 신규 도입 시 scope 확대. Subtask 05 도 이 단일 소스로 통일.
 
 5. **Snippet max_chars 기본값 (Q-5)**: secall=200, 기존 tunaFlow snippet()=40 (의미적 토큰 개수). UI 에서 `line-clamp-2` 와 정합하려면 120 권장 — 최종값은 Frontend 검증.
+
+6. ~~**Migration v45 atomicity (Q-6)**~~ — **Resolved → INV-8 로 승격**. SQLite 는 FTS5 virtual table DROP/CREATE 를 포함해 대부분 DDL 을 transactional 로 지원. `apply_v45` 전체를 `conn.transaction()` 으로 감싸 실패 시 rollback 보장. Subtask 01 의 verification 에 atomicity 테스트 추가.
 
 ---
 

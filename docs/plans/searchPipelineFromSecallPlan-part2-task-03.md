@@ -134,7 +134,11 @@ pub async fn rebuild_messages_fts(...) -> Result<RebuildSummary, AppError> {
                 .map_err(|e| AppError::Agent(format!("emit: {e}")))?;
         }
 
-        // (4) optimize
+        // (4) optimize — 'rebuild' 명령은 external content 모드에서 external 테이블을 다시
+        //     읽어 FTS 를 재구성하지만, standalone FTS5 에는 external source 가 없으므로
+        //     의미가 없다. 우리는 trigger 가 이미 각 UPDATE 마다 FTS 를 sync 했다고 가정하고
+        //     index merge 를 요청하는 'optimize' 만 호출한다. 'rebuild' 를 잘못 쓰면 FTS 가
+        //     자신의 content 테이블을 재읽는 self-reference 가 되며 의도와 맞지 않다.
         {
             let w = state_db.write.lock().map_err(|_| AppError::Lock)?;
             w.execute("INSERT INTO messages_fts(messages_fts) VALUES('optimize')", [])?;
