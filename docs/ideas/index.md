@@ -4,7 +4,7 @@
 > 성격: 구현 확정된 plan으로 가기 전의 탐색·설계·분석 메모. `status: idea` 가 기본.
 > 완료·해결된 idea는 `docs/archive/ideas/completed/` 로 이동.
 
-## 📄 활성 ideas (56개)
+## 📄 활성 ideas (57개)
 
 | 문서 | 요약 |
 |------|------|
@@ -38,6 +38,7 @@
 | [litertLmIntegrationIdea](./litertLmIntegrationIdea.md) | Google `LiteRT-LM` (구 TFLite-LM) — WebGPU/Wasm 환경에서 LLM 온디바이스 추론에 최적화된 런타임. 주로 Gemma 계열과 소형 LLM 대상. |
 | [mexContextScaffoldIdea](./mexContextScaffoldIdea.md) | AI 에이전트를 위한 **프로젝트 컨텍스트 스캐폴드 관리 도구**. 에이전트가 세션 간에 프로젝트를 "기억"할 수 있도록 구조화된 마크다운 문서를 유지하고, 문서와 실제 코드의 **drift(불일치 |
 | [mobileArchitectureIdea](./mobileArchitectureIdea.md) | — |
+| [mobileConnectivityAndFormIdea](./mobileConnectivityAndFormIdea.md) | - `tunaflow-mobile/` 은 웹 기반 PWA 스캐폴드 (s30) |
 | [modernSqliteFeaturesIdea](./modernSqliteFeaturesIdea.md) | ```rust |
 | [onboardingMetaAgentIdea](./onboardingMetaAgentIdea.md) | — |
 | [openHarnessLightRagReferenceIdea](./openHarnessLightRagReferenceIdea.md) | Claude Code의 Python 클린룸 구현. 43+ 도구, 54 CLI 명령, 114 테스트. Protocol 기반 LLM 추상화로 Anthropic/OpenAI/Ollama 런타임 스왑 가능 |
