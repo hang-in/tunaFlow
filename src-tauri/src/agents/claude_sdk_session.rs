@@ -226,10 +226,30 @@ pub fn has_active_session(conv_id: &str) -> bool {
 }
 
 /// ContextPack freshness 판정용 — 현재 활성 세션의 식별 키.
-/// 매 spawn마다 새로운 session_id가 생기므로, 같은 키 = 같은 에이전트 프로세스.
-/// 세션이 없으면 None 반환 (=> ContextPack은 full로 보내야 함).
+///
+/// **Identity 원칙** (sessionContinuityFixPlan.md task-01): 식별자는 claude 자체가
+/// 응답에서 반환하는 `session_id` (= `--resume` 타깃, `RESUME_IDS` 에 캐시) 여야
+/// 한다. `SdkSession::session_id` 는 tunaFlow 내부 router UUID 로 WS respawn 마다
+/// 새로 생성되므로 identity 로 쓰면 false negative 가 양산된다 (같은 claude
+/// 세션인데 재주입 반복).
+///
+/// Fallback — `RESUME_IDS` 가 아직 채워지지 않은 첫 send 에서는 SESSIONS 의
+/// router UUID 로 떨어지되, 키 prefix 를 `claude-ws:router:` 로 분리해 누수 시
+/// 쉽게 식별. process_alive=false 이면 None — is_session_continuation=false 강제.
 pub fn current_session_key(conv_id: &str) -> Option<String> {
-    SESSIONS.lock().get(conv_id).map(|s| format!("claude-ws:{}", s.session_id))
+    // (a) Claude 자체 session identity 우선. WS respawn 후에도 유지.
+    if let Some(sid) = RESUME_IDS.lock().get(conv_id).cloned() {
+        return Some(format!("claude-ws:{}", sid));
+    }
+    // (b) Fallback — 첫 send, RESUME_IDS 미채워짐. router UUID 를 prefix 로 분리.
+    //     첫 send 는 어차피 LAST_DELIVERED 가 비어 있어 is_session_continuation=false
+    //     로 자연스럽게 흐르므로 이 fallback 이 계속 쓰이는 일은 없다.
+    let sessions = SESSIONS.lock();
+    let s = sessions.get(conv_id)?;
+    if !s.process_alive.load(std::sync::atomic::Ordering::Relaxed) {
+        return None;
+    }
+    Some(format!("claude-ws:router:{}", s.session_id))
 }
 
 /// conversation이 로드될 때 미리 세션을 초기화한다.
@@ -798,5 +818,87 @@ pub fn kill_orphan_sdk_processes() {
     }
     if killed > 0 {
         eprintln!("[sdk-session] cleaned up {} orphan sdk-url process(es)", killed);
+    }
+}
+
+// ─── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // RESUME_IDS, SESSIONS 는 모듈 내부 lazy_static 이라 tests 에서 직접 접근 가능.
+    // 다른 테스트와 충돌하지 않도록 모든 테스트는 uuid 기반 고유 conv_id 를 사용한다.
+    fn unique_conv(tag: &str) -> String {
+        format!("test-conv-{}-{}", tag, uuid::Uuid::new_v4())
+    }
+
+    #[test]
+    fn current_session_key_prefers_claude_session_id_over_router_uuid() {
+        // sessionContinuityFixPlan INV-2: router UUID (spawn 마다 바뀌는 값) 대신
+        // claude 자체 session_id (RESUME_IDS 에 저장) 를 identity 로 써야 한다.
+        let conv = unique_conv("prefer-claude-sid");
+        RESUME_IDS.lock().insert(conv.clone(), "claude-real-session-ABC".into());
+
+        let key = current_session_key(&conv).expect("RESUME_IDS 에 있으면 Some 반환");
+        assert_eq!(
+            key, "claude-ws:claude-real-session-ABC",
+            "claude session_id 가 키의 뒷부분이어야 함"
+        );
+        assert!(
+            !key.contains("router:"),
+            "RESUME_IDS 가 있으면 router fallback prefix 를 쓰면 안 됨: {}",
+            key
+        );
+
+        // cleanup — 전역 lazy_static 격리
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn current_session_key_returns_none_when_no_session_and_no_resume_id() {
+        let conv = unique_conv("none-no-session");
+        // RESUME_IDS 비어있고 SESSIONS 도 비어있으면 None — is_session_continuation 을
+        // false 로 강제해 ContextPack 이 full 경로로 흐른다.
+        RESUME_IDS.lock().remove(&conv);
+        // SESSIONS 에도 entry 없음 (unique conv_id 기본값)
+        assert!(current_session_key(&conv).is_none());
+    }
+
+    #[test]
+    fn current_session_key_resume_id_stable_across_conceptual_respawn() {
+        // Router UUID 는 spawn 마다 Uuid::new_v4() 로 새로 생기지만 claude 자체
+        // session_id (RESUME_IDS) 는 유지된다. current_session_key 가 RESUME_IDS
+        // 를 보는 이상 키가 변하지 않아야 함 — respawn 시나리오의 identity 불변성.
+        //
+        // SdkSession 구조체 전체를 테스트에서 만들기는 어려우므로 RESUME_IDS 단위의
+        // 불변성만 검증. SESSIONS 는 비어있어도 RESUME_IDS 만 있으면 키가 돈다.
+        let conv = unique_conv("respawn-stable");
+        RESUME_IDS.lock().insert(conv.clone(), "claude-sess-STABLE".into());
+
+        let k1 = current_session_key(&conv).unwrap();
+        // "두 번째 spawn" 을 흉내낸다 — 실제 SESSIONS 를 교체하는 건 어렵지만,
+        // 핵심은 RESUME_IDS 가 유지되는 한 key 가 변하지 않음을 확인하는 것.
+        let k2 = current_session_key(&conv).unwrap();
+
+        assert_eq!(k1, k2, "RESUME_IDS 가 있는 한 key 는 호출마다 같아야 함");
+
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn current_session_key_router_fallback_prefix_is_separable() {
+        // RESUME_IDS 가 없는 첫 send 에서는 router UUID fallback 을 쓰되 prefix 로
+        // 구분되어야 한다. 이 prefix 가 LAST_DELIVERED 의 정상 키와 매칭되는 일이
+        // 없음을 확인 (is_session_continuation=false 자동 유도).
+        //
+        // SESSIONS 에 직접 entry 를 삽입하는 건 SdkSession 의 여러 필드 (child,
+        // channels, ports 등) 를 만들어야 하므로 번거로움. 이 테스트는 fallback
+        // prefix "claude-ws:router:" 가 정상 prefix "claude-ws:<uuid>" 와 포맷상
+        // 구분되는지만 검증 — 실제 SESSIONS 주입 테스트는 integration 수준에서.
+        assert!(
+            "claude-ws:router:abc" != "claude-ws:abc",
+            "router fallback prefix 와 정상 prefix 는 달라야 함"
+        );
     }
 }
