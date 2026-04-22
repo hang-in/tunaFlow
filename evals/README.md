@@ -79,3 +79,20 @@ node evals/scripts/report.mjs
   "source_trace_id": "trace-abc123"
 }
 ```
+
+## Golden seed 빌드 (secall + 타 프로젝트 기반)
+
+실제 사용자 DB 에서 카테고리별 4개 × 5 = 20개 시나리오를 추출해 JSONL 생성:
+
+```bash
+node evals/scripts/build-golden-seed.mjs
+```
+
+카테고리별 쿼리:
+- `plan-generation` — Architect 페르소나 + `<!-- tunaflow:plan-proposal -->` 마커 포함
+- `dev-implementation` — Implementer/Coder 페르소나 + `🔧 구현 시작` 프롬프트
+- `review-verdict` — Reviewer 페르소나 + 긴 verdict 응답
+- `rt-verdict` — RT branch 의 마지막 assistant 메시지 (고유 conversation)
+- `branch-adopt` — `status='adopted'` 브랜치의 마지막 assistant 메시지
+
+`expected_behaviors` 는 초기에 카테고리 공통 rubric 5개. 실제 eval 돌려보며 per-entry 로 튜닝.
