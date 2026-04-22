@@ -95,7 +95,14 @@ fn role_guidance(role: &str) -> &'static str {
             "**Proposer guidelines:**\n\
              - Form your analysis independently — do not converge toward other participants' views.\n\
              - Lead with your conclusion, then provide supporting evidence.\n\
-             - Flag assumptions explicitly; do not treat them as facts."
+             - Flag assumptions explicitly; do not treat them as facts.\n\
+             - **Emit an `## Invariants` section** listing constraints the implementation MUST NEVER violate.\n\
+             - Format each invariant as: `- [INV-N] <short statement> — <why it matters>`\n\
+             - Examples:\n\
+               - [INV-1] Do not call db.write.lock() inside broadcast_event — same-thread re-entrant deadlock risk.\n\
+               - [INV-2] Do not release streaming subscription during adopt — message loss risk.\n\
+             - Prefer 0 to 7 invariants. If you cannot state any concrete invariant, write `None` and explain why.\n\
+             - Invariants must be checkable by reading code or running a test — not subjective quality claims."
         }
         "reviewer" | "critic" => {
             "**Reviewer guidelines:**\n\
@@ -103,20 +110,30 @@ fn role_guidance(role: &str) -> &'static str {
              - Score each dimension 1–5. Include the scores in your response.\n\
              - For each finding, include: file path, line range (if applicable), defect type, severity.\n\
              - Put improvement suggestions in a separate `recommendations` section, not in `findings`.\n\
-             - If verdict is `fail`, list failed subtask numbers as: `failed_subtask_ids: [N, M]`."
+             - If verdict is `fail`, list failed subtask numbers as: `failed_subtask_ids: [N, M]`.\n\
+             - **Invariants verification (required when proposer declared any):** for each INV-N in the proposer's\n\
+               output, emit an entry in an `invariant_checks` array with shape:\n\
+               `{ \"id\": \"INV-N\", \"status\": \"pass|fail|cannot_verify\", \"evidence\": \"<file:line or reasoning>\" }`\n\
+             - If ANY invariant_check is `fail`, verdict MUST be `fail`.\n\
+             - If multiple invariants are `cannot_verify`, mark verdict `fail` and request proposer to add tests or\n\
+               narrow the invariant scope."
         }
         "verifier" | "judge" => {
             "**Verifier guidelines:**\n\
              - Focus on concrete evidence — do not rely on other participants' assessments.\n\
              - State your verdict first, then justify with specific references.\n\
-             - Distinguish clearly between observed facts and inferences."
+             - Distinguish clearly between observed facts and inferences.\n\
+             - If proposer declared invariants, cross-check each one independently and record the result in\n\
+               `invariant_checks` — do not trust the reviewer's check."
         }
         "synthesizer" | "lead" => {
             "**Synthesizer guidelines:**\n\
              - Organize findings into three sections: `consensus`, `contested`, `dissent`.\n\
              - Preserve each reviewer's original verdict — do not overwrite it.\n\
              - Final verdict must be consistent with the vote tally across participants.\n\
-             - If no clear consensus exists, state that explicitly rather than forcing agreement."
+             - If no clear consensus exists, state that explicitly rather than forcing agreement.\n\
+             - If any participant's invariant_check status is `fail`, final verdict MUST be `fail` regardless of\n\
+               dimension scores."
         }
         _ => "",
     }
@@ -269,5 +286,83 @@ mod tests {
     fn cap_directive_without_cap() {
         let d = output_cap_directive(None);
         assert!(d.is_empty());
+    }
+
+    // ─── Invariants checklist (Phase 1 of harnessVerificationGapPlan) ──────────
+
+    #[test]
+    fn proposer_guidance_requires_invariants_section() {
+        let p = make_participant("Proposer", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("## Invariants"), "proposer must be told to emit ## Invariants section");
+        assert!(id.contains("[INV-"), "proposer must be shown the INV-N format");
+    }
+
+    #[test]
+    fn proposer_guidance_mentions_bounded_invariant_count() {
+        let p = make_participant("Proposer", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("0 to 7 invariants") || id.contains("0-7"),
+            "proposer guidance must bound invariant count to avoid reviewer overload"
+        );
+    }
+
+    #[test]
+    fn reviewer_guidance_requires_invariant_checks() {
+        let p = make_participant("Reviewer", Some("codex"), false, Some("reviewer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("invariant_checks"), "reviewer must emit invariant_checks array");
+        assert!(id.contains("pass|fail|cannot_verify"), "reviewer must know the 3 statuses");
+    }
+
+    #[test]
+    fn reviewer_invariant_fail_forces_verdict_fail() {
+        let p = make_participant("Reviewer", Some("codex"), false, Some("reviewer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("any invariant_check") || id.contains("ANY invariant_check"),
+            "reviewer guidance must state that failed invariant forces verdict=fail"
+        );
+    }
+
+    #[test]
+    fn critic_alias_also_has_invariant_checks() {
+        let p = make_participant("Critic", Some("codex"), false, Some("critic"));
+        let id = participant_identity(&p);
+        assert!(id.contains("invariant_checks"), "critic (alias of reviewer) must also have invariant_checks");
+    }
+
+    #[test]
+    fn verifier_guidance_crosschecks_invariants_independently() {
+        let p = make_participant("Verifier", Some("gemini"), false, Some("verifier"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("cross-check") || id.contains("crosscheck") || id.contains("independently"),
+            "verifier must independently cross-check invariants, not trust reviewer"
+        );
+    }
+
+    #[test]
+    fn synthesizer_guidance_honors_invariant_failures() {
+        let p = make_participant("Synth", Some("claude"), false, Some("synthesizer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("invariant_check"),
+            "synthesizer must honor any participant's failed invariant_check"
+        );
+        assert!(
+            id.contains("final verdict MUST be `fail`") || id.contains("final verdict MUST be fail"),
+            "synthesizer must override final verdict to fail when any invariant fails"
+        );
+    }
+
+    #[test]
+    fn non_invariant_roles_do_not_get_invariant_noise() {
+        // proposer and reviewer/critic/verifier/synthesizer all get invariant guidance.
+        // Any unknown role should NOT get invariant guidance (keeps guidance narrow).
+        let p = make_participant("Other", Some("claude"), false, Some("commentator"));
+        let id = participant_identity(&p);
+        assert!(!id.contains("invariant"), "unknown roles must not inherit invariant guidance");
     }
 }
