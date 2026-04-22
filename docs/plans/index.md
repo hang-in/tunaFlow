@@ -36,6 +36,7 @@
 | [roundtableRoleTerminologySeparationPlan_2026-03-30](./roundtableRoleTerminologySeparationPlan_2026-03-30.md) | P1 — 프로필 역할 vs RT 토론 역할 분리 |
 | [runtimeFeatureValidationPlan_2026-03-30](./runtimeFeatureValidationPlan_2026-03-30.md) | P1 — memory/retrieval/auto/budget/RT 실시나리오 검증 |
 | [sdkUrlSessionModePlan](./sdkUrlSessionModePlan.md) | — |
+| [searchPipelineFromSecallPlan-part2](./searchPipelineFromSecallPlan-part2.md) | P1 — Phase C Part 2: `messages_fts` rebuild + content_tokenized 컬럼 + app-level snippet (depends: PR #127) |
 | [skillSelectorAgentPlan](./skillSelectorAgentPlan.md) | — |
 | [structuralImprovementPlan](./structuralImprovementPlan.md) | — |
 | [systemMessageChannelPlan](./systemMessageChannelPlan.md) | — |
