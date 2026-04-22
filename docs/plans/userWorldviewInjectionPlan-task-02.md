@@ -149,6 +149,23 @@ pub fn record_user_preference_change(
     record_event(&w, &memory_name, &field, stance_from.as_deref(), &stance_to,
                  reason_text.as_deref(), &tags, 1.0, EventSource::User)
 }
+
+/// Modal 이 호출. Codex round-1 review 반영 — marker 포맷이 composite key 기반이므로
+/// 단일 snapshot 조회 지원. (list 전량 load 후 client filter 도 가능하나 이쪽이 간결.)
+#[tauri::command]
+pub fn get_preference_snapshot(
+    memory_name: String,
+    field: String,
+    state: State<DbState>,
+) -> Result<Option<PreferenceSnapshot>, AppError> {
+    let r = state.read.lock().map_err(|_| AppError::Lock)?;
+    r.query_row(
+        "SELECT memory_name, field, current_stance, last_event_id, updated_at
+           FROM preference_snapshots
+          WHERE memory_name = ?1 AND field = ?2",
+        params![memory_name, field], row_to_snapshot,
+    ).optional().map_err(Into::into)
+}
 ```
 
 ## Dependencies

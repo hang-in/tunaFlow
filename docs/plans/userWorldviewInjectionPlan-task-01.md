@@ -48,10 +48,12 @@ let worldview_fragment = worldview::load_worldview(data.project_path.as_deref())
     .filter(|t| !t.trim().is_empty());
 
 let mut sections: Vec<(&str, String)> = Vec::new();
+// 실제 prompt_assembly 는 project/platform/agent-role 등을 identity 앞에 먼저 push.
+// worldview 는 그들과 identity 사이 — 즉 identity 바로 앞에 들어간다 (Codex review 2026-04-23 반영).
 if let Some(wv) = worldview_fragment {
-    sections.push(("worldview", wv));               // ★ 맨 앞
+    sections.push(("worldview", wv));               // ★ identity 바로 앞
 }
-sections.push(("identity", identity_fragment));     // 기존 위치 (2번째)
+sections.push(("identity", identity_fragment));
 // ... skills, recent_context, etc.
 ```
 
@@ -92,7 +94,7 @@ export function WorldviewSettings() {
         <section>
             <h3>User Worldview</h3>
             <p className="hint">
-                에이전트가 매 요청 시 ContextPack 의 맨 앞에서 참조하는 사용자 stance 문서입니다.
+                에이전트가 매 요청 시 ContextPack 의 identity 바로 앞에서 참조하는 사용자 stance 문서입니다.
                 최대 500 tokens.
             </p>
             <textarea

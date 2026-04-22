@@ -28,7 +28,7 @@ triggered_by:
 
 ## TL;DR for Developer
 
-1. **`user_worldview.md` 주입** — `~/.tunaflow/user_worldview.md` 사용자 철학 stance. ContextPack 조립 시 **identity 섹션보다 앞에** 삽입 (`prompt_assembly.rs`). 존재하지 않으면 기본 placeholder. 사용자가 Settings 에서 편집.
+1. **`user_worldview.md` 주입** — `~/.tunaflow/user_worldview.md` 사용자 철학 stance. ContextPack 조립 시 **`identity_fragment` 바로 앞에** 삽입 (`prompt_assembly.rs`). project/platform/agent-role 등 identity 앞에 이미 존재하는 섹션들보다 앞으로 이동시키지 않는다. 존재하지 않으면 기본 placeholder. 사용자가 Settings 에서 편집.
 2. **`preference_events` + `preference_snapshots` 테이블 신설** (migration v46). vector-first 아님 — event-log + snapshot 2단 구조. Embedding 은 별도 선택 subtask 로 분리 (본 plan 범위 밖).
 3. **Stance-conflict 감지는 rule-first** — 현재 요청을 recent preference_snapshots (최근 3건) 와 대조. Rule precheck 가 결정적 (conflict/no-conflict/ambiguous) 이면 모델 호출 스킵. Ambiguous 한정 Haiku/Flash 로 verify → 결과 compact 요약 후 Opus 프롬프트에 주입.
 4. **Silent tool-request 금지** — 대신 `agent_jobs` 에 `priority`, `dedupe_key`, `kind='insight_background'` 필드 추가. 별도 low-priority worker 1개 + concurrency cap. **모든 background job 은 trace_log 기록 + UI 진행 표시 + 사용자 cancel 가능**.
@@ -223,7 +223,7 @@ async fn run_background_loop(app: AppHandle, state: DbState) {
 
 - **[INV-3]** `preference_timeline` 관련 테이블은 본 plan 에서 `preference_events` + `preference_snapshots` **2개만** 도입한다. Embedding 관련 테이블 (`preference_embeddings`, vector index 등) 은 **별도 후속 plan** 으로 분리된다. **이유**: 기존 vector 층 (bge-m3, sqlite-vec) 과 경쟁하면 retrieval 우선순위가 혼란. 필요 증명된 이후에 추가. **검증**: migration v46 DDL grep — `embedding` / `vec0` 키워드 부재 확인.
 
-- **[INV-4]** 모든 `priority < 0` background job 은 (a) `trace_log` 에 시작/종료 기록, (b) `background_insight_progress` 이벤트 emit, (c) UI 에 진행 상태 노출, (d) 사용자 cancel 가능 한 4가지를 모두 만족해야 한다. Silent 실행 금지. **이유**: tunaFlow 원칙 "숨은 동작 금지, trace 투명". **검증**: Integration test — background job 1개 실행 후 trace_log row 증가 확인 + UI mock 이 progress 이벤트 1회 이상 수신 확인.
+- **[INV-4]** 모든 `priority < 0` background job 은 (a) `trace_log` 에 시작/종료 기록, (b) `background_insight_progress` 이벤트 emit, (c) UI 에 진행 상태 노출, (d) **pending 상태의 cancel 은 보장**, running 상태의 cancel 은 best-effort (status 플래그만 변경, subprocess kill 은 후속) 를 만족해야 한다. Silent 실행 금지. **이유**: tunaFlow 원칙 "숨은 동작 금지, trace 투명". 본 plan 의 Subtask 04 는 enqueue + UI surface + pending cancel 까지만 커버하며 (Codex review 2026-04-23 피드백 반영), running job 의 실 실행 및 cooperative cancel 은 metaAgent 착수 시점의 별도 plan 으로 위임. **검증**: Integration test — background job pending 상태에서 cancel 후 `status='cancelled'` + 이후 pick 대상에서 제외.
 
 - **[INV-5]** Stance-conflict confirmation modal 의 "무시" 선택은 **timeline 에 어떠한 event 도 기록하지 않는다**. 사용자의 침묵을 stance 변경으로 해석하지 않음. **이유**: 업(業) 의 기록은 사용자 명시 승인 없이 누적되면 "내 선호가 내 모르게 바뀌었다" 라는 karma 오염. **검증**: UI 테스트 — modal 에서 "무시" 클릭 후 `SELECT COUNT(*) FROM preference_events WHERE id = ?new_event_id` 가 0.
 
@@ -232,6 +232,18 @@ async fn run_background_loop(app: AppHandle, state: DbState) {
 ---
 
 ## Rationale (reviewer-only)
+
+### Codex round-1 review 반영 (2026-04-23)
+
+Codex blind reviewer 가 BLOCKER 3건 + MAJOR 3건 + MINOR 1건 식별. 본 plan (2차 개정) 은 전 항목 수용:
+
+1. **BLOCKER — Subtask 04 가상 helper 의존** → Subtask 04 의 scope 를 **enqueue API + UI status surface + pending cancel** 로 축소. `execute_job` / `stash_insight_from_job` / `record_trace_log_*` 등 실행 경로는 별도 plan (metaAgent 착수 시점) 으로 위임.
+2. **BLOCKER — INV-4 cancel semantics 모순** → INV-4 를 "pending 보장 / running best-effort" 로 명시 축소. scope 축소로 자연 해결.
+3. **BLOCKER — `get_preference_snapshot` 미정의** → Modal 은 `list_preference_snapshots()` 전량 load 후 client-side filter. Marker 포맷을 `<snapshot_id>` 에서 **composite key `<memory_name>:<field>`** 로 변경해 snapshot PK 와 정합.
+4. **MAJOR — regex 하이픈 버그** → `([^-]+)` → `([\s\S]*?)\s*-->` non-greedy.
+5. **MAJOR — 부분 전환 silent pass** → rule precheck 에 partial-shift 키워드 ("유지하면서", "실험", "먼저", "병행", "only", "for now") → Ambiguous 강제.
+6. **MAJOR — ConflictSafe timeout → modal 피로도** → fallback 을 `Unknown` 상태로. UI 는 modal 대신 inline warning. Modal 은 결정적 conflict 에만.
+7. **MINOR — "맨 앞" 문구** → "identity 앞" 으로 교정. 실제 위치는 `identity_fragment` 바로 앞.
 
 ### 검토 세션 피드백 반영
 
