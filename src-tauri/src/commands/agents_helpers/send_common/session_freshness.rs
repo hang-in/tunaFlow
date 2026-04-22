@@ -36,12 +36,22 @@ pub fn stash_pending(msg_id: &str, key: &str) {
     PENDING_DELIVERY.lock().insert(msg_id.to_string(), key.to_string());
 }
 
-/// finalize 성공 시 호출 — pending → LAST_DELIVERED로 승격.
-/// pending이 없으면(=session_key가 prepare 시점엔 없었음) finalize 시점의 conv/engine으로 fallback 조회.
-/// 둘 다 없으면 기록하지 않음 (예: -p one-shot 모드).
+/// finalize 성공 시 호출 — 현재 세션 키를 LAST_DELIVERED 로 승격.
+///
+/// **순서 (sessionContinuityFixPlan.md INV-5)**: finalize 시점 `current_session_key`
+/// 가 진짜 session identity (claude 가 응답에서 돌려준 session_id, RESUME_IDS 에
+/// 갱신된 값) 이므로 **live 우선**. stashed 값은 live 가 None 인 race 케이스의
+/// fallback.
+///
+/// 이전 순서 (`stashed.or(live)`) 는 prepare 시점에 router UUID 가 stash 되어
+/// 첫 send 부터 LAST_DELIVERED 가 router UUID 로 고정 → 다음 send 에서 키 포맷
+/// 불일치 → `is_session_continuation=false` 반복. 순서 반전으로 해결.
+///
+/// 둘 다 None 이면 기록하지 않음 (예: -p one-shot 모드).
 pub fn promote_pending_to_delivered(msg_id: &str, conv_id: &str, engine: &str) {
-    let from_pending = PENDING_DELIVERY.lock().remove(msg_id);
-    let key = from_pending.or_else(|| current_session_key(conv_id, engine));
+    let live = current_session_key(conv_id, engine);
+    let stashed = PENDING_DELIVERY.lock().remove(msg_id);
+    let key = live.or(stashed);
     if let Some(k) = key {
         LAST_DELIVERED_KEY.lock().insert(conv_id.to_string(), k);
     }
@@ -125,18 +135,19 @@ mod tests {
     }
 
     #[test]
-    fn promote_uses_pending_value_not_live_lookup() {
-        // race A2 시나리오 회귀 테스트: prepare 시점에 stash한 키가 promote에 사용되어야 함.
-        // (current_session_key가 None을 반환하더라도 stashed 값이 우선)
-        let conv = unique_conv("promote-race");
-        let msg = "msg-promote-1";
+    fn promote_falls_back_to_stashed_when_live_is_none() {
+        // sessionContinuityFixPlan INV-5 적용 후 동작: live 가 None 일 때만 stashed
+        // fallback 으로 쓰인다. 이 경로는 (a) -p CLI 모드처럼 WS 세션 없음 (b) A2
+        // race 로 SESSIONS/RESUME_IDS 가 동시에 비어있는 짧은 window 를 커버한다.
+        let conv = unique_conv("promote-fallback");
+        let msg = "msg-promote-fallback";
         stash_pending(msg, "claude-ws:captured-at-prepare");
-        // engine="nonexistent" → current_session_key는 None을 반환 (race 시뮬레이션)
+        // engine="nonexistent" → current_session_key는 None
         promote_pending_to_delivered(msg, &conv, "nonexistent");
         assert_eq!(
             last_delivered_key(&conv).as_deref(),
             Some("claude-ws:captured-at-prepare"),
-            "stashed 키가 promote에 사용되어야 함 (live lookup fallback이 None이어도)"
+            "live 가 None 이면 stashed 를 fallback 으로 사용해야 함"
         );
     }
 
