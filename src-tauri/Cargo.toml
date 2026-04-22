@@ -44,6 +44,10 @@ base64 = "0.22"
 regex = "1"
 sha2 = "0.10"
 toml = "0.8"
+# Korean morphological tokenizer (Phase C of search pipeline plan). Embedded
+# ko-dic dictionary so no runtime model download is needed. Same version as
+# secall for parity.
+lindera = { version = "2.3", features = ["embed-ko-dic"] }
 reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
 tokio-tungstenite = "0.24"
