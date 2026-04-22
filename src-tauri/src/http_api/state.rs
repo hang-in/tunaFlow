@@ -58,9 +58,21 @@ pub async fn create_project(
 
 // ─── Document RAG endpoints ───────────────────────────────────────────
 
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexQuery {
+    /// force=true 면 SHA change detection 우회 → 전체 재인덱싱.
+    #[serde(default)]
+    pub force: bool,
+    /// cleanup=true 면 인덱싱 전에 stale (파일 사라진) chunks 삭제.
+    #[serde(default)]
+    pub cleanup: bool,
+}
+
 pub async fn index_project_documents(
     State(state): State<ApiState>,
     Path(project_key): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<IndexQuery>,
 ) -> impl IntoResponse {
     let db = state.db.clone();
     let pk = project_key.clone();
@@ -76,9 +88,20 @@ pub async fn index_project_documents(
 
     let event_tx = state.event_tx.clone();
     let pk2 = project_key.clone();
+    let force = q.force;
+    let cleanup = q.cleanup;
     std::thread::spawn(move || {
+        if cleanup {
+            match crate::commands::document_index::cleanup_stale_documents(&db, &project_key, &project_path) {
+                Ok(c) => eprintln!("[doc-index] cleanup before reindex: removed {} files / {} chunks",
+                    c.files_removed, c.chunks_removed),
+                Err(e) => eprintln!("[doc-index] cleanup error: {}", e),
+            }
+        }
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::commands::document_index::index_project_documents(&db, &project_key, &project_path)
+            crate::commands::document_index::index_project_documents_with_options(
+                &db, &project_key, &project_path, force,
+            )
         }));
         match result {
             Ok(Ok(r)) => {

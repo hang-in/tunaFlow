@@ -15,7 +15,8 @@
     "e2e:beta:cleanup": "node scripts/beta-e2e/cleanup.mjs --force",
     "eval:regression": "node evals/scripts/run-eval.mjs",
     "eval:extract": "node evals/scripts/extract-from-trace.mjs",
-    "eval:report": "node evals/scripts/report.mjs"
+    "eval:report": "node evals/scripts/report.mjs",
+    "docs:reindex": "node scripts/reindex-docs.mjs"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.2.16",

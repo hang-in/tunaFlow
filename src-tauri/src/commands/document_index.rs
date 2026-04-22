@@ -190,6 +190,19 @@ pub fn index_project_documents(
     project_key: &str,
     project_path: &str,
 ) -> Result<IndexResult, AppError> {
+    index_project_documents_with_options(db, project_key, project_path, false)
+}
+
+/// Same as `index_project_documents` but with `force` option. When force=true,
+/// SHA-256 change detection is bypassed — every file is re-indexed. Used by
+/// the reindex CLI / HTTP endpoint for resyncing stale DB state after bulk
+/// document reorganization.
+pub fn index_project_documents_with_options(
+    db: &crate::db::DbState,
+    project_key: &str,
+    project_path: &str,
+    force: bool,
+) -> Result<IndexResult, AppError> {
     let base = Path::new(project_path);
     let mut result = IndexResult {
         files_scanned: 0,
@@ -254,8 +267,8 @@ pub fn index_project_documents(
 
         let hash = sha256_hex(&content);
 
-        // Change detection: skip if hash unchanged
-        let needs_index = {
+        // Change detection: skip if hash unchanged (unless force=true).
+        let needs_index = force || {
             let conn = db.read.lock().map_err(|_| AppError::Lock)?;
             let stored_hash: Option<String> = conn.query_row(
                 "SELECT content_hash FROM document_index_status WHERE project_key = ?1 AND file_path = ?2",
@@ -642,9 +655,13 @@ pub fn get_index_status(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Index project documents (docs/*.md + CLAUDE.md).
+///
+/// `force=true` 면 SHA change detection 우회 — 모든 파일 재인덱싱. bulk 문서
+/// 재조직 후 DB 재동기화 용도.
 #[tauri::command]
 pub async fn index_project_docs(
     project_key: String,
+    force: Option<bool>,
     state: tauri::State<'_, crate::db::DbState>,
 ) -> Result<IndexResult, AppError> {
     let db = state.inner().clone();
@@ -656,10 +673,129 @@ pub async fn index_project_docs(
         ).map_err(|_| AppError::NotFound("project not found".into()))?
             .ok_or_else(|| AppError::NotFound("project has no path".into()))?
     };
+    let force = force.unwrap_or(false);
 
     tokio::task::spawn_blocking(move || {
-        index_project_documents(&db, &project_key, &project_path)
+        index_project_documents_with_options(&db, &project_key, &project_path, force)
     }).await.map_err(|e| AppError::Agent(format!("task join error: {}", e)))?
+}
+
+/// Result of a stale cleanup pass.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResult {
+    pub files_checked: usize,
+    pub files_removed: usize,
+    pub chunks_removed: usize,
+    pub edges_removed: usize,
+}
+
+/// Remove DB rows (chunks / edges / index_status) for files that no longer
+/// exist on disk. Called after bulk document reorganization (e.g. mv plans
+/// to archive) to keep the DB in sync with the file system.
+pub fn cleanup_stale_documents(
+    db: &crate::db::DbState,
+    project_key: &str,
+    project_path: &str,
+) -> Result<CleanupResult, AppError> {
+    let base = Path::new(project_path);
+    let mut result = CleanupResult {
+        files_checked: 0,
+        files_removed: 0,
+        chunks_removed: 0,
+        edges_removed: 0,
+    };
+
+    // 1. 모든 indexed file_path 수집
+    let file_paths: Vec<String> = {
+        let conn = db.read.lock().map_err(|_| AppError::Lock)?;
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT file_path FROM conversation_chunks
+             WHERE project_key = ?1 AND source_type = 'document' AND file_path IS NOT NULL",
+        )?;
+        let rows: Vec<String> = stmt
+            .query_map([project_key], |r| r.get::<_, String>(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
+    result.files_checked = file_paths.len();
+
+    // 2. fs 존재 확인 → missing 목록
+    let missing: Vec<String> = file_paths
+        .into_iter()
+        .filter(|rel| !base.join(rel).is_file())
+        .collect();
+    result.files_removed = missing.len();
+
+    if missing.is_empty() {
+        return Ok(result);
+    }
+
+    // 3. chunks + vec_chunks + edges + status 삭제
+    let conn = db.write.lock().map_err(|_| AppError::Lock)?;
+    for path in &missing {
+        // vec_chunks 는 rowid 로 conversation_chunks 와 연결
+        let rowids: Vec<i64> = conn.prepare(
+            "SELECT rowid FROM conversation_chunks
+             WHERE project_key = ?1 AND source_type = 'document' AND file_path = ?2",
+        )
+        .and_then(|mut s| {
+            s.query_map(params![project_key, path], |r| r.get(0))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+        for rid in &rowids {
+            conn.execute("DELETE FROM vec_chunks WHERE rowid = ?1", [rid]).ok();
+        }
+        let chunks = conn.execute(
+            "DELETE FROM conversation_chunks
+             WHERE project_key = ?1 AND source_type = 'document' AND file_path = ?2",
+            params![project_key, path],
+        ).unwrap_or(0);
+        result.chunks_removed += chunks;
+
+        // edges: source_path 또는 target_path 이 missing 이면 삭제
+        let edges = conn.execute(
+            "DELETE FROM document_edges
+             WHERE project_key = ?1 AND (source_path = ?2 OR target_path = ?2)",
+            params![project_key, path],
+        ).unwrap_or(0);
+        result.edges_removed += edges;
+
+        conn.execute(
+            "DELETE FROM document_index_status WHERE project_key = ?1 AND file_path = ?2",
+            params![project_key, path],
+        ).ok();
+    }
+    eprintln!(
+        "[doc-index] cleanup project={}: removed {} stale files, {} chunks, {} edges",
+        project_key, result.files_removed, result.chunks_removed, result.edges_removed
+    );
+    Ok(result)
+}
+
+/// Clean up stale document entries for a project (files removed from disk).
+/// 보통 `reindex_project_docs` 직전에 호출하는 걸 권장.
+#[tauri::command]
+pub async fn cleanup_project_stale_docs(
+    project_key: String,
+    state: tauri::State<'_, crate::db::DbState>,
+) -> Result<CleanupResult, AppError> {
+    let db = state.inner().clone();
+    let project_path = {
+        let conn = db.read.lock().map_err(|_| AppError::Lock)?;
+        conn.query_row(
+            "SELECT path FROM projects WHERE key = ?1",
+            [&project_key], |r| r.get::<_, Option<String>>(0),
+        ).map_err(|_| AppError::NotFound("project not found".into()))?
+            .ok_or_else(|| AppError::NotFound("project has no path".into()))?
+    };
+    tokio::task::spawn_blocking(move || {
+        cleanup_stale_documents(&db, &project_key, &project_path)
+    })
+    .await
+    .map_err(|e| AppError::Agent(format!("task join error: {}", e)))?
 }
 
 /// Search project documents by query.
