@@ -36,6 +36,7 @@
 | [refactorRoadmap_first_prompt](./refactorRoadmap_first_prompt.md) | 새 세션에 붙여넣을 첫 프롬프트 텍스트 |
 | [refactorRoadmap_handoff_2026-04-20](./refactorRoadmap_handoff_2026-04-20.md) | 새 세션용 핸드오프 — 프로젝트 철학 / 피할 함정 / Phase 1 Finding 6 진입점 |
 | [roundtableRoleTerminologySeparationPlan_2026-03-30](./roundtableRoleTerminologySeparationPlan_2026-03-30.md) | P1 — 프로필 역할 vs RT 토론 역할 분리 |
+| [sessionContinuityFixPlan](./sessionContinuityFixPlan.md) | **P0** — claude WS session identity 를 claude session_id 기반으로 재정의. `is_session_continuation` false positive 해결. |
 | [runtimeFeatureValidationPlan_2026-03-30](./runtimeFeatureValidationPlan_2026-03-30.md) | P1 — memory/retrieval/auto/budget/RT 실시나리오 검증 |
 | [sdkUrlSessionModePlan](./sdkUrlSessionModePlan.md) | — |
 | [searchPipelineFromSecallPlan-part2](./searchPipelineFromSecallPlan-part2.md) | P1 — Phase C Part 2: `messages_fts` rebuild + content_tokenized 컬럼 + app-level snippet (depends: PR #127) |

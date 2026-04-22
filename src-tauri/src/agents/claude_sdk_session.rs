@@ -772,8 +772,27 @@ where
                 }
 
                 // 다음 모델 변경 시 --resume에 사용할 session_id를 RESUME_IDS에 보존
+                //
+                // sessionContinuityFixPlan INV-6: claude 가 이전 session_id 와 **다른**
+                // session_id 를 반환하면 `--resume` 이 거부되어 fresh claude 세션이
+                // 시작됐다는 뜻. 이 경우 LAST_DELIVERED_KEY 를 invalidate 해 다음
+                // send 에서 is_session_continuation=false 가 되도록 한다 — 그렇지
+                // 않으면 "claude 는 기억 없는데 tunaFlow 는 있다고 착각" 하는 다른
+                // 경로의 맥락 유실이 발생한다.
                 if let Some(sid) = &parsed.session_id {
-                    RESUME_IDS.lock().insert(conv_id_owned.clone(), sid.clone());
+                    let prior = RESUME_IDS.lock().insert(conv_id_owned.clone(), sid.clone());
+                    if let Some(p) = prior {
+                        if p != *sid {
+                            eprintln!(
+                                "[sdk-session] claude returned new session_id (prior={} new={}) — \
+                                 --resume likely rejected; invalidating LAST_DELIVERED for conv={}",
+                                p, sid, conv_id_owned
+                            );
+                            crate::commands::agents_helpers::send_common::session_freshness::clear_delivered_key(
+                                &conv_id_owned,
+                            );
+                        }
+                    }
                 }
 
                 let final_input = parsed.total_input_tokens
@@ -1056,5 +1075,102 @@ mod tests {
         let got = bootstrap_resume_id_from_db(&conv, &db);
         assert!(got.is_none());
         assert!(RESUME_IDS.lock().get(&conv).is_none());
+    }
+
+    // ─── task-03: auto-invalidate on new session_id ─────────────────────────
+
+    /// Unit helper — `stream_run_sdk` 의 `result` 이벤트 처리 블록의 순수 로직만
+    /// 발췌. 실제 이벤트 루프를 돌리기엔 subprocess + WS가 필요하므로, 동일
+    /// 로직을 테스트 전용 함수로 재현한다. Production 코드와 drift 나지 않도록
+    /// 이 함수는 production 경로에서 호출하지 않고 오직 단위 테스트에서만 사용.
+    fn handle_result_session_id_for_test(conv_id: &str, new_sid: &str) {
+        // production 로직 (claude_sdk_session.rs:775 근처) 과 **동일** 해야 함.
+        use crate::commands::agents_helpers::send_common::session_freshness::clear_delivered_key;
+        let prior = RESUME_IDS.lock().insert(conv_id.to_string(), new_sid.to_string());
+        if let Some(p) = prior {
+            if p != new_sid {
+                clear_delivered_key(conv_id);
+            }
+        }
+    }
+
+    #[test]
+    fn new_session_id_triggers_delivered_key_clear() {
+        use crate::commands::agents_helpers::send_common::session_freshness::{
+            last_delivered_key, record_delivered_key,
+        };
+
+        let conv = unique_conv("invalidate-new-sid");
+        // Arrange — claude 가 이전에 sid-OLD 를 줬고 LAST_DELIVERED 에도 기록됨
+        RESUME_IDS.lock().insert(conv.clone(), "sid-OLD".into());
+        record_delivered_key(&conv, "claude-ws:sid-OLD");
+        assert_eq!(
+            last_delivered_key(&conv).as_deref(),
+            Some("claude-ws:sid-OLD")
+        );
+
+        // Act — claude 가 응답에서 sid-NEW 를 돌려줌 (--resume 거부 시나리오)
+        handle_result_session_id_for_test(&conv, "sid-NEW");
+
+        // Assert — RESUME_IDS 는 새 값으로 갱신, LAST_DELIVERED 는 clear
+        assert_eq!(
+            RESUME_IDS.lock().get(&conv).cloned().as_deref(),
+            Some("sid-NEW")
+        );
+        assert!(
+            last_delivered_key(&conv).is_none(),
+            "새 session_id 반환 시 LAST_DELIVERED 는 invalidate 되어야"
+        );
+
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn same_session_id_does_not_clear_delivered_key() {
+        use crate::commands::agents_helpers::send_common::session_freshness::{
+            last_delivered_key, record_delivered_key,
+        };
+
+        let conv = unique_conv("invalidate-same-sid");
+        RESUME_IDS.lock().insert(conv.clone(), "sid-STABLE".into());
+        record_delivered_key(&conv, "claude-ws:sid-STABLE");
+
+        // 같은 session_id 반환 → normal continuation
+        handle_result_session_id_for_test(&conv, "sid-STABLE");
+
+        assert_eq!(
+            last_delivered_key(&conv).as_deref(),
+            Some("claude-ws:sid-STABLE"),
+            "같은 session_id 는 invalidate 되면 안 됨"
+        );
+
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn first_session_id_stores_without_invalidating() {
+        use crate::commands::agents_helpers::send_common::session_freshness::{
+            last_delivered_key, record_delivered_key,
+        };
+
+        let conv = unique_conv("invalidate-first-sid");
+        // prior 가 없는 상태 (첫 응답). LAST_DELIVERED 는 router-fallback 이었을 수도
+        // 있으나 여기선 일단 non-empty 로 set 해 두고 invalidate 되지 않음을 확인.
+        RESUME_IDS.lock().remove(&conv);
+        record_delivered_key(&conv, "claude-ws:router:pre-bootstrap");
+
+        handle_result_session_id_for_test(&conv, "sid-FIRST");
+
+        assert_eq!(
+            RESUME_IDS.lock().get(&conv).cloned().as_deref(),
+            Some("sid-FIRST")
+        );
+        // prior 가 None 이었으므로 clear 호출 안 됨 — LAST_DELIVERED 유지.
+        // (다음 send 에서 current_session_key 가 "claude-ws:sid-FIRST" 를 반환하는데
+        //  LAST_DELIVERED 는 "claude-ws:router:pre-bootstrap" 이라 is_session_continuation
+        //  은 자연스럽게 false → fresh 경로. 이게 의도된 동작.)
+        assert!(last_delivered_key(&conv).is_some());
+
+        RESUME_IDS.lock().remove(&conv);
     }
 }
