@@ -28,6 +28,16 @@ const msg = (role: Message["role"], content: string, timestamp = 0): Message => 
   status: "done",
 });
 
+/** Streaming 상태의 assistant 메시지 — verdict/마커 포함해도 감지 대상 아님. */
+const streamingMsg = (content: string, timestamp = 0): Message => ({
+  id: `m-${timestamp}-streaming`,
+  conversationId: "branch:b1",
+  role: "assistant",
+  content,
+  timestamp,
+  status: "streaming",
+});
+
 const planEvent = (eventType: string, createdAt = 0, detail?: string): PlanEvent => ({
   id: `e-${createdAt}-${eventType}`,
   planId: "p1",
@@ -80,6 +90,20 @@ describe("detectCompletedSubtasks", () => {
     expect(state.markerNums.size).toBe(0);
     expect(state.hasImplCompleteMarker).toBe(false);
   });
+
+  it("streaming assistant with marker is ignored until status=done", () => {
+    // Dev 가 응답 streaming 중인 동안 content 에 마커가 이미 포함될 수 있지만,
+    // 완료 신호로 취급하면 "Review 시작" 버튼이 조기 활성화되는 버그를 유발한다.
+    const messages = [
+      streamingMsg("<!-- tunaflow:subtask-done:1 -->"),
+      streamingMsg("done <!-- tunaflow:impl-complete -->"),
+    ];
+    const subtasks = [subtask(0)];
+    const state = detectCompletedSubtasks(messages, subtasks);
+    expect(state.markerNums.size).toBe(0);
+    expect(state.hasImplCompleteMarker).toBe(false);
+    expect(state.allComplete).toBe(false);
+  });
 });
 
 describe("extractLatestReviewVerdict", () => {
@@ -110,6 +134,23 @@ describe("extractLatestReviewVerdict", () => {
     );
     expect(preSince).toBeNull();
   });
+
+  it("streaming reviewer with verdict keyword is ignored", () => {
+    // Reviewer 가 자유 서술 중 "verdict: pass 가능성" 같은 표현을 쓸 수 있어
+    // streaming 상태에서는 verdict 추출 대상에서 제외되어야 한다.
+    const freeform = "아직 검토 중이고 verdict: pass 일 가능성이 높지만 확정은 아닙니다.";
+    expect(extractLatestReviewVerdict([streamingMsg(freeform, 1)])).toBeNull();
+  });
+
+  it("streaming verdict is ignored even when a prior done verdict exists", () => {
+    // 같은 라운드에서 이전 reviewer 의 done verdict 뒤에 후속 reviewer 가 streaming 중이라면,
+    // 최신 "latest" 는 done 인 앞 verdict 여야 한다 (streaming 중간값으로 덮어쓰지 않음).
+    const out = extractLatestReviewVerdict([
+      msg("assistant", v1, 1),
+      streamingMsg(v2, 2),
+    ]);
+    expect(out?.verdict).toBe("fail");
+  });
 });
 
 describe("collectAndAggregateVerdicts", () => {
@@ -124,6 +165,22 @@ describe("collectAndAggregateVerdicts", () => {
 
   it("no verdict markers return null", () => {
     expect(collectAndAggregateVerdicts([msg("assistant", "nope")])).toBeNull();
+  });
+
+  it("streaming messages are excluded from aggregation", () => {
+    // 2 명 streaming + 1 명 done verdict → reviewerCount 1 (fallback 단일 경로)
+    const done =
+      "<!-- tunaflow:review-verdict -->\nverdict: fail\nfindings: []\n<!-- /tunaflow:review-verdict -->";
+    const streamingVerdict =
+      "<!-- tunaflow:review-verdict -->\nverdict: pass\nfindings: []\n<!-- /tunaflow:review-verdict -->";
+    const out = collectAndAggregateVerdicts([
+      streamingMsg(streamingVerdict, 1),
+      msg("assistant", done, 2),
+      streamingMsg(streamingVerdict, 3),
+    ]);
+    expect(out?.reviewerCount).toBe(1);
+    expect(out?.verdict).toBe("fail");
+    expect(out?.votes).toBeUndefined(); // 집계 아닌 단일 fallback
   });
 });
 

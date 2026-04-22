@@ -42,10 +42,13 @@ export function detectCompletedSubtasks(
   messages: Message[],
   subtasks: readonly PlanSubtask[],
 ): SubtaskCompletionState {
-  const markerNums = scanCompletedSubtasks(messages);
-  const hasImplCompleteMarker = messages.some(
-    (m) => m.role === "assistant" && hasImplComplete(m.content),
+  // Streaming-중인 assistant 메시지의 중간 content 에 마커가 섞여 있어도 감지하지 않는다.
+  // `m.status === "done"` 이 된 뒤에야 완료 신호로 취급 (워크플로 버튼 조기 활성화 방지).
+  const doneAssistant = messages.filter(
+    (m) => m.role === "assistant" && m.status === "done",
   );
+  const markerNums = scanCompletedSubtasks(doneAssistant);
+  const hasImplCompleteMarker = doneAssistant.some((m) => hasImplComplete(m.content));
   const dbDoneNums = new Set(
     subtasks.filter((s) => s.status === "done").map((s) => s.idx + 1),
   );
