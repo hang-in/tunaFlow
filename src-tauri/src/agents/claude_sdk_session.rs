@@ -379,7 +379,6 @@ async fn spawn_session(
     let mut cmd = TokioCommand::new("claude");
     cmd.arg("--print")
         .arg("--sdk-url").arg(&sdk_url)
-        .arg("--session-id").arg(&session_id)
         .arg("--model").arg(model)
         .arg("--input-format").arg("stream-json")
         .arg("--output-format").arg("stream-json")
@@ -399,10 +398,16 @@ async fn spawn_session(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
-    // 이전 대화 이력이 있으면 --resume으로 이어받기
+    // `--session-id` vs `--resume` 상호배타 (claude CLI 2.1.x 제약).
+    //   - resume 있음: claude 가 prior session_id 를 이어받으므로 `--session-id` 생략
+    //   - resume 없음: `--session-id <router-uuid>` 로 신규 세션 식별자 부여
+    // WS routing 은 `sdk_url` 경로의 router UUID 기반이므로 claude 내부 session_id
+    // 와 무관하게 정상 동작. sessionContinuityFixPlan.md 의 hot fix (Architect 지시).
     if let Some(resume_id) = resume_session_id {
         cmd.arg("--resume").arg(resume_id);
-        eprintln!("[sdk-session] resuming with session_id={} model={}", resume_id, model);
+        eprintln!("[sdk-session] resuming with session_id={} model={} (--session-id 생략)", resume_id, model);
+    } else {
+        cmd.arg("--session-id").arg(&session_id);
     }
 
     let mut child = cmd
