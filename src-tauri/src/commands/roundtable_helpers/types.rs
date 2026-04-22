@@ -116,7 +116,15 @@ fn role_guidance(role: &str) -> &'static str {
                `{ \"id\": \"INV-N\", \"status\": \"pass|fail|cannot_verify\", \"evidence\": \"<file:line or reasoning>\" }`\n\
              - If ANY invariant_check is `fail`, verdict MUST be `fail`.\n\
              - If multiple invariants are `cannot_verify`, mark verdict `fail` and request proposer to add tests or\n\
-               narrow the invariant scope."
+               narrow the invariant scope.\n\
+             - **Regression check (required when prior review findings are provided):** emit a `regression_check`\n\
+               object with shape:\n\
+               `{ \"prev_findings_resolved\": [<finding_id>,...], \"newly_broken\": [<finding_id>,...],\n\
+                  \"notes\": \"<brief>\" }`\n\
+               - `prev_findings_resolved`: IDs from the previous round that are now fixed.\n\
+               - `newly_broken`: IDs that previously PASSED but now regressed (MUST include them when detected).\n\
+               - Put `newly_broken` entries at the top of your findings list — they are the highest priority.\n\
+               - If `newly_broken` is non-empty, verdict MUST be `fail` regardless of other scores."
         }
         "verifier" | "judge" => {
             "**Verifier guidelines:**\n\
@@ -133,7 +141,17 @@ fn role_guidance(role: &str) -> &'static str {
              - Final verdict must be consistent with the vote tally across participants.\n\
              - If no clear consensus exists, state that explicitly rather than forcing agreement.\n\
              - If any participant's invariant_check status is `fail`, final verdict MUST be `fail` regardless of\n\
-               dimension scores."
+               dimension scores.\n\
+             - **Divergence detection (when prior rounds are provided in context):** count how many consecutive\n\
+               rounds the SAME finding category (e.g. `defect_type: \"deadlock\"`) has been reported without\n\
+               resolution. Emit a `divergence` object with shape:\n\
+               `{ \"repeated_category\": \"<name>\", \"consecutive_rounds\": <N>,\n\
+                  \"recommend_escalate\": <bool> }`\n\
+               - Set `recommend_escalate: true` when `consecutive_rounds` >= 3.\n\
+               - When `recommend_escalate` is true, override the final verdict to `escalate_to_human` and state\n\
+                 the reason explicitly in the verdict notes.\n\
+             - **Regression honoring:** if any reviewer's `regression_check.newly_broken` is non-empty, final\n\
+               verdict MUST be `fail` and the synthesizer summary MUST list the regressed findings first."
         }
         _ => "",
     }
@@ -364,5 +382,91 @@ mod tests {
         let p = make_participant("Other", Some("claude"), false, Some("commentator"));
         let id = participant_identity(&p);
         assert!(!id.contains("invariant"), "unknown roles must not inherit invariant guidance");
+    }
+
+    // ─── Divergence + Regression (Phase 2 of harnessVerificationGapPlan) ───────
+
+    #[test]
+    fn reviewer_guidance_requires_regression_check() {
+        let p = make_participant("Reviewer", Some("codex"), false, Some("reviewer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("regression_check"), "reviewer must emit regression_check object");
+        assert!(id.contains("prev_findings_resolved"), "reviewer must list prev_findings_resolved");
+        assert!(id.contains("newly_broken"), "reviewer must list newly_broken");
+    }
+
+    #[test]
+    fn reviewer_newly_broken_forces_verdict_fail() {
+        let p = make_participant("Reviewer", Some("codex"), false, Some("reviewer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("newly_broken` is non-empty, verdict MUST be `fail`")
+                || id.contains("newly_broken is non-empty"),
+            "reviewer guidance must force verdict=fail when regression detected"
+        );
+    }
+
+    #[test]
+    fn critic_alias_also_has_regression_check() {
+        let p = make_participant("Critic", Some("codex"), false, Some("critic"));
+        let id = participant_identity(&p);
+        assert!(id.contains("regression_check"), "critic alias must also have regression_check");
+    }
+
+    #[test]
+    fn synthesizer_guidance_has_divergence_detection() {
+        let p = make_participant("Synth", Some("claude"), false, Some("synthesizer"));
+        let id = participant_identity(&p);
+        assert!(id.contains("divergence"), "synthesizer must detect divergence");
+        assert!(id.contains("repeated_category"), "synthesizer must name the repeated category");
+        assert!(id.contains("consecutive_rounds"), "synthesizer must count consecutive rounds");
+        assert!(id.contains("recommend_escalate"), "synthesizer must emit recommend_escalate");
+    }
+
+    #[test]
+    fn synthesizer_escalates_after_three_rounds() {
+        let p = make_participant("Synth", Some("claude"), false, Some("synthesizer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains(">= 3") || id.contains("N >= 3") || id.contains("consecutive_rounds` >= 3"),
+            "synthesizer must escalate at 3+ consecutive rounds"
+        );
+        assert!(
+            id.contains("escalate_to_human"),
+            "synthesizer must override verdict to escalate_to_human on divergence"
+        );
+    }
+
+    #[test]
+    fn synthesizer_honors_regression_newly_broken() {
+        let p = make_participant("Synth", Some("claude"), false, Some("synthesizer"));
+        let id = participant_identity(&p);
+        assert!(
+            id.contains("newly_broken"),
+            "synthesizer must honor reviewer's newly_broken"
+        );
+        assert!(
+            id.contains("regressed findings first") || id.contains("regressed"),
+            "synthesizer summary must list regressed findings first"
+        );
+    }
+
+    #[test]
+    fn lead_alias_also_has_divergence_detection() {
+        let p = make_participant("Lead", Some("claude"), false, Some("lead"));
+        let id = participant_identity(&p);
+        assert!(id.contains("divergence"), "lead alias must also have divergence guidance");
+    }
+
+    #[test]
+    fn non_synthesizer_roles_do_not_have_divergence_guidance() {
+        // divergence detection is the synthesizer's job specifically; other roles should not be told to do it
+        let p = make_participant("P", Some("claude"), false, Some("proposer"));
+        let id = participant_identity(&p);
+        assert!(!id.contains("divergence"), "proposer must not inherit divergence guidance");
+
+        let r = make_participant("R", Some("codex"), false, Some("reviewer"));
+        let id_r = participant_identity(&r);
+        assert!(!id_r.contains("divergence"), "reviewer must not inherit divergence guidance");
     }
 }
