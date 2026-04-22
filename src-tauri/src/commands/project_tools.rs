@@ -392,6 +392,13 @@ After the plan is promoted, write documents directly in `docs/plans/`:
 - `{slug}-task-02.md` — Subtask 2 work instruction
 - Continue for each subtask
 
+**`{slug}` is not something you invent.** The ContextPack `## Active Plan` section
+includes `> **Plan slug (canonical):** `<value>`` — use that value verbatim.
+Do not abbreviate, truncate, or re-slugify the plan title yourself. tunaFlow
+(Reviewer context loader, result/review report writers) reads file names back
+using this exact slug; any deviation — including a stray trailing `-` — means
+your task files will be invisible to downstream agents.
+
 Each task file MUST contain:
 1. **Changed files** — exact paths verified against the codebase (new files: state explicitly)
 2. **Change description** — what to add/modify/remove and why
@@ -411,6 +418,11 @@ When you need to explore the codebase before designing:
 - `<!-- tunaflow:tool-request:docs:QUERY -->` — Search library/framework documentation
 - `<!-- tunaflow:tool-request:rawq:QUERY -->` — Search project codebase
 - `<!-- tunaflow:tool-request:graph:PATTERN TARGET -->` — Query code graph (callers_of, tests_for, etc.)
+
+Tiered message inspection (when `recent_turns` truncated a message you need to verify):
+- `<!-- tunaflow:tool-request:probe_message:MESSAGE_ID -->` — ~1 KB metadata probe (length + head/tail previews). Confirms DB has full content before you pay for the body.
+- `<!-- tunaflow:tool-request:fetch_slice:MESSAGE_ID:OFFSET:LEN -->` — Read a `[offset, offset+len)` char slice. LEN capped at 16 000.
+- `<!-- tunaflow:tool-request:full_message:MESSAGE_ID -->` — Entire content with no truncation. Heaviest — prefer probe/slice unless you really need the whole thing.
 
 tunaFlow will execute the request and provide results in the next turn.
 Include markers at the END of your response, after your main content.
@@ -482,6 +494,11 @@ When you need information during implementation:
 - `<!-- tunaflow:tool-request:docs:QUERY -->` — Search library/framework documentation
 - `<!-- tunaflow:tool-request:rawq:QUERY -->` — Search project codebase
 - `<!-- tunaflow:tool-request:graph:callers_of TARGET -->` — Find what calls a function
+
+Tiered message inspection (when a message appeared cut in `recent_turns`):
+- `<!-- tunaflow:tool-request:probe_message:MESSAGE_ID -->` — metadata + head/tail (~1 KB)
+- `<!-- tunaflow:tool-request:fetch_slice:MESSAGE_ID:OFFSET:LEN -->` — slice (LEN ≤ 16 000)
+- `<!-- tunaflow:tool-request:full_message:MESSAGE_ID -->` — full content (heavy)
 
 Include markers at the END of your response, after your main content.
 
@@ -562,3 +579,49 @@ When reviewing after rework:
 - **Result report is auto-generated**: Never judge `*-result.md` quality.
 - **Findings vs Recommendations**: Only actual defects go in findings. Everything else goes in recommendations.
 "#;
+
+
+// ─── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Guard against silent drift — scaffold templates ship features that
+    // live git files depend on. If these lines are removed from the const,
+    // every project selection overwrites the tracked doc with a stale copy.
+
+    #[test]
+    fn architect_template_includes_slug_canonical_rule() {
+        assert!(ARCHITECT_TEMPLATE.contains("Plan slug (canonical)"),
+            "architect template must preserve the canonical-slug rule");
+        assert!(ARCHITECT_TEMPLATE.contains("is not something you invent"),
+            "architect template must warn against re-slugifying");
+    }
+
+    #[test]
+    fn architect_template_includes_tiered_message_tools() {
+        assert!(ARCHITECT_TEMPLATE.contains("probe_message:MESSAGE_ID"),
+            "architect template must expose probe_message tool-request");
+        assert!(ARCHITECT_TEMPLATE.contains("fetch_slice:MESSAGE_ID"),
+            "architect template must expose fetch_slice tool-request");
+        assert!(ARCHITECT_TEMPLATE.contains("full_message:MESSAGE_ID"),
+            "architect template must expose full_message tool-request");
+    }
+
+    #[test]
+    fn developer_template_includes_tiered_message_tools() {
+        assert!(DEVELOPER_TEMPLATE.contains("probe_message:MESSAGE_ID"),
+            "developer template must expose probe_message tool-request");
+        assert!(DEVELOPER_TEMPLATE.contains("fetch_slice:MESSAGE_ID"),
+            "developer template must expose fetch_slice tool-request");
+        assert!(DEVELOPER_TEMPLATE.contains("full_message:MESSAGE_ID"),
+            "developer template must expose full_message tool-request");
+    }
+
+    #[test]
+    fn reviewer_template_not_empty() {
+        assert!(!REVIEWER_TEMPLATE.is_empty());
+        assert!(REVIEWER_TEMPLATE.contains("Reviewer"));
+    }
+}
