@@ -4,7 +4,7 @@
 > 성격: 구현 확정된 plan으로 가기 전의 탐색·설계·분석 메모. `status: idea` 가 기본.
 > 완료·해결된 idea는 `docs/archive/ideas/completed/` 로 이동.
 
-## 📄 활성 ideas (58개)
+## 📄 활성 ideas (59개)
 
 | 문서 | 요약 |
 |------|------|
@@ -58,6 +58,7 @@
 | [sdkAsInterfaceLayerIdea](./sdkAsInterfaceLayerIdea.md) | `sdkIntegrationIdea.md`는 SDK를 "유료 API를 직접 호출하는 수단"으로 봤다. 이 문서는 **API 키 없이도 SDK에서 얻을 수 있는 가치**에 집중한다. |
 | [sdkIntegrationIdea](./sdkIntegrationIdea.md) | — |
 | [seCallVectorStorageIdea](./seCallVectorStorageIdea.md) | seCall의 벡터 스토리지 선택지: |
+| [searchEnhancementFromSecallIdea](./searchEnhancementFromSecallIdea.md) | - tunaFlow 에서 "플랜" 으로 검색 → 문서(`docs/plans/*.md`) 매칭 실패. |
 | [smallModelStressTesterIdea](./smallModelStressTesterIdea.md) | **소형 모델(3B active)이 설계 취약점을 정직하게 노출한다.** |
 | [speedyClaudeToolOptimizationIdea](./speedyClaudeToolOptimizationIdea.md) | 터미널에서 파일 탐색/검색/치환에 기본 도구(find, grep, sed)를 쓰면 느리다. Modern CLI 도구로 10-64x 개선 가능. |
 | [tabSidebarRestructureIdea](./tabSidebarRestructureIdea.md) | — |
