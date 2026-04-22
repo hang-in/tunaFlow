@@ -296,6 +296,7 @@ pub fn run() {
 
             // Document Index (docs/ RAG)
             commands::document_index::index_project_docs,
+            commands::document_index::cleanup_project_stale_docs,
             commands::document_index::search_project_docs,
             commands::document_index::get_project_document_graph,
             commands::document_index::get_orphan_documents,
