@@ -454,13 +454,27 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
             }
         }
 
-        // 3. Vector indexing (rawq embed — skip if daemon not ready)
-        // Semaphore ensures only 1 ONNX embedding job runs at a time, preventing CPU spikes
-        // when multiple agents complete concurrently (e.g. RT or rapid sequential sends).
-        if crate::agents::rawq::is_daemon_ready() {
+        // 3. Vector indexing — 진단 차단 (2026-04-22).
+        //
+        // A1 write.lock 영구 starvation 의 주범 확인 실험: 여기만 임시로 끄고
+        // 다음 user turn 이 정상 진입하는지 검증. 지금까지 밝혀진 사실:
+        //   - post-completion global serialize 적용됨
+        //   - per-chunk lock + 100ms sleep 적용됨
+        //   - sample(1) 에서 모든 thread 가 lock() 에서 park, holder 안 보임
+        //     → 정상적 lock 경합으로 설명 안 되는 상태
+        //
+        // vector indexing 을 완전히 끄면 A1 이 정상 진입하는지 확인.
+        // → 진입 정상: vector indexing 이 주범 → 별도 background job 으로 분리
+        //                (post-completion 이 아닌 idle timer + fs watcher 기반)
+        // → 여전히 stuck: compression 또는 session link 경로 재수사
+        //
+        // 이 차단은 진단용. 재검증 후 결과에 따라 정식 재설계.
+        if std::env::var("TUNAFLOW_POST_COMPLETION_VECTOR")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+            && crate::agents::rawq::is_daemon_ready()
+        {
             let sem = embed_semaphore();
-            // try_acquire — if another thread is already embedding, skip this cycle.
-            // The next agent completion will re-index anyway (incremental, low overhead).
             let acquired = sem.try_acquire();
             if acquired.is_ok() {
                 match crate::commands::vector_search::index_chunks_blocking(&db, &conversation_id) {
@@ -468,10 +482,11 @@ pub fn spawn_post_completion_tasks(db: crate::db::DbState, conversation_id: Stri
                     Ok(_) => {}
                     Err(e) => eprintln!("[post-completion] vector indexing error: {}", e),
                 }
-                // acquired (SemaphorePermit) dropped here — releases semaphore
             } else {
                 eprintln!("[post-completion] embed semaphore busy, skipping indexing for {} (will catch up next completion)", cid_short);
             }
+        } else {
+            eprintln!("[post-completion] vector indexing DISABLED (diagnostic) for {}", cid_short);
         }
 
         // 4. Document re-indexing is NOT triggered here — too expensive for every agent completion.
