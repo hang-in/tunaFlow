@@ -97,14 +97,23 @@ pub fn restart_sdk_session(conversation_id: String) {
 }
 
 #[tauri::command]
-pub async fn prewarm_sdk_session(conversation_id: String, project_path: Option<String>, model: Option<String>) {
+pub async fn prewarm_sdk_session(
+    conversation_id: String,
+    project_path: Option<String>,
+    model: Option<String>,
+    state: State<'_, DbState>,
+) -> Result<(), ()> {
     if resolve_claude_mode(&conversation_id) == "sdk-url" {
+        // Bootstrap RESUME_IDS 메모리 레지스트리 — 앱 재시작 후 첫 접근 시
+        // `--resume` 연속성 회복 (sessionContinuityFixPlan task-02 / INV-4).
+        claude_sdk_session::bootstrap_resume_id_from_db(&conversation_id, state.inner());
         claude_sdk_session::prewarm_session(
             &conversation_id,
             project_path.as_deref(),
             model.as_deref(),
         ).await;
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -200,6 +209,15 @@ pub async fn start_claude_stream(
         });
     } else if use_sdk_url {
         // --sdk-url WS 세션: 구조화 JSON + 슬래시 커맨드 지원
+        //
+        // Bootstrap RESUME_IDS 메모리 레지스트리 (sessionContinuityFixPlan task-02).
+        // 앱 재시작 후 첫 send 에서 `--resume` 연속성을 회복. 이미 메모리에 있으면
+        // no-op. DB read 만 사용해 write 경합 없음.
+        //
+        // `db` 는 spawn_blocking 으로 이미 move 됐으므로 동일 scope 에 살아있는
+        // `db_post` 참조를 빌려 쓴다 (DbState 는 Arc 기반 clone 저렴, 참조만 사용).
+        claude_sdk_session::bootstrap_resume_id_from_db(&cid, &db_post);
+
         let cid2 = cid.clone();
         let db_p = db_post.clone();
         let aid = audit_session_id.clone();

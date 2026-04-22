@@ -133,6 +133,46 @@ lazy_static::lazy_static! {
     static ref RESUME_IDS: ResumeRegistry = Arc::new(PlMutex::new(HashMap::new()));
 }
 
+/// DB 의 `conversations.resume_token` 을 `RESUME_IDS` 메모리 레지스트리로 로드한다.
+///
+/// 앱 재시작 후 첫 send 시, `RESUME_IDS` 는 빈 상태여서 `get_or_create_session`
+/// 이 `--resume` 없이 fresh claude 세션을 스폰한다 → claude 는 이전 대화
+/// 맥락을 잃음. DB 에는 token 이 저장돼 있으므로 (finalize_engine_run 이
+/// `conversations.resume_token` 을 갱신), 이 bootstrap 으로 앱 생애주기 이후에도
+/// `--resume` 연속성 회복.
+///
+/// 이미 메모리에 있으면 no-op. DB read lock 만 사용 (write 경로 경합 없음).
+///
+/// **호출 지점**: `prewarm_sdk_session` / `start_claude_stream` Tauri command
+/// 입구 — `stream_run_sdk` / `prewarm_session` 을 부르기 전.
+///
+/// sessionContinuityFixPlan.md task-02 (INV-4).
+pub fn bootstrap_resume_id_from_db(conv_id: &str, db: &crate::db::DbState) -> Option<String> {
+    // 이미 메모리에 있으면 skip (DB 보다 메모리 값이 최신일 수 있음)
+    if let Some(existing) = RESUME_IDS.lock().get(conv_id).cloned() {
+        return Some(existing);
+    }
+    let conn = db.read.lock().ok()?;
+    let token: Option<String> = conn
+        .query_row(
+            "SELECT resume_token FROM conversations \
+             WHERE id = ?1 \
+               AND resume_token IS NOT NULL \
+               AND resume_token_engine IN ('claude','claude-code')",
+            [conv_id],
+            |row| row.get(0),
+        )
+        .ok();
+    if let Some(ref t) = token {
+        RESUME_IDS.lock().insert(conv_id.to_string(), t.clone());
+        eprintln!(
+            "[sdk-session] bootstrapped RESUME_IDS conv={} from DB resume_token",
+            conv_id
+        );
+    }
+    token
+}
+
 /// conversation_id에 대한 세션을 반환하거나 새로 생성한다.
 ///
 /// 모델이 변경된 경우 **프로세스를 재스폰하지 않고** WS로 `control_request(set_model)`을
@@ -900,5 +940,121 @@ mod tests {
             "claude-ws:router:abc" != "claude-ws:abc",
             "router fallback prefix 와 정상 prefix 는 달라야 함"
         );
+    }
+
+    // ─── task-02: DB bootstrap ──────────────────────────────────────────────
+
+    /// In-memory DbState helper — minimal schema + migration v22 수준 (conversations)
+    /// 만 올리고 conversations row 하나 삽입. 전체 migration (vec0 의존) 은 skip.
+    fn build_test_db_with_conversation(
+        conv_id: &str,
+        resume_token: Option<&str>,
+        engine: Option<&str>,
+    ) -> crate::db::DbState {
+        use std::sync::{Arc, Mutex};
+        let read = rusqlite::Connection::open_in_memory().unwrap();
+        read.execute_batch(
+            "CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                resume_token TEXT,
+                resume_token_engine TEXT
+             );",
+        )
+        .unwrap();
+        if let Some(tok) = resume_token {
+            read.execute(
+                "INSERT INTO conversations (id, resume_token, resume_token_engine) VALUES (?1, ?2, ?3)",
+                rusqlite::params![conv_id, tok, engine.unwrap_or("claude")],
+            )
+            .unwrap();
+        } else {
+            read.execute(
+                "INSERT INTO conversations (id, resume_token, resume_token_engine) VALUES (?1, NULL, NULL)",
+                rusqlite::params![conv_id],
+            )
+            .unwrap();
+        }
+        // write connection 은 bootstrap 이 touch 하지 않지만 DbState 구조 맞추기용
+        let write = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::DbState {
+            read: Arc::new(Mutex::new(read)),
+            write: Arc::new(Mutex::new(write)),
+        }
+    }
+
+    #[test]
+    fn bootstrap_loads_token_for_claude_engine() {
+        let conv = unique_conv("bootstrap-claude");
+        RESUME_IDS.lock().remove(&conv);
+        let db = build_test_db_with_conversation(&conv, Some("claude-sess-FROM-DB"), Some("claude"));
+
+        let got = bootstrap_resume_id_from_db(&conv, &db);
+        assert_eq!(got.as_deref(), Some("claude-sess-FROM-DB"));
+        assert_eq!(
+            RESUME_IDS.lock().get(&conv).cloned().as_deref(),
+            Some("claude-sess-FROM-DB")
+        );
+
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn bootstrap_accepts_claude_code_engine_label() {
+        // finalize_engine_run 은 engine_key="claude-code" 로 resume_token_engine 을
+        // 저장한다. bootstrap 쿼리는 IN ('claude','claude-code') 로 이를 수용해야.
+        let conv = unique_conv("bootstrap-cc");
+        RESUME_IDS.lock().remove(&conv);
+        let db = build_test_db_with_conversation(&conv, Some("sess-CC"), Some("claude-code"));
+
+        let got = bootstrap_resume_id_from_db(&conv, &db);
+        assert_eq!(got.as_deref(), Some("sess-CC"));
+
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn bootstrap_is_noop_when_memory_has_value() {
+        let conv = unique_conv("bootstrap-noop");
+        RESUME_IDS.lock().insert(conv.clone(), "MEM-WINS".into());
+        let db = build_test_db_with_conversation(&conv, Some("DB-LOSES"), Some("claude"));
+
+        let got = bootstrap_resume_id_from_db(&conv, &db);
+        assert_eq!(got.as_deref(), Some("MEM-WINS"), "메모리 값이 있으면 DB 는 무시");
+
+        RESUME_IDS.lock().remove(&conv);
+    }
+
+    #[test]
+    fn bootstrap_skips_non_claude_engine() {
+        let conv = unique_conv("bootstrap-codex");
+        RESUME_IDS.lock().remove(&conv);
+        let db = build_test_db_with_conversation(&conv, Some("codex-sess-X"), Some("codex"));
+
+        let got = bootstrap_resume_id_from_db(&conv, &db);
+        assert!(got.is_none(), "codex engine 의 token 은 claude bootstrap 대상 아님");
+        assert!(RESUME_IDS.lock().get(&conv).is_none());
+    }
+
+    #[test]
+    fn bootstrap_skips_when_resume_token_null() {
+        let conv = unique_conv("bootstrap-null");
+        RESUME_IDS.lock().remove(&conv);
+        let db = build_test_db_with_conversation(&conv, None, None);
+
+        let got = bootstrap_resume_id_from_db(&conv, &db);
+        assert!(got.is_none());
+        assert!(RESUME_IDS.lock().get(&conv).is_none());
+    }
+
+    #[test]
+    fn bootstrap_noop_when_conversation_missing() {
+        let conv = unique_conv("bootstrap-missing");
+        RESUME_IDS.lock().remove(&conv);
+        // 다른 conv_id 로 DB 생성 — 찾으려는 conv 는 DB 에 없음
+        let db = build_test_db_with_conversation("other-conv", Some("tok"), Some("claude"));
+
+        let got = bootstrap_resume_id_from_db(&conv, &db);
+        assert!(got.is_none());
+        assert!(RESUME_IDS.lock().get(&conv).is_none());
     }
 }
