@@ -160,6 +160,13 @@ pub fn assemble_prompt(
         included_sections.push("previous-impl".into());
     }
 
+    // User Worldview — 사용자 stance 문서. identity 바로 앞에 삽입 (INV-1).
+    // skip_static 에 영향받지 않음: 파일 기반이지만 CLAUDE.md/AGENTS.md 에 sync 되지 않는 별도 경로.
+    if let Some(worldview_text) = crate::commands::worldview::load_for_injection(data.project_path.as_deref()) {
+        sections.push(format!("## User Worldview\n\n{}", worldview_text));
+        included_sections.push("worldview".into());
+    }
+
     // Identity + Persona section
     {
         let (identity_block, persona_block) = parse_identity_and_persona(identity_fragment);
@@ -660,4 +667,94 @@ pub fn build_normalized_prompt_with_budget(
         context_mode_override, context_budget_cap, user_profile_json,
     );
     assemble_prompt(&data, persona_fragment)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn empty_context_data(project_path: Option<String>) -> ContextData {
+        ContextData {
+            conversation_id: "conv-test".into(),
+            project_path,
+            prompt: "hi".into(),
+            is_branch: false,
+            has_active_plan: false,
+            current_messages: vec![],
+            parent_messages: vec![],
+            plan_section: None,
+            plan_document: None,
+            findings_section: None,
+            artifacts_section: None,
+            retrieval_chunks: vec![],
+            document_chunks: vec![],
+            compressed_memory: None,
+            compressed_memory_source: None,
+            cross_session_data: vec![],
+            thread_inheritance: None,
+            agent_role_doc: None,
+            previous_impl_status: None,
+            active_skills: vec![],
+            cross_session_ids: vec![],
+            persona_fragment: None,
+            context_mode_override: None,
+            context_budget_cap: None,
+            user_profile: None,
+            conventions_synced: false,
+            is_session_continuation: false,
+        }
+    }
+
+    /// INV-1 (userWorldviewInjectionPlan-task-01): worldview 는 identity 바로 앞.
+    /// project/platform/agent-role 은 worldview 앞에 유지.
+    #[test]
+    fn worldview_injected_immediately_before_identity() {
+        let tmp = TempDir::new().unwrap();
+        let project_dir = tmp.path().to_path_buf();
+        let wv_path = project_dir.join(".tunaflow").join("user_worldview.md");
+        fs::create_dir_all(wv_path.parent().unwrap()).unwrap();
+        fs::write(&wv_path, "# stance\n\n본 사용자는 CLI-first 원칙을 따른다.").unwrap();
+
+        let data = empty_context_data(Some(project_dir.to_string_lossy().to_string()));
+        let identity_fragment = "## Identity\n\ntunaFlow test agent.";
+        let (_assembled, _sys, meta) = assemble_prompt(&data, Some(identity_fragment));
+
+        let idx_worldview = meta.sections.iter().position(|s| s == "worldview");
+        let idx_identity = meta.sections.iter().position(|s| s == "identity");
+
+        assert!(idx_worldview.is_some(), "worldview 섹션이 주입되어야 함");
+        assert!(idx_identity.is_some(), "identity 섹션은 항상 존재");
+        assert_eq!(
+            idx_worldview.unwrap() + 1,
+            idx_identity.unwrap(),
+            "worldview 는 identity 바로 앞이어야 함 (INV-1)"
+        );
+
+        // project/platform/agent-role 은 worldview 앞에 있어야 함 (단, 이 테스트에선 agent-role 없음)
+        let idx_platform = meta.sections.iter().position(|s| s == "platform");
+        if let Some(p) = idx_platform {
+            assert!(p < idx_worldview.unwrap(), "platform 은 worldview 앞");
+        }
+    }
+
+    #[test]
+    fn worldview_absent_when_file_missing() {
+        let tmp = TempDir::new().unwrap();
+        let project_dir = tmp.path().to_path_buf();
+        // 파일 생성 안 함
+        let data = empty_context_data(Some(project_dir.to_string_lossy().to_string()));
+        let (_assembled, _sys, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+
+        // 전역 ~/.tunaflow/user_worldview.md 가 실제 머신에 있으면 "worldview" 가 있을 수 있음.
+        // 그 경우도 identity 바로 앞이라는 INV-1 은 유지되어야 함.
+        if let Some(idx_wv) = meta.sections.iter().position(|s| s == "worldview") {
+            let idx_id = meta.sections.iter().position(|s| s == "identity").unwrap();
+            assert_eq!(idx_wv + 1, idx_id, "global worldview 도 identity 바로 앞이어야 함");
+        } else {
+            // worldview 없으면 identity 는 여전히 존재
+            assert!(meta.sections.iter().any(|s| s == "identity"));
+        }
+    }
 }

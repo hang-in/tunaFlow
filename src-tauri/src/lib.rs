@@ -278,6 +278,12 @@ pub fn run() {
             commands::attachments::save_attachment,
             commands::attachments::delete_attachment,
             commands::attachments::cleanup_attachments,
+            // Worldview — 사용자 stance 파일 + ContextPack 주입 토글
+            commands::worldview::get_worldview,
+            commands::worldview::get_worldview_path,
+            commands::worldview::set_worldview,
+            commands::worldview::get_worldview_enabled,
+            commands::worldview::set_worldview_enabled,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

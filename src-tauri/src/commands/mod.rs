@@ -40,3 +40,4 @@ pub mod mobile;
 pub mod pty;
 pub mod secrets;
 pub mod attachments;
+pub mod worldview;
