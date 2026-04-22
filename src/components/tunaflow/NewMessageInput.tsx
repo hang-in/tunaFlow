@@ -518,7 +518,12 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
           disabled={!selectedConversationId}
           rows={1}
           className={cn(
-            "w-full px-2.5 py-2 text-[13px] bg-transparent resize-none outline-none text-foreground placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-40 transition-colors",
+            // `focus:outline-none` + `focus-visible:outline-none` 명시 — macOS
+            // 기본 textarea focus outline 과 Tailwind v4 `@layer base { * {
+            // outline-ring/50 }}` 가 겹쳐서 파란 테두리가 다시 나타나는 회귀
+            // (2026-04-22 사용자 제보). `outline-none` 만으로는 state-
+            // specific rule 이 override 할 수 있어 전부 명시적으로 해제.
+            "w-full px-2.5 py-2 text-[13px] bg-transparent resize-none outline-none focus:outline-none focus-visible:outline-none text-foreground placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-40 transition-colors",
             isDragOver && "ring-2 ring-primary/40 rounded",
           )}
         />
