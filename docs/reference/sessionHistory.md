@@ -316,12 +316,33 @@ description: 세션별 전체 작업 이력. 새 세션 시작 시 또는 과거
 - Auto Fix → 메타에이전트 도입 후 구현으로 연기, 문서 업데이트
 - CLAUDE.md 경량화 (53KB → sessionHistory.md 분리)
 
-### 🐞 Incident 2026-04-23: SDK 30s connect timeout (sessionContinuityFixPlan followup)
-- **증상**: Branch Dev → Reviewer → Dev 수정 페이즈 진입 시 `sdk-session: claude did not connect within 30s`
-- **발견 시점**: PR #132~#134 (Session Continuity Fix) 머지 후 최초 사용자 재현
-- **로그 단서**: `[sdk-session] resuming with session_id=2d86ea63-...` → 30006ms 후 guardrail err. model=claude-sonnet-4-6, prompt_chars=25561
-- **현재 상태**: 원인 미확정. 4개 가설 (stderr null / `--session-id` vs `--resume` 인자 충돌 / conv_id 전환 오배선 / 대형 트랜스크립트 로드 지연)
-- **대응 (완료)**: stderr 캡처 임시 패치 (`[claude-cli stderr conv=...] ...` eprintln) + escape hatch (`TUNAFLOW_DISABLE_RESUME_BOOTSTRAP=1`) 적용. 근본 수정 후 두 패치 모두 제거 예정
-- **claude CLI**: 2.1.117 (Claude Code)
-- **다음**: 사용자 재현 → stderr 로그 Architect 공유 → 가설 확정 → plan 작성 → 근본 수정
-- **영향**: userWorldviewInjectionPlan subtask-02 (DB v46 migration) 머지는 본 이슈 해결 후 진행 권고 (Architect 의견)
+### ✅ 세션 39 (2026-04-23): SDK hot fix + Codex review 루프 + designReviewGate 제안
+
+**SDK 30s timeout hot fix (Session Continuity Fix followup)**
+- 증상: Branch Dev → Reviewer → Dev 진입 시 `sdk-session: claude did not connect within 30s`
+- 가설 4건 중 #2 확정 — claude CLI 2.1.117 의 `--session-id <uuid>` / `--resume <sid>` 인자 상호배타
+- PR #135 (stderr capture + `TUNAFLOW_DISABLE_RESUME_BOOTSTRAP` escape hatch, TEMP)
+- PR #137 (hot fix): resume 있음 → `--session-id` 생략 / 없음 → `--session-id` 만
+- 영향 범위: `claude_sdk_session::spawn_session` 한 곳. RT (`-p` one-shot) 경로 미접촉
+- stderr/escape hatch 는 근본 수정 확정 후 제거 PR 대기
+
+**Session Continuity Fix 머지 완료**
+- PR #130 (Architect followup prompt), #131 (Plan + 3 subtasks), #134 (task-03 auto-invalidate)
+- INV-1~7 전원 해소. `current_session_key` RESUME_IDS 우선 + `promote_pending_to_delivered` live 우선 + bootstrap + auto-invalidate
+- Rust 403 tests 통과
+
+**Architect 산출물 수용**
+- designReviewGatePlan + 3 subtasks (P1): Plan 승인 시 Architect↔Codex RT 경로
+- roleAssignmentCoverageUxPlan + 2 subtasks (P2): Settings 역할 커버리지 UX
+- userWorldviewInjectionPlan + 4 subtasks (P1): Identity/Interface/Continuity 3축
+- searchPipelineFromSecallPlan-part2 + 5 subtasks: Codex 3-round 리뷰 반영 정제
+- PR #136: userWorldviewInjectionPlan scope 를 sdk-session(Branch) 한정으로 명시
+- PR #138: userWorldviewInjectionPlan round-1 리뷰 반영 (BLOCKER 3 + MAJOR 3 + MINOR 1 resolved)
+
+**orphan 프로세스 정리**
+- 며칠에 걸쳐 누적된 codex app-server/exec 40+건 TERM 정리
+
+**다음**
+- SDK hot fix 사용자 재현 검증 → stderr 로그 확인
+- userWorldview Codex round-2 결과 → pass 시 01→02→03→04 구현 착수
+- TEMP 제거 PR (stderr null 원복 + escape hatch 제거)
