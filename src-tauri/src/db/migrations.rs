@@ -154,6 +154,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     if current < 43 {
         apply_v43(conn)?;
     }
+    if current < 44 {
+        apply_v44(conn)?;
+    }
     Ok(())
 }
 
@@ -1046,6 +1049,32 @@ fn apply_v43(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v44 — `query_cache` 테이블 추가.
+///
+/// Phase A (searchPipelineFromSecallPlan §4): query expansion 결과 캐싱.
+/// secall 의 `query_expand.rs` 는 Claude Haiku subprocess 호출로 쿼리를 확장
+/// 하는데 매번 ~1-2초 걸림. 같은 쿼리가 반복되는 경우가 많으므로 7일 캐시로
+/// 대부분의 호출을 원천 차단한다.
+///
+/// - `query` (PK): 원본 쿼리 (정규화: trim + lowercase)
+/// - `expanded`: 확장된 키워드 문자열 (공백 구분)
+/// - `cached_at`: 캐시 생성 시각 (7일 TTL 계산용)
+fn apply_v44(conn: &Connection) -> Result<(), AppError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS query_cache (
+            query      TEXT PRIMARY KEY,
+            expanded   TEXT NOT NULL,
+            cached_at  INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_query_cache_cached_at ON query_cache(cached_at);",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (44, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1149,5 +1178,64 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1, "schema_version must record v43 application");
+    }
+
+    // ─── v44 — query_cache ──────────────────────────────────────────────────
+
+    fn open_with_v44_only() -> Connection {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(schema::CREATE_SCHEMA_VERSION).expect("schema_version");
+        apply_v44(&conn).expect("apply_v44");
+        conn
+    }
+
+    #[test]
+    fn v44_creates_query_cache() {
+        let conn = open_with_v44_only();
+        assert!(table_exists(&conn, "query_cache"), "v44 must create query_cache");
+    }
+
+    #[test]
+    fn v44_schema_has_expected_columns() {
+        let conn = open_with_v44_only();
+        let mut stmt = conn.prepare("PRAGMA table_info(query_cache)").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        for expected in ["query", "expanded", "cached_at"] {
+            assert!(cols.contains(&expected.to_string()),
+                "column {} missing, cols={:?}", expected, cols);
+        }
+    }
+
+    #[test]
+    fn v44_query_is_primary_key() {
+        let conn = open_with_v44_only();
+        // Enable FK checks so PK violations surface consistently.
+        conn.execute(
+            "INSERT INTO query_cache (query, expanded, cached_at) VALUES ('k', 'v', 1)",
+            [],
+        )
+        .unwrap();
+        let err = conn.execute(
+            "INSERT INTO query_cache (query, expanded, cached_at) VALUES ('k', 'v2', 2)",
+            [],
+        );
+        assert!(err.is_err(), "second insert of same query PK must fail");
+    }
+
+    #[test]
+    fn v44_records_schema_version() {
+        let conn = open_with_v44_only();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=44",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

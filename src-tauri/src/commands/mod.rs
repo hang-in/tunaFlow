@@ -29,6 +29,7 @@ pub mod project_onboarding;
 pub mod projects;
 pub mod roundtable;
 pub mod roundtable_helpers;
+pub mod search;
 pub mod session_discovery;
 pub mod skills;
 pub mod test_runner;

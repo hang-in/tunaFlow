@@ -385,6 +385,18 @@ pub fn search_messages(
     limit: Option<i64>,
     state: State<DbState>,
 ) -> Result<Vec<SearchResult>, AppError> {
+    // Phase A: query expansion (opt-in via TUNAFLOW_QUERY_EXPANSION). The
+    // function is a no-op when the flag is off, so feeding the result into the
+    // FTS query is safe in all configurations. The write lock is used here
+    // because the cache is a writable table (INSERT on miss). On a cache hit
+    // the function never writes, so the common path stays fast.
+    let effective_query = if super::search::query_expansion_enabled() {
+        let write = state.write.lock().map_err(|_| AppError::Lock)?;
+        super::search::expand_query(&query, Some(&*write)).unwrap_or_else(|_| query.clone())
+    } else {
+        query.clone()
+    };
+
     let conn = state.read.lock().map_err(|_| AppError::Lock)?;
     let max = limit.unwrap_or(20);
 
@@ -402,7 +414,7 @@ pub fn search_messages(
     )?;
 
     let results = stmt
-        .query_map(params![query, project_key, max], |row| {
+        .query_map(params![effective_query, project_key, max], |row| {
             Ok(SearchResult {
                 message_id: row.get(0)?,
                 conversation_id: row.get(1)?,
