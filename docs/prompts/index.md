@@ -1,120 +1,27 @@
 # Prompts
 
-Opus/Claude에 전달하는 실행 지시문, hand-off 문서, 초기 구현 프롬프트.
+> 갱신: 2026-04-22 (docs/reorg-phase-a 작업)
+> 대부분의 one-time 실행 프롬프트는 `docs/archive/prompts/` 로 이동.
 
-- [dataModelPrompt](./dataModelPrompt.md): 데이터 모델 정리/생성용 프롬프트
-- [firstImplementationPrompt](./firstImplementationPrompt.md): 초기 구현 지시문
-- [handoffMaster](./handoffMaster.md): 신규 작업자 온보딩/핸드오프 문서
-- [mobileRedesignClaudeDesignPrompt](./mobileRedesignClaudeDesignPrompt.md): claude.ai/design 용 tunaFlow 모바일 재설계 지시 프롬프트 (이전 mobileDesignPrompt 대체)
-- [harnessEngineeringAdoptionPrompt](./harnessEngineeringAdoptionPrompt.md): tunaFlow에 harness engineering을 단계적으로 적용하기 위한 상세 실행 프롬프트
-- [messagePairDeletionPrompt](./messagePairDeletionPrompt.md): 일반 chat conversation에서 user+assistant 인접 메시지 쌍을 삭제하는 실행 프롬프트
-- [messageSearchAdoptionPrompt](./messageSearchAdoptionPrompt.md): tunaDish의 FTS 검색 UX를 참고해 tunaFlow의 Rust DB 레이어에 메시지 검색을 붙이는 실행 프롬프트
-- [panelDrawerUxPrompt](./panelDrawerUxPrompt.md): 패널 리사이즈, overlay thread/RT drawer, 우측 workspace panel 재설계를 위한 실행 프롬프트
-- [rawqIntegrationPrompt](./rawqIntegrationPrompt.md): tunaFlow에 실제 rawq CLI를 도입하기 위한 Phase 1 실행 프롬프트
-- [rawqRequiredSidecarPrompt](./rawqRequiredSidecarPrompt.md): rawq를 optional fallback이 아니라 필수 sidecar로 전환하기 위한 실행 프롬프트
-- [roundtableCreationConfigPrompt](./roundtableCreationConfigPrompt.md): RT 생성 dialog에서 고른 participant/mode/model을 첫 실행에 실제 연결하는 프롬프트
-- [scalabilityRefactorPrompt](./scalabilityRefactorPrompt.md): 확장 대비 리팩토링을 `chatStore`부터 단계적으로 진행하는 실행 프롬프트
-- [sidebarThreeSectionPrompt](./sidebarThreeSectionPrompt.md): 좌측 Sidebar를 Chats / Branches & RT / Files 3섹션 구조로 재구성하는 Phase 1 실행 프롬프트
-- [threadContextInheritancePrompt](./threadContextInheritancePrompt.md): thread와 RT에 parent anchor/source/recent turns를 상속시키는 1차 구현 프롬프트
-- [workspacePanelRedesignPrompt](./workspacePanelRedesignPrompt.md): ContextPanel을 3모드 우선의 workflow형 workspace panel로 재구성하는 Phase 1 실행 프롬프트
+## 📂 구조
 
-- [backgroundAgentExecutionPrompt](./backgroundAgentExecutionPrompt.md): 장기 agent 실행을 background worker + event + DB 기반으로 전환하는 실행 프롬프트
-- [session19-handoff](./session19-handoff.md): HTTP API E2E 테스트 세션 핸드오프
-- [session20-handoff](./session20-handoff.md): 장기기억 자동 트리거 + main 머지 준비 핸드오프
-- [contextBudgetScalingPrompt](./contextBudgetScalingPrompt.md): ContextPack budget을 베타에서 단계적으로 상향 실험하기 위한 준비 프롬프트
-- [2026-03-28/skills_runtime_snapshot_all_vendors_prompt](./2026-03-28/skills_runtime_snapshot_all_vendors_prompt.md): _research/_skills 전체 vendor를 ~/.tunaflow/skills로 runtime snapshot 발행하는 실행 프롬프트
-- [2026-03-28/skills_snapshot_runtime_policy_prompt](./2026-03-28/skills_snapshot_runtime_policy_prompt.md): ~/.tunaflow/skills 운영 규칙 문서화 지시 프롬프트
-- [2026-03-28/claude_skill_activation_for_tunaflow_prompt](./2026-03-28/claude_skill_activation_for_tunaflow_prompt.md): 작업 유형별 skill 활성화 실행 프롬프트
-- [2026-03-28/claude_default_skill_loading_rule_prompt](./2026-03-28/claude_default_skill_loading_rule_prompt.md): Claude 기본 작업 규칙 — skill 먼저 읽고 진행하는 절차 프롬프트
-- [2026-03-28/claude_work_prompt_template_with_skill_rule](./2026-03-28/claude_work_prompt_template_with_skill_rule.md): Claude 작업용 기본 템플릿 — skill 먼저 읽는 규칙 내장
-- [2026-03-28/skills_ui_visibility_plan_prompt](./2026-03-28/skills_ui_visibility_plan_prompt.md): skills UI 가시화 계획 문서 작성을 위한 프롬프트
-- [2026-03-29/engine_feature_parity_master_prompt](./2026-03-29/engine_feature_parity_master_prompt.md): 4개 엔진 parity 작업을 순차 수행하고 단계별 상세 결과를 보고하게 하는 마스터 프롬프트
-- [2026-03-29/engine_feature_parity_wave1_correction_prompt](./2026-03-29/engine_feature_parity_wave1_correction_prompt.md): Wave 1 parity 결과의 남은 구멍을 보정하는 프롬프트
-- [2026-03-29/streaming_engine_parity_prompt](./2026-03-29/streaming_engine_parity_prompt.md): 4개 엔진 streaming UX/state parity를 별도 세션에서 진행하는 프롬프트
-- [2026-03-29/token_cost_tracking_engine_parity_prompt](./2026-03-29/token_cost_tracking_engine_parity_prompt.md): 4개 엔진 token/cost tracking parity를 별도 세션에서 진행하는 프롬프트
-- [2026-03-29/chat_markdown_codeblock_upgrade_prompt](./2026-03-29/chat_markdown_codeblock_upgrade_prompt.md): 채팅 Markdown/codeblock UX를 개선하기 위한 실행 프롬프트
-- [2026-03-29/chat_fileviewer_integration_prompt](./2026-03-29/chat_fileviewer_integration_prompt.md): 채팅 파일 경로 클릭 및 FileViewer 도입 프롬프트
-- [2026-03-29/chat_ui_parity_with_tunachat_master_prompt](./2026-03-29/chat_ui_parity_with_tunachat_master_prompt.md): Claude가 의견을 먼저 제시하고 단계적으로 채팅 UI parity 작업을 수행하게 하는 마스터 프롬프트
-- [2026-03-29/chat_virtualization_prompt](./2026-03-29/chat_virtualization_prompt.md): 긴 대화 virtualization 구현 프롬프트 (보류 — 성능 문제 체감 시 착수)
-- [2026-03-29/trace_panel_runtime_first_prompt](./2026-03-29/trace_panel_runtime_first_prompt.md): TracePanel을 runtime 대시보드로 전환하는 실행 프롬프트
-- [2026-03-29/trace_panel_runtime_metrics_cards_prompt](./2026-03-29/trace_panel_runtime_metrics_cards_prompt.md): TracePanel 실시간 경과 시간 + 엔진별 aggregate 카드 프롬프트
-- [2026-03-29/token_cost_tracking_engine_parity_prompt](./2026-03-29/token_cost_tracking_engine_parity_prompt.md): 4개 엔진 token/cost tracking parity 실행 프롬프트
-- [2026-03-29/new_session_handoff_with_codex_reference_prompt](./2026-03-29/new_session_handoff_with_codex_reference_prompt.md): 새 Claude 세션이 CLAUDE.md와 Codex 참고 문서를 함께 읽고 시작하게 하는 프롬프트
-- [2026-03-29/sidebar_workspace_hierarchy_prompt](./2026-03-29/sidebar_workspace_hierarchy_prompt.md): Sidebar에서 프로젝트 선택과 채팅 트리 위계를 분리하는 1차 프롬프트
-- [2026-03-29/artifacts_main_tab_memo_assist_prompt](./2026-03-29/artifacts_main_tab_memo_assist_prompt.md): Artifacts를 메인 탭으로 올리고 Memo를 보조 UX로 재배치하는 프롬프트
-- [2026-03-29/agent_profiles_settings_mvp_prompt](./2026-03-29/agent_profiles_settings_mvp_prompt.md): Settings > Agents를 실제 agent profile 관리 UI로 만드는 MVP 프롬프트
-- [2026-03-29/agent_profile_chat_input_binding_prompt](./2026-03-29/agent_profile_chat_input_binding_prompt.md): Agent Profile을 실제 채팅 입력과 실행 흐름에 연결하는 프롬프트
-- [2026-03-29/agent_profile_usage_polish_prompt](./2026-03-29/agent_profile_usage_polish_prompt.md): Agent Profile 선택 결과와 Custom 규칙을 더 명확히 보이게 하는 UX 보강 프롬프트
-- [2026-03-29/persona_baseline_review_prompt](./2026-03-29/persona_baseline_review_prompt.md): 기본 persona 6종 문서를 현재 Agent Profile 구조와 비교 검토하는 프롬프트
-- [2026-03-29/persona_runtime_binding_prompt](./2026-03-29/persona_runtime_binding_prompt.md): 선택된 persona를 실제 runtime prompt 조립과 applied persona 표시에 연결하는 프롬프트
-- [2026-03-29/applied_agent_config_visibility_prompt](./2026-03-29/applied_agent_config_visibility_prompt.md): assistant message에서 applied profile/persona/skills를 다시 보여주는 프롬프트
-- [2026-03-29/chops_context_hub_integration_review_prompt](./2026-03-29/chops_context_hub_integration_review_prompt.md): chops/context-hub/tunaFlow 역할 분리와 flow agent 선행 조건을 검토하는 프롬프트
-- [2026-03-30/knowledge_sources_settings_shell_prompt](./2026-03-30/knowledge_sources_settings_shell_prompt.md): Settings에 Knowledge Sources 섹션을 product shell로 먼저 추가하는 프롬프트
-- [2026-03-30/contextpack_visibility_ui_polish_prompt](./2026-03-30/contextpack_visibility_ui_polish_prompt.md): trace_log context metadata를 TracePanel/StatusBar에서 가독성 좋게 보여주는 UI polish 프롬프트
-- [2026-03-30/contextpack_compression_rawq_postprocess_prompt](./2026-03-30/contextpack_compression_rawq_postprocess_prompt.md): compression 품질 개선 + rawq 결과 후처리 실행 프롬프트
-- [2026-03-30/documentation_ia_governance_prompt](./2026-03-30/documentation_ia_governance_prompt.md): docs 탐색 규칙과 index 구조를 먼저 정리하는 프롬프트
-- [2026-03-30/document_versioning_policy_prompt](./2026-03-30/document_versioning_policy_prompt.md): reference/plan/prompt/brainstorm 문서의 버전관리 규칙을 정리하는 프롬프트
-- [2026-03-30/document_naming_rule_prompt](./2026-03-30/document_naming_rule_prompt.md): 파일명은 짧게, title/metas/index는 설명적으로 가는 규칙을 정리하는 프롬프트
-- [2026-03-30/runtime_settings_implementation_prompt](./2026-03-30/runtime_settings_implementation_prompt.md): Settings > Runtime을 실제 진단/설정 섹션으로 먼저 채우는 프롬프트
-- [2026-03-30/artifact_manual_promotion_mvp_prompt](./2026-03-30/artifact_manual_promotion_mvp_prompt.md): assistant 메시지에서 Artifact 수동 승격 흐름을 붙이는 프롬프트
-- [2026-03-30/artifacts_tab_usability_prompt](./2026-03-30/artifacts_tab_usability_prompt.md): Artifacts 탭에 필터/정렬/상세 보기를 추가하는 사용성 개선 프롬프트
-- [2026-03-30/artifact_detail_view_prompt](./2026-03-30/artifact_detail_view_prompt.md): Artifacts 탭에서 문서형 artifact를 읽는 상세 보기 프롬프트
-- [2026-03-30/artifact_provenance_workflow_prompt](./2026-03-30/artifact_provenance_workflow_prompt.md): Artifact 출처와 workflow 연결을 더 잘 보이게 하는 프롬프트
-- [2026-03-30/artifact_navigation_actions_prompt](./2026-03-30/artifact_navigation_actions_prompt.md): Artifact provenance를 실제 source/subtask navigation으로 연결하는 프롬프트
-- [2026-03-30/chat_search_fts_prompt](./2026-03-30/chat_search_fts_prompt.md): CenterPanel 검색 placeholder를 FTS 기반 메시지 검색으로 바꾸는 프롬프트
-- [2026-03-30/persona_behavior_validation_prompt](./2026-03-30/persona_behavior_validation_prompt.md): General/Reviewer/Tester persona가 실제 응답 차이로 이어지는지 검증하는 프롬프트
-- [2026-03-30/persona_handoff_validation_prompt](./2026-03-30/persona_handoff_validation_prompt.md): persona 비교와 agent handoff 검증을 분리해서 다시 수행하는 프롬프트
-- [2026-03-30/handoff_truncation_fix_prompt](./2026-03-30/handoff_truncation_fix_prompt.md): 긴 artifact/message handoff가 800자 제한에 막히지 않도록 보강하는 프롬프트
-- [2026-03-30/persona_cli_validation_prompt](./2026-03-30/persona_cli_validation_prompt.md): Claude CLI 실응답으로 General/Reviewer/Tester persona 차이를 검증하는 프롬프트
-- [2026-03-30/code_hygiene_pass_prompt](./2026-03-30/code_hygiene_pass_prompt.md): dead code 정리와 smoke test 복구를 현재 구조 기준으로 진행하는 프롬프트
-- [2026-03-30/token_cost_db_parity_prompt](./2026-03-30/token_cost_db_parity_prompt.md): token/cost를 DB 레벨에서 unavailable/unknown과 구분되게 보강하는 프롬프트
-- [2026-03-30/evaluation_ui_connection_prompt](./2026-03-30/evaluation_ui_connection_prompt.md): 기존 evaluation backend를 frontend UI에 연결하는 프롬프트
-- [2026-03-30/evaluation_under_test_prompt](./2026-03-30/evaluation_under_test_prompt.md): Evaluation UI를 메인 탭이 아니라 Test 하위 뷰로 재배치하는 프롬프트
-- [2026-03-30/evaluation_run_creation_ui_prompt](./2026-03-30/evaluation_run_creation_ui_prompt.md): Test > Evaluation에서 새 eval run을 시작하는 최소 생성 UI 프롬프트
-- [2026-03-30/evaluation_run_execution_linkage_prompt](./2026-03-30/evaluation_run_execution_linkage_prompt.md): 생성된 eval run에 실제 agent 결과를 채우는 실행 연결 프롬프트
-- [2026-03-30/evaluation_run_execution_real_wiring_prompt](./2026-03-30/evaluation_run_execution_real_wiring_prompt.md): placeholder eval execution을 실제 agent 실행 경로와 연결하는 프롬프트
-- [2026-03-30/evaluation_usability_pass_prompt](./2026-03-30/evaluation_usability_pass_prompt.md): Evaluation cancel/retry/result action 등 사용성 보강 프롬프트
-- [2026-03-30/git_sync_phase1_prompt](./2026-03-30/git_sync_phase1_prompt.md): git automation 없이 프로젝트/branch의 git 상태와 연결 정보를 보여주는 1차 프롬프트
-- [2026-03-30/git_branch_link_visibility_prompt](./2026-03-30/git_branch_link_visibility_prompt.md): branch별 linked git branch를 표시하고 수동 편집 가능하게 하는 프롬프트
-- [2026-03-30/git_branch_defaulting_prompt](./2026-03-30/git_branch_defaulting_prompt.md): branch 생성 시 linked git branch 기본값을 제안/채우는 프롬프트
-- [2026-03-30/git_sync_phase2_guarded_actions_prompt](./2026-03-30/git_sync_phase2_guarded_actions_prompt.md): 제한적인 git branch create/checkout만 안전하게 여는 2차 프롬프트
-- [2026-03-30/deferred_tech_reevaluation_prompt](./2026-03-30/deferred_tech_reevaluation_prompt.md): 보류/신규 기술 후보를 다시 분류해 다음 구현 라운드를 추천하는 프롬프트
-- [2026-03-30/context_stack_reevaluation_prompt](./2026-03-30/context_stack_reevaluation_prompt.md): ContextPack/context-hub/flow agent의 다음 구현 순서를 다시 좁히는 프롬프트
-- [2026-03-30/contextpack_p0_phase1_prompt](./2026-03-30/contextpack_p0_phase1_prompt.md): ContextPack P0의 1차로 section visibility와 compression 가시화를 먼저 진행하는 프롬프트
-- [2026-03-30/context_hub_source_policy_prompt](./2026-03-30/context_hub_source_policy_prompt.md): context-hub를 bundled/local/private source 중심으로 제한하는 정책 프롬프트
-- [2026-03-30/context_budget_control_ui_prompt](./2026-03-30/context_budget_control_ui_prompt.md): Runtime에서 Lite/Standard/Full과 total cap을 안전하게 조정하는 프롬프트
-- [2026-03-30/context_hub_minimal_integration_prompt](./2026-03-30/context_hub_minimal_integration_prompt.md): context-hub를 health/search/get 최소 경로로 실제 연결하는 프롬프트
-- [2026-03-30/context_hub_search_get_ui_prompt](./2026-03-30/context_hub_search_get_ui_prompt.md): context-hub search/get을 Settings에서 사용 가능하게 하는 UI 프롬프트
-- [2026-03-30/context_hub_explicit_handoff_prompt](./2026-03-30/context_hub_explicit_handoff_prompt.md): context-hub 문서를 현재 대화/아티팩트 흐름으로 명시적으로 넘기는 프롬프트
-- [2026-03-30/agent_identity_framing_prompt](./2026-03-30/agent_identity_framing_prompt.md): profile/engine/persona를 구분하는 자기 정체성 응답 규칙 프롬프트
-- [2026-03-30/agent_identity_validation_prompt](./2026-03-30/agent_identity_validation_prompt.md): identity framing이 실제 응답에서 일관되게 동작하는지 검증하는 프롬프트
-- [2026-03-30/message_author_attribution_prompt](./2026-03-30/message_author_attribution_prompt.md): 현재 speaker와 과거 message author를 분리해 설명하게 하는 프롬프트
-- [2026-03-30/long_term_memory_phase1_compression_prompt](./2026-03-30/long_term_memory_phase1_compression_prompt.md): recent window 밖의 대화를 compressed memory source로 유지하는 long-term memory 1차 프롬프트
-- [2026-03-30/compressed_memory_operational_polish_prompt](./2026-03-30/compressed_memory_operational_polish_prompt.md): compressed memory의 상태/실패/provenance/재압축 정책을 운영 가능한 수준으로 보강하는 프롬프트
-- [2026-03-30/structured_memory_source_strengthening_prompt](./2026-03-30/structured_memory_source_strengthening_prompt.md): plan/findings/artifacts/memo/cross-session를 장기기억용 structured memory source로 강화하는 프롬프트
-- [2026-03-30/contextpack_algorithm_phase1_prompt](./2026-03-30/contextpack_algorithm_phase1_prompt.md): Jaccard dedup, markdown 경량화, import collapse, rawq 다해상도 같은 저리스크 ContextPack 알고리즘 개선 프롬프트
-- [2026-03-30/conversation_retrieval_phase1_prompt](./2026-03-30/conversation_retrieval_phase1_prompt.md): 프로젝트 범위 과거 대화 chunk를 회수하는 conversation retrieval 최소 실험 프롬프트
-- [2026-03-30/conversation_retrieval_chunking_prompt](./2026-03-30/conversation_retrieval_chunking_prompt.md): retrieval 결과를 message 단건에서 pair/chunk 단위로 끌어올리는 프롬프트
-- [2026-03-30/conversation_retrieval_ranking_polish_prompt](./2026-03-30/conversation_retrieval_ranking_polish_prompt.md): retrieval chunk를 ranking/dedup/overlap suppression으로 더 적고 관련성 높게 다듬는 프롬프트
-- [2026-03-30/unified_memory_policy_phase1_prompt](./2026-03-30/unified_memory_policy_phase1_prompt.md): working/structured/compressed/retrieval memory를 하나의 selection policy로 통합하는 프롬프트
-- [2026-03-30/unified_memory_policy_threshold_tuning_prompt](./2026-03-30/unified_memory_policy_threshold_tuning_prompt.md): retrieval/compressed memory cutoff를 실제 사용 패턴에 맞게 조정하는 프롬프트
-- [2026-03-30/memory_policy_trace_surface_prompt](./2026-03-30/memory_policy_trace_surface_prompt.md): memory layer 포함/스킵/threshold 결과를 Trace/Runtime surface에서 읽기 쉽게 노출하는 프롬프트
-- [2026-03-30/memory_section_budget_breakdown_prompt](./2026-03-30/memory_section_budget_breakdown_prompt.md): 각 ContextPack section의 budget 기여도를 Trace/Runtime에서 읽게 하는 프롬프트
-- [2026-03-30/top_heavy_section_tuning_prompt](./2026-03-30/top_heavy_section_tuning_prompt.md): top budget consumer section 2~3개를 targeted tuning으로 줄이는 프롬프트
-- [2026-03-30/mode_specific_section_heuristics_prompt](./2026-03-30/mode_specific_section_heuristics_prompt.md): Lite/Standard/Full/Auto를 section 해상도까지 다른 context assembly profile로 정교화하는 프롬프트
-- [2026-03-30/auto_mode_heuristic_polish_prompt](./2026-03-30/auto_mode_heuristic_polish_prompt.md): Auto가 Lite/Standard/Full 중 적절한 profile을 설명 가능하게 선택하도록 다듬는 프롬프트
-- [2026-03-30/project_first_startup_ux_prompt](./2026-03-30/project_first_startup_ux_prompt.md): 프로젝트 선택부터 시작하는 최종 제품 진입 UX를 실제 startup flow로 옮기는 프롬프트
-- [2026-03-30/roundtable_completion_order_prompt](./2026-03-30/roundtable_completion_order_prompt.md): Deliberative RT의 reduce 병목을 completion-order collection으로 제거하는 프롬프트
-- [2026-03-30/roundtable_blind_verifier_phase_prompt](./2026-03-30/roundtable_blind_verifier_phase_prompt.md): sycophancy 방지를 위해 특정 participant를 blind verifier로 격리하는 RT 확장 프롬프트
-- [2026-03-30/roundtable_participant_role_blind_ui_prompt](./2026-03-30/roundtable_participant_role_blind_ui_prompt.md): RT participant 설정 UI에서 role/blind/max token override를 실제로 다루게 하는 프롬프트
-- [2026-03-30/roundtable_participant_surface_visibility_prompt](./2026-03-30/roundtable_participant_surface_visibility_prompt.md): RT 실행/조회 표면에서 participant role/blind를 다시 읽을 수 있게 하는 프롬프트
-- [2026-03-30/roundtable_role_terminology_separation_prompt](./2026-03-30/roundtable_role_terminology_separation_prompt.md): 프로젝트 프로필 역할과 RT 토론 역할을 분리해 `role` 혼동을 없애는 프롬프트
-- [2026-03-30/runtime_feature_validation_prompt](./2026-03-30/runtime_feature_validation_prompt.md): compressed memory / retrieval / auto mode / budget reflection / RT 회귀를 실제 사용 흐름으로 검증하는 프롬프트
-- [2026-03-30/post_parity_runtime_validation_sweep_prompt](./2026-03-30/post_parity_runtime_validation_sweep_prompt.md): Claude parity fix 이후 통합 ContextPack 파이프라인이 실제로 동작하는지 재검증하는 프롬프트
-- [2026-03-30/live_runtime_trace_parity_validation_prompt](./2026-03-30/live_runtime_trace_parity_validation_prompt.md): 앱 실행 기준으로 4-engine trace/meta parity를 실제 surface에서 재확인하는 프롬프트
-- [2026-03-30/real_workflow_memory_quality_validation_prompt](./2026-03-30/real_workflow_memory_quality_validation_prompt.md): 실제 프로젝트 흐름에서 memory/retrieval/auto/budget이 응답 품질에 주는 효과를 검증하는 프롬프트
-- [2026-03-30/contextpack_db_separation_prompt](./2026-03-30/contextpack_db_separation_prompt.md): ContextPack DB 읽기/프롬프트 조립 분리 — load_context_data() + assemble_prompt() 리팩토링 프롬프트
-- [2026-03-31/dependency_migration_phase4_remaining_prompt](./2026-03-31/dependency_migration_phase4_remaining_prompt.md): react-virtuoso 가상 스크롤 + cmdk 커맨드 팔레트 마이그레이션 프롬프트
-- [2026-03-31/orchestrated_workflow_phase_a_prompt](./2026-03-31/orchestrated_workflow_phase_a_prompt.md): 워크플로우 파이프라인 Phase A — plan phases, events, engine assignment DB/API 구현
-- [2026-03-29/window_state_restore_fix_prompt](./2026-03-29/window_state_restore_fix_prompt.md): 창 위치/크기 복원 확인 및 수정 프롬프트
-- [2026-03-29/window_state_restore_review_checklist](./2026-03-29/window_state_restore_review_checklist.md): 창 상태 복원 검증 체크리스트
+- `docs/prompts/` — 재사용 가능한 템플릿/마스터 핸드오프
+- `docs/archive/prompts/by-date/YYYY-MM-DD/` — 세션 날짜별 one-time 프롬프트
+- `docs/archive/prompts/one-time/` — 플랜별 one-time 실행 프롬프트 (완료된 plan 대응)
+
+## 🔁 재사용 템플릿
+
+- [handoffMaster](./handoffMaster.md): **tunaFlow는 Tauri 2 + React + Rust + SQLite 기반의 3패널 멀티에이전트 오케스트레이션 IDE다.**
+
+## 📦 Archive — one-time 프롬프트 (23개)
+
+주로 완료된 plan 대응 실행 프롬프트 + 세션 핸드오프 문서.
+[docs/archive/prompts/one-time/](../archive/prompts/one-time/)
+
+## 📅 Archive — by-date 프롬프트 (4개 폴더)
+
+- [2026-03-28](../archive/prompts/by-date/2026-03-28/): 6개 문서
+- [2026-03-29](../archive/prompts/by-date/2026-03-29/): 24개 문서
+- [2026-03-30](../archive/prompts/by-date/2026-03-30/): 65개 문서
+- [2026-03-31](../archive/prompts/by-date/2026-03-31/): 4개 문서
+
