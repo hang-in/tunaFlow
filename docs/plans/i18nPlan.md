@@ -1,9 +1,10 @@
 # i18n 계획 — UI 한/영 분리 + 프롬프트 영어 통일
 
-> Status: draft
+> Status: ready-to-implement
 > Created: 2026-04-14
-> Updated: 2026-04-14 (Codex 리뷰 반영)
+> Updated: 2026-04-23 (본 세션 신규 컴포넌트 반영 + Invariants + 병렬 허용 + error code 카탈로그)
 > 원칙: UI 문자열만 i18n 대상. 에이전트 프롬프트/페르소나는 영어 고정, 응답 언어만 사용자 locale 기반 지시.
+> 범위: tunaFlow 앱 내부 문자열. **README 번역 (en/ja/zh) 및 `docs/plans/*.md`, `CLAUDE.md` 같은 개발자 문서는 본 plan scope 외** — README 는 Gemini 수동 번역 경로로 처리.
 
 ---
 
@@ -44,7 +45,31 @@
   - `src-tauri/src/i18n/` 디렉토리 생성하지 않음
 - **언어 감지**: 시스템 언어 → Settings에서 수동 변경 가능 → appStore 저장
 
-### 1.1 Locale 전달 경로 (Codex 리뷰 반영)
+### 1.1 Rust AppError 코드 카탈로그 (2026-04-23 확정)
+
+`src-tauri/src/errors.rs:32-41` 에 이미 `AppError::code()` 가 존재. Phase 4A-1 은 이 code 를 기반으로 프론트 매핑을 완성:
+
+| Rust variant | code (snake_case) | 프론트 i18n 키 (`error.json`) | 기본 context 전달 |
+|---|---|---|---|
+| `AppError::Database(_)` | `db_error` | `error.db_error` | SQL / 스키마 원인 요약 |
+| `AppError::NotFound(String)` | `not_found` | `error.not_found` | 대상 (e.g. "branch", "plan") |
+| `AppError::Io(_)` | `io_error` | `error.io_error` | 파일 경로 / 명령 |
+| `AppError::Json(_)` | `json_error` | `error.json_error` | 파싱 위치 |
+| `AppError::Agent(String)` | `agent_error` | `error.agent_error` | 엔진 / 원인 |
+| `AppError::BadRequest(String)` | `bad_request` | `error.bad_request` | 필드명 / 제약 |
+| `AppError::Lock` | `lock_error` | `error.lock_error` | (없음) |
+
+**Serialize 조정** (Phase 4A-1 핵심): 현재 Serialize 구현이 한국어 메시지를 그대로 직렬화하고 있으면, `{ "code": "...", "context": "..." }` 객체 형태로 바꿀 것. `code()` 는 이미 있으므로 variant context 추출 + serialize 만 조정.
+
+```json
+// before (예상)
+{ "error": "Not found: branch" }
+
+// after
+{ "code": "not_found", "context": "branch" }
+```
+
+### 1.2 Locale 전달 경로 (Codex 리뷰 반영)
 
 **글로벌 Rust state에 locale을 저장하지 않는다.** 멀티 대화, 브랜치, HTTP API, 백그라운드 작업에서 엉킬 수 있기 때문.
 
@@ -159,6 +184,8 @@ src/locales/
 ```
 [3-1] workflow.json + 워크플로우 컴포넌트 (2시간)
   → PlanCard, DevProgressView, ApprovalGate
+  → PlanProposalCard (designReviewGatePlan 의 2버튼 UI)
+  → ArchitectPostReviewPanel (designReviewGatePlan subtask-04)
   → Plan 단계명, 상태, 버튼
 
 [3-2] branch.json + Branch 컴포넌트 (2시간)
@@ -170,11 +197,19 @@ src/locales/
 
 [3-4] dialog.json + 다이얼로그 통합 (1시간)
   → 삭제 확인, 생성, SaveArtifactDialog
+  → StanceConflictModal (userWorldviewInjectionPlan subtask-03)
   → 모든 confirm/alert 텍스트
 
 [3-5] error.json + Rust 에러 매핑 (1시간)
-  → AppError variant → i18n 키 매핑 유틸 작성
-  → 기존 catch 블록에서 toast.error(String(e)) → toast.error(t(`error.${code}`))
+  → §1.1 카탈로그 7개 code 를 error.json 키로 (db_error, not_found, io_error, json_error, agent_error, bad_request, lock_error)
+  → 기존 catch 블록에서 toast.error(String(e)) → toast.error(t(`error.${code}`, { context }))
+  → Rust 는 `{ code, context }` JSON 반환, 프론트는 `extractErrorCode(e)` 유틸로 파싱
+
+[3-6] 신규 Settings 컴포넌트 i18n (1시간, settings.json 확장)
+  → WorldviewSettings (userWorldviewInjectionPlan subtask-01)
+  → SearchSettings (searchPipelineFromSecallPlan-part2 subtask-05)
+  → RoleCoveragePanel tentative 배지 (roleAssignmentCoverageUxPlan subtask-02)
+  → BackgroundJobStatusItem (userWorldviewInjectionPlan subtask-04)
 
 검증: 전체 화면 ko/en 전환 테스트
 ```
@@ -279,17 +314,50 @@ npx tsc --noEmit && npx vitest run
 
 ```
 Phase 1  (반나절):  인프라 + Settings 언어 선택
-Phase 2  (1일):     고빈도 UI (chat, settings, sidebar, common)
-Phase 3  (1일):     나머지 UI (workflow, branch, insight, dialog) + 에러 매핑
-Phase 4A (반나절):  Rust 에러 코드화 + 페르소나/도구 영어 전환
-Phase 4B (반나절):  insightOrchestration 영어 전환 + A/B 검증
+Phase 2  (1일):     고빈도 UI (chat, settings, sidebar, common)           ┐
+Phase 3  (1일):     나머지 UI (workflow, branch, insight, dialog) + 에러 │ Phase 2/3 과
+Phase 4A (반나절):  Rust 에러 코드화 + 페르소나/도구 영어 전환             │ 4A 는 독립 파일
+Phase 4B (반나절):  insightOrchestration 영어 전환 + A/B 검증             ┘ 영역 — 병렬 OK
 ──────────────────────────────────────
-총: 4일
+총: 4일 (단일 Developer 순차) / 3일 (Phase 2-3 와 4A 병렬 시)
 ```
+
+**병렬 노트** (2026-04-23): Phase 2/3 (TS/TSX 문자열 이동) 과 Phase 4A (Rust `AppError` Serialize + 페르소나/도구 description) 는 건드리는 파일이 완전 독립. 동시 진행 가능. Phase 4B 만은 A/B 검증 결과 의존이라 4A 후.
+
+**PR 전략** (사용자 지시 2026-04-23): 쪼개기 과다 회피 — **PR A: Phase 1~3 + 4A 통짜** (UI i18n + Rust 에러 코드화 + 페르소나 영어), **PR B: Phase 4B 별도** (A/B 검증 결과 rollback 용이성 확보). 총 PR 2개.
 
 ---
 
-## 8. Codex 리뷰 반영 사항
+## 8. Invariants
+
+- **[INV-1]** 에이전트 프롬프트 / 페르소나 설명 / Rust 도구 스키마 description / RT role guidance 는 **영어 고정**. i18n 대상이 아니며 JSON locale 파일에 들어가지 않는다. **이유**: LLM 성능 + 토큰 효율 + 번역 유지보수 부담 회피. **검증**: `defaultPersonas.ts` / `insightOrchestration.ts` / `tool_handler.rs` / `roundtable_helpers/*` grep — 한국어 문자열 잔존 0 (Phase 4A/4B 완료 후).
+
+- **[INV-2]** Rust 측에는 **locale 상태 / 모듈 / invoke 인자** 를 두지 않는다. Rust 는 `AppError::code()` + context 만 반환하고, 번역은 프론트가 수행. 백그라운드 작업 / 멀티 대화 / 브랜치 간 locale 충돌 원천 차단. **이유**: 글로벌 state race. **검증**: `rg "locale|i18n" src-tauri/src` 결과 0 (doc comment 제외).
+
+- **[INV-3]** `insightOrchestration.ts` 영어 전환은 **A/B 검증 (Phase 4B-2) 통과 후에만** merge. 검증 실패 시 한국어 유지. **이유**: 분석 품질 변경 위험 — 단순 번역 아님. **검증**: PR B 의 description 에 A/B 비교 수치 (finding 수 + severity 분포 + JSON 파싱 안정성) 필수 기재.
+
+- **[INV-4]** i18next `fallbackLng = 'en'`. 번역 누락 시 **영어 fallback** 하며 한국어 빈 문자열 / undefined 금지. **이유**: UI 깨짐 방지. **검증**: `i18n.init` 설정에 `fallbackLng: 'en'` + `returnEmptyString: false` 명시.
+
+- **[INV-5]** 번역 키 네이밍은 `namespace.section.action` **3계층** (e.g. `chat.input.placeholder`, `branch.adopt.confirm`). flat key 또는 4+ 계층 금지. **이유**: 자동완성 편의 + 번역가의 탐색 효율. **검증**: locale JSON 스키마 validator 또는 `tsc --noEmit` 시 타입 체크 (src/types/i18next.d.ts resources 타입 선언).
+
+---
+
+## 9. 본 세션 신규 plan 들과의 상호작용
+
+2026-04-14 이후 착수된 plan 들이 신규 UI 컴포넌트를 추가. i18n 은 이들을 **Phase 2/3 에서 흡수**:
+
+| Plan | 신규 컴포넌트 | i18n Phase |
+|---|---|---|
+| `designReviewGatePlan` | PlanProposalCard (확장), ArchitectPostReviewPanel, RT 드로어 mode 배지 | 3-1 (workflow) |
+| `userWorldviewInjectionPlan` | WorldviewSettings, StanceConflictModal, BackgroundJobStatusItem | 3-4 (dialog), 3-6 (settings) |
+| `roleAssignmentCoverageUxPlan` | RoleCoveragePanel "제안됨" 배지 | 3-6 (settings) |
+| `searchPipelineFromSecallPlan-part2` | SearchSettings | 3-6 (settings) |
+
+**순서 정책** (경로 C): i18n Phase 1 인프라만 먼저 확립. 이후 본 세션 plan 들이 구현될 때 **새 컴포넌트는 처음부터 `t(...)` 기반으로 작성** — i18n-ready 상태로 태어나게 해 Phase 2/3 의 재이동 비용 제거. 기존 컴포넌트만 Phase 2/3 에서 일괄 이동.
+
+---
+
+## 10. Codex 리뷰 반영 사항
 
 ### 1차 리뷰
 
