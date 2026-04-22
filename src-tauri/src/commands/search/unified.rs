@@ -17,6 +17,7 @@ use crate::errors::AppError;
 
 use super::hybrid::{reciprocal_rank_fusion, RankedCandidate, RRF_K};
 use super::query_expand::{expand_query, query_expansion_enabled};
+use super::tokenizer::{morphological_query_enabled, tokenize_query_for_fts};
 
 /// Default cap for per-conversation result diversity, matches secall.
 const DEFAULT_MAX_PER_CONVERSATION: usize = 2;
@@ -71,7 +72,16 @@ pub fn search_unified(
         query.clone()
     };
 
-    let fts_results = fts_conversation_search(&state, &effective_query, &project_key, per_source)?;
+    // Optional morphological tokenization for the FTS side. Only when the
+    // index has been rebuilt under the same tokenizer (Phase C Part2); until
+    // then, leaving the flag off is the correct default.
+    let fts_query = if morphological_query_enabled() {
+        tokenize_query_for_fts(&effective_query)
+    } else {
+        effective_query.clone()
+    };
+
+    let fts_results = fts_conversation_search(&state, &fts_query, &project_key, per_source)?;
     let vec_results = document_vector_search(&state, &effective_query, &project_key, per_source);
 
     let fused = reciprocal_rank_fusion(&[fts_results.as_slice(), vec_results.as_slice()], RRF_K);
