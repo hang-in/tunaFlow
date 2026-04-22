@@ -147,6 +147,9 @@ cd src-tauri && cargo test --lib  # Rust unit tests (84 tests)
 | `docs/reference/chatUiVsTunaChatGapReview_2026-03-29.md` | tunaChat vs tunaFlow UI 비교 |
 | `docs/how-to/rawq-setup.md` | rawq 설치/운영 가이드 |
 | `docs/how-to/skills-runtime-policy.md` | Skills snapshot 운영 규칙 |
+| `docs/reference/work-safety.md` | **작업 안전 규칙** — 코드/UI 변경 전 |
+| `docs/reference/coding-convention.md` | **코딩 컨벤션** — 코드 작성 전 |
+| `docs/reference/tool-usage.md` | **개발 도구 (fd/rg/rawq 등)** — 도구 사용 전 |
 
 ---
 
@@ -166,88 +169,34 @@ cd src-tauri && cargo test --lib  # Rust unit tests (84 tests)
 
 ## 15. 작업 안전 규칙
 
-### 실행 경로 검증 우선
-- **UI 진입점을 변경하기 전에** 대체 경로가 완전히 동작하는지 반드시 확인한다
-- 기존 동작을 제거/교체할 때는 새 동작이 end-to-end로 작동하는 것을 먼저 증명한다
-- "나중에 구현"을 전제로 기존 기능을 제거하지 않는다
+> 상세: `docs/reference/work-safety.md` — 코드/UI/스토어 변경 작업 **시작 전**에 읽는다.
 
-### 단일 경로 수정 원칙
-- 한 번에 여러 실행 경로를 동시에 바꾸지 않는다
-- 하나의 경로를 수정 → 검증 → 다음 경로 순서로 진행한다
-- 특히 RT/Branch/Thread 같이 여러 모드가 얽힌 기능은 모드별로 분리 수정한다
-
-### 사이드 이펙트 체크
-- 컴포넌트를 교체할 때 해당 컴포넌트가 사용하던 **모든 기능 경로**를 나열하고, 새 컴포넌트가 동일하게 커버하는지 확인한다
-- Store 상태를 바꿀 때 해당 상태를 읽는 **모든 컴포넌트/훅**을 grep으로 확인한다
-- dead code 제거는 기능 검증 완료 후에만 한다
-
-### 과거 사고 사례
-- 2026-03-29: RT branch를 드로어로 전환하면서 드로어에 RT 지원이 없는 상태에서 full view 진입점 제거 → RT 기능 전체 사라짐. **대체 경로가 없는데 기존 경로를 제거한 것이 원인.**
-
-### 세션 핸드오프 규칙
-
-세션이 끝나거나 context 압축이 발생할 때:
-
-1. **완료된 것과 안 된 것을 구분해서 기록** — "X 완료, Y는 미완 (이유: Z)" 형식. 모호한 "대부분 완료" 금지.
-2. **변경한 파일 목록을 명시** — 파일 경로 + 변경 내용 요약. 다음 세션에서 grep 없이 파악 가능하도록.
-3. **미완성 작업의 구체적 재개 지점** — "A 파일의 B 함수에서 C를 추가해야 함" 수준. "이어서 하면 됨" 금지.
-4. **사이드이펙트 경고** — 변경으로 인해 다른 부분에 영향 가능성이 있으면 명시. "X를 바꿨으므로 Y를 확인해야 함".
-5. **테스트 상태** — cargo test / vitest 결과. 실패한 것이 있으면 원인 + 재현 방법.
-6. **sessionHistory.md는 과거 맥락 필요할 때만** — 매 세션 시작 시 전체를 읽지 않음. 특정 과거 결정이 필요하면 그때 참조.
+요약 3줄:
+- UI 진입점 변경 전에 대체 경로 작동 확인 (2026-03-29 RT 사고).
+- 한 번에 한 경로만 수정 → 검증 → 다음 경로.
+- `finalize_engine_run` 처럼 mutex re-entrant 가능한 자리는 특히 주의 (2026-04-22 deadlock).
 
 ---
 
 ## 16. 코딩 컨벤션
 
-- **한국어 응답**: 사용자 대면 텍스트는 한국어, 코드/경로/식별자는 원문
-- **Zustand selector**: broad `useChatStore()` 금지, 개별 `useChatStore((s) => s.field)` 사용
-- **Tauri command**: 인자는 `camelCase` (serde rename), 긴 실행은 `start_*` background 패턴
-- **DB migration**: `add_column_if_missing`으로 idempotent, 버전 번호 순차 증가
-- **에러 처리**: dev 단계에서 silent fallback 최소화, 명시적 경고/에러 표시
-- **테스트**: vitest + jsdom (frontend, 55개), cargo test --lib (Rust unit, 53개)
-- **4-engine parity**: 새 기능 추가 시 4개 엔진 모두에서 동작하는지 확인. 모든 엔진이 `build_normalized_prompt_with_budget()` 단일 경로 사용. Multi-agent context 전략: `docs/reference/multiAgentContextStrategy.md`
-- **send 함수 패턴**: `runtimeSlice.sendWithEngine(engine)` + `branchSlice.sendThreadMessage()` 모두 `ENGINE_CONFIGS[engine]`로 command/event 매핑. 엔진별 함수 복사 금지. 레거시 동기 `send_with_*` 명령은 완전 제거됨
-- **Settings 구조**: `settings/` 폴더에 섹션별 분리 파일. SettingsPanel은 thin shell
+> 상세: `docs/reference/coding-convention.md` — 코드 작성/수정 전에 읽는다.
+
+요약 3줄:
+- 한국어 응답 / 코드·경로·식별자 원문.
+- Zustand 는 selector 기반, Tauri sync command 중 UI hot-path 는 `async + spawn_blocking`.
+- 4-engine parity: 모든 엔진이 `build_normalized_prompt_with_budget()` 단일 경로.
 
 ---
 
-## 17. 개발 도구 활용 규칙
+## 17. 개발 도구 활용
 
-아래 도구들이 설치되어 있다. 기본 도구(find, grep, cat) 대신 사용한다.
+> 상세: `docs/reference/tool-usage.md` — 도구 사용 전에 읽는다.
 
-### 코드 검색/조작 (speedy-claude)
-
-| 대신 | 사용 | 이유 |
-|------|------|------|
-| `find . -name` | `fd -e ts` | 64x 빠름, .gitignore 존중 |
-| `grep -r` | `rg "pattern"` | SIMD 가속, 자동 멀티스레드 |
-| `sed -i` | `sd 'old' 'new'` | BSD/GNU 차이 없음, 12x 빠름 |
-| `cat file` | `bat file` | 구문 강조, 줄 번호 |
-| `diff a b` | `difft a b` | AST 기반 구조 비교 |
-| `ls` | `eza -la` | 아이콘, 색상, git 상태 |
-
-멀티 파일 치환:
-- 단순: `fd -e ts | xargs sd 'old' 'new'` (1 커맨드)
-- 대화형: `ambr 'old' 'new'`
-- **Read+Edit 루프 금지** — 한 번의 커맨드로 일괄 처리
-
-### 프로젝트 분석 도구
-
-| 도구 | 명령 | 용도 |
-|------|------|------|
-| **rawq** (v0.1.1) | `rawq search "키워드"` | 코드 시맨틱 검색 (임베딩 기반 하이브리드) |
-| | `rawq map .` | AST 기반 코드베이스 구조 출력 |
-| | `rawq daemon status` | daemon 상태 확인 |
-| **code-review-graph** (v2.3.1) | `code-review-graph status` | 그래프 통계 (노드/엣지/파일) |
-| | `code-review-graph detect-changes` | 변경 영향 분석 + risk score |
-| | `code-review-graph update` | 증분 인덱스 업데이트 (변경 파일만) |
-| **context-hub** | `chub search "react hooks"` | 라이브러리/프레임워크 문서 검색 |
-
-### 사용 시 주의
-
-- rawq daemon이 꺼져있으면 첫 검색이 수분 걸림 → `rawq daemon start --background` 먼저
-- rawq/CRG는 인덱스가 오래되면 결과 부정확 → 대규모 리팩토링 후 `rawq index build` + `code-review-graph build` 재실행
-- CRG `detect-changes`는 git diff 기반 → commit되지 않은 변경도 감지
+요약 3줄:
+- `find → fd` / `grep → rg` / `sed → sd` / `cat → bat`.
+- 멀티 파일 치환은 `fd ... | xargs sd ...` — Read+Edit 루프 금지.
+- 시맨틱 코드 검색은 `rawq search`, 그래프 영향 분석은 `code-review-graph detect-changes`.
 
 ---
 
