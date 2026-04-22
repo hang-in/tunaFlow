@@ -47,6 +47,7 @@ fn post_completion_lock() -> std::sync::Arc<std::sync::Mutex<()>> {
 }
 
 use super::super::trace_log::{insert_trace_log, insert_trace_log_with_context, new_span_id, new_trace_id, SpanInfo, ContextPackMeta};
+use super::agent_session_tx;
 use super::context_loading::{load_context_data, load_project_path};
 use super::prompt_assembly::assemble_prompt;
 use super::session_freshness;
@@ -159,6 +160,10 @@ pub struct PreparedRun {
     pub system_context: Option<String>, // context only (for Claude system_prompt)
     pub project_path: Option<String>,
     pub ctx_meta: ContextPackMeta,
+    /// Phase 3b-part1: session audit id for lifecycle tracking. `None` when
+    /// `TUNAFLOW_AGENT_SESSION_AUDIT=0` disables auditing. Populated alongside
+    /// the Phase A3 write so only one lock acquisition is paid.
+    pub audit_session_id: Option<String>,
 }
 
 /// Phase 1: Persist user message, build context, pre-create streaming message, create job.
@@ -212,8 +217,11 @@ pub fn prepare_engine_run(
         (ctx_data, pp)
     };
 
-    // Phase A3: short write — pre-create streaming assistant message
-    let msg_id = {
+    // Phase A3: short write — pre-create streaming assistant message + audit begin
+    // Audit row is inserted under the same write lock as the streaming message to
+    // amortize lock-acquisition cost. If auditing is disabled, `audit_session_id`
+    // stays None and no extra write happens.
+    let (msg_id, audit_session_id) = {
         let conn = state.write.lock().map_err(|_| crate::errors::AppError::Lock)?;
         let mid = Uuid::new_v4().to_string();
         let now = now_epoch_ms();
@@ -222,7 +230,19 @@ pub fn prepare_engine_run(
              VALUES(?1,?2,'assistant','',?3,'streaming',?4,?5,?6)",
             params![mid, input.conversation_id, now, engine_key, input.model, input.persona_label],
         )?;
-        mid
+        let sid = if agent_session_tx::audit_enabled() {
+            match agent_session_tx::audit_begin(&conn, Some(&input.conversation_id)) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    // Audit is observability only — never fail the user turn for it
+                    eprintln!("[agent-session-tx] audit_begin failed: {:?}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        (mid, sid)
     };
 
     // Session freshness: stateful 엔진(sdk-url, app-server)에서
@@ -261,12 +281,15 @@ pub fn prepare_engine_run(
         let _ = super::super::super::jobs::create_job(&conn, &job_id, &input.conversation_id, Some(&msg_id), engine_key, "agent");
     }
 
-    Ok(PreparedRun { msg_id, job_id, enriched_prompt, system_context, project_path, ctx_meta })
+    Ok(PreparedRun { msg_id, job_id, enriched_prompt, system_context, project_path, ctx_meta, audit_session_id })
 }
 
 /// Phase 3: Persist engine result, update conversation usage, emit events.
 ///
 /// Called from the background thread after the engine finishes.
+/// `audit_session_id` is the id returned from `prepare_engine_run` — `None`
+/// when auditing is disabled. The audit row is finalized (committed / rolled
+/// back) here based on `result`.
 pub fn finalize_engine_run(
     conn: &Connection,
     engine_key: &str,
@@ -277,6 +300,7 @@ pub fn finalize_engine_run(
     duration_ms: u128,
     ctx_meta: &ContextPackMeta,
     app: &tauri::AppHandle,
+    audit_session_id: Option<&str>,
 ) {
     let now = now_epoch_ms();
     match result {
@@ -321,6 +345,9 @@ pub fn finalize_engine_run(
                     operation: "agent.stream", engine: engine_key, duration_ms: duration_ms as i64, status: "ok" },
                 ctx_meta, Some(msg_id));
             let _ = super::super::super::jobs::complete_job(conn, job_id, "done", None);
+            if let Some(sid) = audit_session_id {
+                let _ = agent_session_tx::audit_commit(conn, sid);
+            }
             let _ = app.emit("agent:completed", serde_json::json!({
                 "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key,
                 "durationMs": duration_ms as i64, "inputTokens": out.input_tokens,
@@ -354,6 +381,9 @@ pub fn finalize_engine_run(
                     duration_ms: duration_ms as i64, status: "error",
                 }, ctx_meta, Some(msg_id));
             let _ = super::super::super::jobs::complete_job(conn, job_id, "error", Some(&em));
+            if let Some(sid) = audit_session_id {
+                let _ = agent_session_tx::audit_rollback(conn, sid, &em);
+            }
             let _ = app.emit("agent:error", serde_json::json!({
                 "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key, "error": em
             }));

@@ -167,7 +167,7 @@ pub async fn start_claude_stream(
 
     let ret = prep.msg_id.clone();
     let ep = prep.enriched_prompt.clone();
-    let PreparedRun { msg_id, job_id, project_path, ctx_meta, .. } = prep;
+    let PreparedRun { msg_id, job_id, project_path, ctx_meta, audit_session_id, .. } = prep;
     let plen = pr.len() + system_prompt.as_ref().map_or(0, |s| s.len());
 
     // Claude 실행 경로 선택:
@@ -181,6 +181,7 @@ pub async fn start_claude_stream(
         let sp = system_prompt;
         let cid2 = cid.clone();
         let db_p = db_post.clone();
+        let aid = audit_session_id.clone();
         tokio::spawn(async move {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
@@ -193,7 +194,7 @@ pub async fn start_claude_stream(
             let dur = t0.elapsed().as_millis();
             guardrail::log_run("claude-sdk", mo.as_deref(), dur, plen, rr.is_ok());
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
         });
@@ -201,6 +202,7 @@ pub async fn start_claude_stream(
         // --sdk-url WS 세션: 구조화 JSON + 슬래시 커맨드 지원
         let cid2 = cid.clone();
         let db_p = db_post.clone();
+        let aid = audit_session_id.clone();
         tokio::spawn(async move {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
@@ -215,12 +217,13 @@ pub async fn start_claude_stream(
             let dur = t0.elapsed().as_millis();
             guardrail::log_run("claude-sdk-url", mo.as_deref(), dur, plen, rr.is_ok());
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
         });
     } else {
         // CLI -p fallback (TUNAFLOW_DISABLE_SDK_URL=1)
+        let aid = audit_session_id.clone();
         std::thread::spawn(move || {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid.clone();
@@ -234,7 +237,7 @@ pub async fn start_claude_stream(
             let dur = t0.elapsed().as_millis();
             guardrail::log_run("claude-bg", mo.as_deref(), dur, plen, rr.is_ok());
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_post, cid); }
         });
@@ -261,13 +264,15 @@ pub async fn start_gemini_stream(
     }).await.map_err(|_| AppError::Lock)??;
 
     let ret = prep.msg_id.clone();
-    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
+    let system_prompt_opt = prep.system_context.clone();
+    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, audit_session_id, .. } = prep;
 
     if gemini_sdk::is_available() {
         // SDK path — async, native streaming, accurate token tracking
-        let system_prompt = prep.system_context;
+        let system_prompt = system_prompt_opt;
         let cid2 = cid.clone();
         let db_p = db_post.clone();
+        let aid = audit_session_id.clone();
         tokio::spawn(async move {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
@@ -279,12 +284,13 @@ pub async fn start_gemini_stream(
             ).await;
             let dur = t0.elapsed().as_millis();
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "gemini", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "gemini", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
         });
     } else {
         // CLI fallback
+        let aid = audit_session_id.clone();
         std::thread::spawn(move || {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid.clone();
@@ -297,7 +303,7 @@ pub async fn start_gemini_stream(
             );
             let dur = t0.elapsed().as_millis();
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "gemini", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "gemini", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_post, cid); }
         });
@@ -323,13 +329,15 @@ pub async fn start_codex_run(
     }).await.map_err(|_| AppError::Lock)??;
 
     let ret = prep.msg_id.clone();
-    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
+    let system_prompt_opt = prep.system_context.clone();
+    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, audit_session_id, .. } = prep;
 
     if openai_sdk::is_available() {
         // SDK path — OpenAI Chat Completions API
-        let system_prompt = prep.system_context;
+        let system_prompt = system_prompt_opt;
         let cid2 = cid.clone();
         let db_p = db_post.clone();
+        let aid = audit_session_id.clone();
         tokio::spawn(async move {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
@@ -341,13 +349,14 @@ pub async fn start_codex_run(
             ).await;
             let dur = t0.elapsed().as_millis();
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "codex", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "codex", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
         });
     } else if codex_app_server::is_available() {
         // Codex app-server 지속 세션 (매번 재스폰 없음)
         let cid2 = cid.clone();
+        let aid = audit_session_id.clone();
         tokio::spawn(async move {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid2.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid2.clone();
@@ -361,12 +370,13 @@ pub async fn start_codex_run(
             ).await;
             let dur = t0.elapsed().as_millis();
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "codex", &msg_id, &cid2, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "codex", &msg_id, &cid2, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_post, cid2); }
         });
     } else {
         // Codex CLI fallback
+        let aid = audit_session_id.clone();
         std::thread::spawn(move || {
             let chunk_mid = msg_id.clone(); let chunk_app = app.clone(); let chunk_cid = cid.clone();
             let progress_mid = msg_id.clone(); let progress_app = app.clone(); let progress_cid = cid.clone();
@@ -378,7 +388,7 @@ pub async fn start_codex_run(
             );
             let dur = t0.elapsed().as_millis();
             if let Ok(conn) = write_arc.lock() {
-                finalize_engine_run(&conn, "codex", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+                finalize_engine_run(&conn, "codex", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }
             if rr.is_ok() { spawn_post_completion_tasks(db_post, cid); }
         });
@@ -403,7 +413,7 @@ pub async fn start_opencode_run(
     }).await.map_err(|_| AppError::Lock)??;
 
     let ret = prep.msg_id.clone();
-    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
+    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, audit_session_id, .. } = prep;
 
     std::thread::spawn(move || {
         let _ = app.emit("opencode:progress", ChunkPayload { message_id: msg_id.clone(), conversation_id: cid.clone(), text: "OpenCode starting...".into() });
@@ -413,7 +423,7 @@ pub async fn start_opencode_run(
         );
         let dur = t0.elapsed().as_millis();
         if let Ok(conn) = write_arc.lock() {
-            finalize_engine_run(&conn, "opencode", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+            finalize_engine_run(&conn, "opencode", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, audit_session_id.as_deref());
         }
         if rr.is_ok() { spawn_post_completion_tasks(db_post, cid); }
     });
@@ -446,8 +456,8 @@ pub async fn start_openai_compat_stream(
     }).await.map_err(|_| AppError::Lock)??;
 
     let ret = prep.msg_id.clone();
-    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, .. } = prep;
-    let system_prompt = prep.system_context;
+    let system_prompt = prep.system_context.clone();
+    let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, audit_session_id, .. } = prep;
     let base_url = if is_lmstudio { openai_compat::lmstudio_base_url() } else { std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into()) };
 
     let cid2 = cid.clone();
@@ -465,7 +475,7 @@ pub async fn start_openai_compat_stream(
         let dur = t0.elapsed().as_millis();
         guardrail::log_run(&el, mo.as_deref(), dur, 0, rr.is_ok());
         if let Ok(conn) = write_arc.lock() {
-            finalize_engine_run(&conn, &el, &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app);
+            finalize_engine_run(&conn, &el, &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, audit_session_id.as_deref());
         }
         if rr.is_ok() { spawn_post_completion_tasks(db_post, cid); }
     });

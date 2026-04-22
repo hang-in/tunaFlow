@@ -24,6 +24,76 @@ pub const OUTCOME_COMMITTED: &str = "committed";
 pub const OUTCOME_ROLLED_BACK: &str = "rolled_back";
 pub const OUTCOME_PANIC: &str = "panic";
 
+// ─── Audit-only API (Phase 3b-part1) ───────────────────────────────────────────
+//
+// Records session lifecycle in `agent_session_audit` without opening a SAVEPOINT.
+// This gives us the observability half of transactional boundaries — "which
+// sessions finished? which hung? which panicked?" — with zero rollback cost and
+// zero write-lock contention added to the hot path. SAVEPOINT-backed rollback
+// is Phase 3b-part2 behind a feature flag; the audit record format is shared so
+// part2 can upgrade the same rows in place.
+
+/// Insert an audit row with `outcome='in_progress'` and return the session id.
+/// No SAVEPOINT is opened. Call `audit_commit` or `audit_rollback` to finalize.
+pub fn audit_begin(conn: &Connection, conversation_id: Option<&str>) -> Result<String, AppError> {
+    let session_id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO agent_session_audit \
+         (session_id, conversation_id, started_at, outcome) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            session_id,
+            conversation_id,
+            now_epoch_ms(),
+            OUTCOME_IN_PROGRESS,
+        ],
+    )?;
+    Ok(session_id)
+}
+
+/// Mark an audit row `committed`. No-op if the row is missing (legacy sessions
+/// that started before Phase 3b-part1 shipped).
+pub fn audit_commit(conn: &Connection, session_id: &str) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE agent_session_audit SET ended_at = ?1, outcome = ?2 WHERE session_id = ?3",
+        params![now_epoch_ms(), OUTCOME_COMMITTED, session_id],
+    )?;
+    Ok(())
+}
+
+/// Mark an audit row `rolled_back` with a reason. No-op if the row is missing.
+pub fn audit_rollback(conn: &Connection, session_id: &str, reason: &str) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE agent_session_audit \
+         SET ended_at = ?1, outcome = ?2, rollback_reason = ?3 \
+         WHERE session_id = ?4",
+        params![now_epoch_ms(), OUTCOME_ROLLED_BACK, reason, session_id],
+    )?;
+    Ok(())
+}
+
+/// Mark an audit row `panic` — used by cleanup logic after detecting a session
+/// that never finalized (startup sweeper, Phase 3c). Also safe to call from a
+/// catch_unwind handler with write lock access.
+pub fn audit_panic(conn: &Connection, session_id: &str, reason: &str) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE agent_session_audit \
+         SET ended_at = ?1, outcome = ?2, rollback_reason = ?3 \
+         WHERE session_id = ?4",
+        params![now_epoch_ms(), OUTCOME_PANIC, reason, session_id],
+    )?;
+    Ok(())
+}
+
+/// Is audit recording enabled? Default ON — the override env var lets
+/// operators disable if the audit INSERT itself ever becomes a bottleneck.
+pub fn audit_enabled() -> bool {
+    match std::env::var("TUNAFLOW_AGENT_SESSION_AUDIT") {
+        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "off"),
+        Err(_) => true,
+    }
+}
+
 /// Wraps a single agent write session in a SQLite SAVEPOINT.
 ///
 /// Use `commit` on success and `rollback` on explicit failure. If the value is
@@ -284,5 +354,108 @@ mod tests {
         let name = derive_savepoint_name("12345-abcde-67890");
         assert!(name.starts_with("sp_"));
         assert!(name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+    }
+
+    // ─── Audit-only API (Phase 3b-part1) ──────────────────────────────────────
+
+    #[test]
+    fn audit_begin_inserts_in_progress_row() {
+        let conn = open_test_db();
+        let sid = audit_begin(&conn, Some("conv-X")).expect("begin");
+        let (outcome, conv): (String, Option<String>) = conn
+            .query_row(
+                "SELECT outcome, conversation_id FROM agent_session_audit WHERE session_id = ?1",
+                [&sid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(outcome, OUTCOME_IN_PROGRESS);
+        assert_eq!(conv.as_deref(), Some("conv-X"));
+    }
+
+    #[test]
+    fn audit_commit_flips_outcome_and_sets_ended_at() {
+        let conn = open_test_db();
+        let sid = audit_begin(&conn, None).unwrap();
+        audit_commit(&conn, &sid).expect("commit");
+        let (outcome, ended_at): (String, Option<i64>) = conn
+            .query_row(
+                "SELECT outcome, ended_at FROM agent_session_audit WHERE session_id = ?1",
+                [&sid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(outcome, OUTCOME_COMMITTED);
+        assert!(ended_at.is_some(), "ended_at must be populated on commit");
+    }
+
+    #[test]
+    fn audit_rollback_records_reason() {
+        let conn = open_test_db();
+        let sid = audit_begin(&conn, None).unwrap();
+        audit_rollback(&conn, &sid, "engine timeout").expect("rollback");
+        let (outcome, reason): (String, Option<String>) = conn
+            .query_row(
+                "SELECT outcome, rollback_reason FROM agent_session_audit WHERE session_id = ?1",
+                [&sid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(outcome, OUTCOME_ROLLED_BACK);
+        assert_eq!(reason.as_deref(), Some("engine timeout"));
+    }
+
+    #[test]
+    fn audit_panic_marks_outcome() {
+        let conn = open_test_db();
+        let sid = audit_begin(&conn, None).unwrap();
+        audit_panic(&conn, &sid, "thread panicked").expect("panic mark");
+        let outcome: String = conn
+            .query_row(
+                "SELECT outcome FROM agent_session_audit WHERE session_id = ?1",
+                [&sid],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(outcome, OUTCOME_PANIC);
+    }
+
+    #[test]
+    fn audit_update_on_missing_row_is_noop() {
+        // Updates targeting a nonexistent session_id must not error — they just
+        // affect zero rows. This lets legacy sessions (started before this code)
+        // flow through finalize without surprises.
+        let conn = open_test_db();
+        audit_commit(&conn, "nonexistent-session-id").expect("commit noop");
+        audit_rollback(&conn, "nonexistent-session-id", "reason").expect("rollback noop");
+    }
+
+    #[test]
+    fn audit_enabled_default_true() {
+        // When the env var is unset, auditing should default to ON.
+        // We can't safely mutate env inside tests (order dependency); instead
+        // this test documents the semantics + guards against accidental flip.
+        std::env::remove_var("TUNAFLOW_AGENT_SESSION_AUDIT");
+        assert!(audit_enabled(), "audit must default ON when env unset");
+    }
+
+    #[test]
+    fn audit_enabled_respects_off_values() {
+        // This test mutates env var, so we restore after.
+        let previous = std::env::var("TUNAFLOW_AGENT_SESSION_AUDIT").ok();
+
+        for off_value in ["0", "false", "off", "FALSE", "Off"] {
+            std::env::set_var("TUNAFLOW_AGENT_SESSION_AUDIT", off_value);
+            assert!(!audit_enabled(), "value '{}' must disable audit", off_value);
+        }
+        for on_value in ["1", "true", "on", "TRUE", "yes"] {
+            std::env::set_var("TUNAFLOW_AGENT_SESSION_AUDIT", on_value);
+            assert!(audit_enabled(), "value '{}' must enable audit", on_value);
+        }
+
+        match previous {
+            Some(v) => std::env::set_var("TUNAFLOW_AGENT_SESSION_AUDIT", v),
+            None => std::env::remove_var("TUNAFLOW_AGENT_SESSION_AUDIT"),
+        }
     }
 }
