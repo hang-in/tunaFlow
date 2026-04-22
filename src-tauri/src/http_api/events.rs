@@ -52,20 +52,39 @@ pub fn broadcast_event(
         .to_string();
     let json_str = payload.to_string();
     let now = crate::db::migrations::now_epoch_ms();
-    match db.write.lock() {
-        Ok(conn) => {
-            if let Err(e) = conn.execute(
-                "INSERT INTO ws_event_log (event_type, payload, created_at) VALUES (?1, ?2, ?3)",
-                rusqlite::params![event_type, json_str, now],
-            ) {
-                eprintln!("[ws-event-log] insert failed (type={event_type}): {e}");
+
+    // WS fanout 먼저 — 이 경로는 lock 무관.
+    let _ = tx.send(json_str.clone());
+
+    // ⚠️ ws_event_log INSERT 는 **detached thread** 에서 수행.
+    //
+    // 2026-04-22 재현: `finalize_engine_run` 이 write lock 을 hold 한 채
+    // `app.emit(...)` 을 호출하면 Tauri Emitter 가 **동기적으로** 모든 listener
+    // (bridge_tauri_events) 를 실행한다. 그 listener 가 다시 broadcast_event
+    // 를 부르면서 `db.write.lock()` 을 시도 → **같은 thread 의 re-entrant
+    // deadlock** (std::sync::Mutex 는 non-reentrant). 결과: 이후 어떤
+    // turn 도 write lock 획득 불가, A1 starvation. 8회에 걸친 hotfix 가 다른
+    // 증상을 쫓았던 근본 원인.
+    //
+    // Fix: DB write 를 별도 thread 로 분리. caller 의 lock scope 밖에서 실행
+    // 되므로 재진입 deadlock 소멸. 주의: `db` 는 `&DbState` (Arc 포함) 이므로
+    // clone 후 thread 로 이동.
+    let db_clone = db.clone();
+    std::thread::spawn(move || {
+        match db_clone.write.lock() {
+            Ok(conn) => {
+                if let Err(e) = conn.execute(
+                    "INSERT INTO ws_event_log (event_type, payload, created_at) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![event_type, json_str, now],
+                ) {
+                    eprintln!("[ws-event-log] insert failed (type={event_type}): {e}");
+                }
+            }
+            Err(e) => {
+                eprintln!("[ws-event-log] lock poisoned: {e}");
             }
         }
-        Err(e) => {
-            eprintln!("[ws-event-log] lock poisoned: {e}");
-        }
-    }
-    let _ = tx.send(json_str);
+    });
 }
 
 /// Fetch recent events newer than `since_ms` for WS replay. Ordered
