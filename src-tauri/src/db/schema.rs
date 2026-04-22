@@ -195,16 +195,19 @@ CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
 
 -- messages (DATA_MODEL §1.5)
 CREATE TABLE IF NOT EXISTS messages (
-    id               TEXT    PRIMARY KEY,
-    conversation_id  TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    role             TEXT    NOT NULL,
-    content          TEXT    NOT NULL,
-    timestamp        INTEGER NOT NULL,
-    status           TEXT    NOT NULL DEFAULT 'done',
-    progress_content TEXT,
-    engine           TEXT,
-    model            TEXT,
-    persona          TEXT
+    id                TEXT    PRIMARY KEY,
+    conversation_id   TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role              TEXT    NOT NULL,
+    content           TEXT    NOT NULL,
+    timestamp         INTEGER NOT NULL,
+    status            TEXT    NOT NULL DEFAULT 'done',
+    progress_content  TEXT,
+    engine            TEXT,
+    model             TEXT,
+    persona           TEXT,
+    -- v45: Lindera 등 형태소 분석기가 채우는 FTS5 인덱싱 소스. NULL 이면 `messages_fts`
+    -- trigger 가 `COALESCE(content_tokenized, content)` 로 원문을 fallback 인덱싱.
+    content_tokenized TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv_timestamp
     ON messages(conversation_id, timestamp);
@@ -270,7 +273,13 @@ CREATE TABLE IF NOT EXISTS trace_log (
 CREATE INDEX IF NOT EXISTS idx_trace_log_conversation_id
     ON trace_log(conversation_id);
 
--- messages_fts (FTS5) — schema only, triggers to be added in later milestone
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
-    USING fts5(content, content=messages, content_rowid=rowid);
+-- messages_fts (FTS5) — v45: standalone FTS5, external content 제거.
+-- `content=messages` 대신 `message_id UNINDEXED` 를 인덱스 컬럼으로 넣어 메시지 재구축 없이도
+-- rowid 기반 JOIN + message_id 검색 모두 가능. tokenize='unicode61' 는 Lindera 결과 와 원문
+-- fallback 을 공통으로 처리하기 위한 trivial tokenizer (Rust 측에서 이미 형태소 분리 완료).
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    content,
+    message_id UNINDEXED,
+    tokenize='unicode61'
+);
 ";

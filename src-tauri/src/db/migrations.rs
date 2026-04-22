@@ -22,7 +22,7 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str, col_def: 
     Ok(())
 }
 
-pub fn run(conn: &Connection) -> Result<(), AppError> {
+pub fn run(conn: &mut Connection) -> Result<(), AppError> {
     conn.execute_batch(schema::CREATE_SCHEMA_VERSION)?;
     let current = current_version(conn)?;
     if current < 1 {
@@ -156,6 +156,9 @@ pub fn run(conn: &Connection) -> Result<(), AppError> {
     }
     if current < 44 {
         apply_v44(conn)?;
+    }
+    if current < 45 {
+        apply_v45(conn)?;
     }
     Ok(())
 }
@@ -1075,6 +1078,74 @@ fn apply_v44(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v45: `messages_fts` 를 standalone FTS5 (external content 제거) 로 재정의 +
+/// `messages.content_tokenized` 컬럼 추가 + trigger 4종 교체 (insert / update_tokenized /
+/// update_content / delete). 전체를 단일 transaction 으로 감싸 INV-8 atomicity 를 보장.
+///
+/// 중요:
+/// - 마이그레이션 내부에서 기존 messages 를 **backfill 하지 않는다** (앱 기동 블록 방지).
+///   사용자는 Settings 에서 "Rebuild search index" (subtask-05) 로 채워야 과거 메시지 검색
+///   가능. 로그 1회 경고.
+/// - `content_tokenized` 가 NULL 이면 trigger 는 `NEW.content` 를 fallback 으로 인덱싱.
+/// - content-only UPDATE (streaming chunk 등) 도 별도 trigger 에서 FTS resync — Lindera
+///   호출 없이 content 만 fallback 갱신 (INV-4/5 준수).
+fn apply_v45(conn: &mut Connection) -> Result<(), AppError> {
+    let tx = conn.transaction()?;
+
+    // ALTER TABLE 은 helper 가 Connection 만 받으므로 transaction 내부에서 직접 수행.
+    // column_exists 조회도 동일 connection 위에서 정상 동작 (Transaction = Deref<Connection>).
+    if !column_exists(&tx, "messages", "content_tokenized") {
+        tx.execute("ALTER TABLE messages ADD COLUMN content_tokenized TEXT", [])?;
+    }
+
+    tx.execute_batch(
+        "DROP TRIGGER IF EXISTS messages_fts_insert;
+         DROP TRIGGER IF EXISTS messages_fts_update;
+         DROP TRIGGER IF EXISTS messages_fts_update_tokenized;
+         DROP TRIGGER IF EXISTS messages_fts_update_content;
+         DROP TRIGGER IF EXISTS messages_fts_delete;
+         DROP TABLE IF EXISTS messages_fts;
+         CREATE VIRTUAL TABLE messages_fts USING fts5(
+             content,
+             message_id UNINDEXED,
+             tokenize='unicode61'
+         );
+         CREATE TRIGGER messages_fts_insert AFTER INSERT ON messages BEGIN
+             INSERT INTO messages_fts(rowid, content, message_id)
+             VALUES (NEW.rowid, COALESCE(NEW.content_tokenized, NEW.content), NEW.id);
+         END;
+         CREATE TRIGGER messages_fts_update_tokenized
+             AFTER UPDATE OF content_tokenized ON messages
+             BEGIN
+             DELETE FROM messages_fts WHERE rowid = OLD.rowid;
+             INSERT INTO messages_fts(rowid, content, message_id)
+             VALUES (NEW.rowid, COALESCE(NEW.content_tokenized, NEW.content), NEW.id);
+         END;
+         CREATE TRIGGER messages_fts_update_content
+             AFTER UPDATE OF content ON messages
+             WHEN NEW.content IS NOT OLD.content
+             BEGIN
+             DELETE FROM messages_fts WHERE rowid = OLD.rowid;
+             INSERT INTO messages_fts(rowid, content, message_id)
+             VALUES (NEW.rowid, COALESCE(NEW.content_tokenized, NEW.content), NEW.id);
+         END;
+         CREATE TRIGGER messages_fts_delete AFTER DELETE ON messages BEGIN
+             DELETE FROM messages_fts WHERE rowid = OLD.rowid;
+         END;",
+    )?;
+
+    tx.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (45, ?1)",
+        [now_epoch_ms()],
+    )?;
+    tx.commit()?;
+
+    eprintln!(
+        "[migration v45] messages_fts rebuilt empty; invoke rebuild_messages_fts to backfill"
+    );
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1237,5 +1308,220 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    // ─── v45: messages_fts standalone + content_tokenized 컬럼 ────────────────
+
+    /// v45 적용 전 DB 시뮬레이션 — schema_version=44, messages (old schema, no
+    /// content_tokenized) + external-content messages_fts.
+    fn open_with_v44_baseline_for_v45() -> Connection {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(schema::CREATE_SCHEMA_VERSION).expect("schema_version");
+        conn.execute_batch(
+            "CREATE TABLE conversations (
+                id         TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE messages (
+                id               TEXT PRIMARY KEY,
+                conversation_id  TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                role             TEXT NOT NULL,
+                content          TEXT NOT NULL,
+                timestamp        INTEGER NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'done',
+                progress_content TEXT,
+                engine           TEXT,
+                model            TEXT,
+                persona          TEXT
+            );
+            CREATE VIRTUAL TABLE messages_fts USING fts5(
+                content, content=messages, content_rowid=rowid
+            );
+            INSERT INTO conversations (id) VALUES ('c1');",
+        )
+        .expect("v44 baseline");
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (44, ?1)",
+            [now_epoch_ms()],
+        )
+        .expect("seed v44");
+        conn
+    }
+
+    /// v45 baseline + 10 개 dummy message seed → apply_v45.
+    fn apply_v45_on_seeded() -> Connection {
+        let mut conn = open_with_v44_baseline_for_v45();
+        for i in 0..10 {
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, timestamp) \
+                 VALUES (?1, 'c1', 'user', ?2, ?3)",
+                params![format!("m{}", i), format!("hello {}", i), i as i64],
+            )
+            .unwrap();
+        }
+        apply_v45(&mut conn).expect("apply_v45");
+        conn
+    }
+
+    #[test]
+    fn v45_drops_external_content_and_adds_tokenized_column() {
+        let conn = apply_v45_on_seeded();
+        // content_tokenized 컬럼 존재 + 기존 row 들은 NULL
+        let null_cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE content_tokenized IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(null_cnt, 10, "기존 row 의 content_tokenized 는 NULL 이어야");
+
+        // messages_fts 재구축 — backfill 안 했으므로 비어있음
+        let fts_cnt: i64 = conn
+            .query_row("SELECT COUNT(*) FROM messages_fts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(fts_cnt, 0, "재구축 직후 FTS 는 비어있어야");
+
+        // standalone 확인 — content=messages 외부 참조 제거
+        let create_sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name='messages_fts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!create_sql.contains("content=messages"), "external content 구조가 남아있음");
+        assert!(create_sql.contains("tokenize"), "tokenize 속성 누락");
+    }
+
+    #[test]
+    fn v45_records_schema_version() {
+        let conn = apply_v45_on_seeded();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=45",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn v45_trigger_falls_back_to_content_when_tokenized_null() {
+        // INV-4: content_tokenized 가 NULL 이면 NEW.content 로 fallback 인덱싱
+        let conn = apply_v45_on_seeded();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) \
+             VALUES ('m-fallback', 'c1', 'user', 'hello world', 100, 'done')",
+            [],
+        )
+        .unwrap();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE content MATCH 'hello'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "NULL content_tokenized 시 content fallback 인덱싱 실패");
+    }
+
+    #[test]
+    fn v45_content_only_update_syncs_fts_preserving_tokenized() {
+        // tokenized 가 이미 있으면 content-only UPDATE 에서도 tokenized 가 우선 유지되어야
+        let conn = apply_v45_on_seeded();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, content_tokenized, timestamp, status) \
+             VALUES ('m-ct', 'c1', 'user', 'original text', 'orig tok', 200, 'done')",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE messages SET content = 'changed text' WHERE id = 'm-ct'", [])
+            .unwrap();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE content MATCH 'orig'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "tokenized 값 'orig tok' 이 FTS 에 유지되어야 함");
+    }
+
+    #[test]
+    fn v45_content_only_update_with_null_tokenized_uses_content_fallback() {
+        // tokenized NULL + content UPDATE → NEW.content 가 FTS 에 반영 (streaming 시나리오)
+        let conn = apply_v45_on_seeded();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) \
+             VALUES ('m-null', 'c1', 'user', 'first', 300, 'streaming')",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE messages SET content = 'second version' WHERE id = 'm-null'", [])
+            .unwrap();
+        let cnt: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE content MATCH 'second'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(cnt, 1, "NEW.content fallback 이 FTS 에 반영되어야");
+    }
+
+    #[test]
+    fn v45_delete_trigger_removes_from_fts() {
+        let conn = apply_v45_on_seeded();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) \
+             VALUES ('m-del', 'c1', 'user', 'uniquedeletemarker', 400, 'done')",
+            [],
+        )
+        .unwrap();
+        let before: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE content MATCH 'uniquedeletemarker'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(before, 1);
+        conn.execute("DELETE FROM messages WHERE id = 'm-del'", []).unwrap();
+        let after: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM messages_fts WHERE content MATCH 'uniquedeletemarker'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(after, 0, "delete trigger 가 FTS row 를 제거해야");
+    }
+
+    #[test]
+    fn v45_rolls_back_on_mid_migration_failure() {
+        // INV-8: 중간 실패 시 v44 상태로 rollback. drop(tx) 로 implicit rollback 시뮬레이션.
+        let mut conn = open_with_v44_baseline_for_v45();
+        {
+            let tx = conn.transaction().unwrap();
+            tx.execute("DROP TABLE messages_fts", []).unwrap();
+            // tx drop 으로 rollback — commit 안 함
+            drop(tx);
+        }
+        // schema_version 은 여전히 44
+        let ver: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ver, 44);
+        // messages_fts 는 여전히 external content 구조로 존재
+        let sql: String = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE name='messages_fts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(sql.contains("content=messages"), "rollback 후 external content 가 유지되어야");
     }
 }

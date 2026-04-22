@@ -115,13 +115,14 @@ pub fn init(db_path: PathBuf) -> Result<(Connection, Connection), AppError> {
     // Tighten perms on legacy-mode (0644) files before opening. Covers DB + WAL + SHM + bak.
     secure_db_files(&db_path);
 
-    // Write connection — runs migrations, enables WAL + foreign keys
-    let write_conn = Connection::open(&db_path)?;
+    // Write connection — runs migrations, enables WAL + foreign keys.
+    // v45 부터 migrations::run 은 `&mut Connection` 을 요구 (transaction API 사용).
+    let mut write_conn = Connection::open(&db_path)?;
     write_conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     write_conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
     write_conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
     write_conn.execute_batch("PRAGMA foreign_keys = ON;")?;
-    migrations::run(&write_conn)?;
+    migrations::run(&mut write_conn)?;
 
     // Read connection — separate handle, read-only pragmas
     let read_conn = Connection::open_with_flags(
