@@ -148,11 +148,6 @@ lazy_static::lazy_static! {
 ///
 /// sessionContinuityFixPlan.md task-02 (INV-4).
 pub fn bootstrap_resume_id_from_db(conv_id: &str, db: &crate::db::DbState) -> Option<String> {
-    // TEMP escape hatch (sessionContinuityFixPlan followup): SDK 30s timeout 재현 시
-    // 사용자가 env 로 resume bootstrap 만 끌 수 있게 함. 근본 수정 후 제거.
-    if std::env::var("TUNAFLOW_DISABLE_RESUME_BOOTSTRAP").is_ok() {
-        return None;
-    }
     // 이미 메모리에 있으면 skip (DB 보다 메모리 값이 최신일 수 있음)
     if let Some(existing) = RESUME_IDS.lock().get(conv_id).cloned() {
         return Some(existing);
@@ -393,9 +388,7 @@ async fn spawn_session(
         // stdin/stdout piped — stdin: 메시지 전달, stdout: 이벤트 수신(HTTP POST 병행)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        // TEMP (sessionContinuityFixPlan followup): SDK 30s connect timeout 근본원인 추적용.
-        // 가설 확정(Architect) 후 Stdio::null() 로 원복.
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
         .kill_on_drop(true);
 
     // `--session-id` vs `--resume` 상호배타 (claude CLI 2.1.x 제약).
@@ -425,21 +418,6 @@ async fn spawn_session(
         .stdout
         .take()
         .ok_or_else(|| AppError::Agent("sdk-session: could not get child stdout".into()))?;
-
-    // TEMP stderr 캡처 (sessionContinuityFixPlan followup): `--resume` 시 30s timeout
-    // 원인이 stdio=null 로 가려져 미확정. line-by-line eprintln 후 Architect 에 공유.
-    let child_stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| AppError::Agent("sdk-session: could not get child stderr".into()))?;
-    let conv_id_stderr = conv_id.to_string();
-    tokio::spawn(async move {
-        use tokio::io::{AsyncBufReadExt, BufReader};
-        let mut lines = BufReader::new(child_stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            eprintln!("[claude-cli stderr conv={}] {}", conv_id_stderr, line);
-        }
-    });
 
     // claude WS 연결 대기 (최대 30초)
     tokio::time::timeout(
