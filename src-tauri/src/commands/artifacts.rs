@@ -179,6 +179,36 @@ pub fn delete_artifact(id: String, state: State<DbState>) -> Result<(), AppError
     Ok(())
 }
 
+/// Artifact 단건 조회 — Insight Identity 뷰에서 artifact_refs 펼칠 때 사용.
+#[tauri::command]
+pub fn get_artifact(id: String, state: State<DbState>) -> Result<Artifact, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let sql = format!("SELECT {} FROM artifacts WHERE id = ?1", SELECT_COLS);
+    conn.query_row(&sql, [&id], map_row).map_err(|e| e.into())
+}
+
+/// project 별 `identity_summary` artifact list (최신순). frontmatter `project_key`
+/// 를 LIKE 매칭. subtask-04 IdentityView 가 history 렌더 + 전환용.
+#[tauri::command]
+pub fn list_identity_summaries(
+    project_key: String,
+    state: State<DbState>,
+) -> Result<Vec<Artifact>, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let pattern = format!("%project_key: {}\n%", project_key);
+    let sql = format!(
+        "SELECT {} FROM artifacts \
+         WHERE type = 'identity_summary' AND content LIKE ?1 \
+         ORDER BY created_at DESC",
+        SELECT_COLS
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map([&pattern], map_row)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 // ─── Identity summary (subtask-03, analyzer 전용 경로) ────────────────────
 
 /// 분석 output artifact 를 저장하는 analyzer 전용 헬퍼. `create_identity_input_artifact`

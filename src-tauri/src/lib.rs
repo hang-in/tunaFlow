@@ -169,6 +169,8 @@ pub fn run() {
             commands::artifacts::link_artifact_to_subtask,
             commands::artifacts::delete_artifact,
             commands::artifacts::create_identity_artifact,
+            commands::artifacts::get_artifact,
+            commands::artifacts::list_identity_summaries,
             // Models
             commands::model_discovery::list_engine_models,
             commands::model_discovery::refresh_engine_models,

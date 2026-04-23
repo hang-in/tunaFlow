@@ -15,8 +15,52 @@ import { CATEGORY_META, SEVERITY_META, classifyQuadrant } from "./insight/insigh
 import type { QuadrantKey } from "./insight/insightConstants";
 import { FindingDetail } from "./insight/InsightFindingCards";
 import { QuadrantSection } from "./insight/InsightQuadrant";
+import { IdentityView } from "./IdentityView";
+
+type InsightTab = "findings" | "identity";
 
 export function InsightPanel() {
+  const [activeTab, setActiveTab] = useState<InsightTab>("findings");
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <InsightTabsBar active={activeTab} onChange={setActiveTab} />
+      {activeTab === "findings" ? <InsightFindingsTab /> : <IdentityView />}
+    </div>
+  );
+}
+
+function InsightTabsBar({
+  active,
+  onChange,
+}: {
+  active: InsightTab;
+  onChange: (next: InsightTab) => void;
+}) {
+  const tabs: Array<{ id: InsightTab; label: string }> = [
+    { id: "findings", label: "Findings" },
+    { id: "identity", label: "Identity" },
+  ];
+  return (
+    <div className="flex items-center gap-0 border-b border-border/20 shrink-0">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          className={cn(
+            "px-3 py-1.5 text-[11px] font-medium transition-colors",
+            active === t.id
+              ? "text-foreground border-b-2 border-primary -mb-px"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function InsightFindingsTab() {
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const projects = useChatStore((s) => s.projects);
   // Running-analysis state lives in the store so a tab switch (which
@@ -314,7 +358,7 @@ ${lines.join("\n\n")}`;
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b border-border/20 shrink-0">
         <button
