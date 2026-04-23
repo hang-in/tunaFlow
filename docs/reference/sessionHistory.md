@@ -348,7 +348,64 @@ description: 세션별 전체 작업 이력. 새 세션 시작 시 또는 과거
 - Review verdict routing: metaAgent → Architect 이동
 - **Architect pass 선언** — 구현 진입 가능
 
-**다음**
+**3-round Codex 루프 종료 후 다음 단계**
 - SDK hot fix 사용자 재현 검증 → stderr 로그 확인
 - 구현 순서 권고: userWorldview 01 → 02 → designReviewGate 01 → (03/04 병렬)
 - TEMP 제거 PR (stderr null 원복 + escape hatch 제거)
+
+---
+
+### ✅ 세션 40 (2026-04-23~24): projectIdentityAnalysis 전체 완결 + public release prep + i18n A 절반
+
+대규모 세션. **projectIdentityAnalysisPlan 의 모든 subtask 완결** + **베타 공개 준비 Phase 0~4** + **i18n Phase A 의 4 슬라이스 (A1+A2+A2-B+A2-C)** 가 한 세션 안에 머지됨. 머지 PR: **#144~#161 (17건)**.
+
+**identity artifact 자동 생성 (#149 #150)**
+- Phase A: `decision` / `review_outcome` / `workflow_milestone` 자동 emit (plan 승인·리뷰 verdict·plan 완료 시점)
+- Phase B: `rework_reason` / `finding_success` / `finding_failure` — classifier + failure_kind 추정
+- `ArtifactKind` enum + `create_identity_input_artifact` helper (1분 dedup + IdentitySummary kind 거부)
+- INV-1 surveillance 금지 (대화 내용 파싱 없음, 워크플로 이벤트 시점 only)
+
+**metaAgent Phase 3/4 (#151 #152 #153)**
+- Phase 4: `agent_jobs` v46 (+ priority / dedupe_key / visibility) + `background_worker` (30s tick, INV-6 foreground 양보)
+- Phase 3: `evaluate_identity_trigger` (plan_done %3 AND eligible ≥ threshold) + `maybe_trigger_identity_analysis_on_plan_done` hook on `update_plan_status`
+- subtask-03 `agents/identity_analyzer.rs` — prompt template + serialization + section validation (5 섹션 예산) + retry + create_identity_summary
+- ContextPack 주입: `ContextData.identity_summary_fragment` (worldview 뒤 / identity 앞)
+
+**Insight Identity UI (#154 #155)**
+- `IdentityView.tsx` — 5 섹션 렌더 + 강제 실행 + TriggerStatus + EmptyState
+- `InsightPanel` 탭 스위처 (Findings / Identity)
+- `IdentityAnalysisSettings` — threshold 슬라이더 3-50 + toggle + 지금 실행
+- `RuntimeStatusBar` bg job 배지 (15s 폴링 + `background_insight_progress` 이벤트)
+- `IDENTITY_ANALYSIS_THRESHOLD: AtomicI64` + get/set commands
+
+**insightStability 4-bug chain (#156)**
+- Subtask 01: rawq `ctx_before` / `chunk_start` clamp (external repo 2개 `_research/_util/rawq` + `tunaDish/vendor/rawq` 동시 patch, upstream PR 생략)
+- Subtask 02: insight skip 조건 OR → **snippets 필수** (INV-2 evidence-based)
+- Subtask 03: claude stream JSON `usage` nested 파서 (INV-3 old+new schema fallback)
+- Subtask 04: agent-timeout `timed_out: Arc<AtomicBool>` + `insight_extract` 12 분 wall-clock timeout wrapper (INV-4)
+
+**public release prep (#157)**
+- Phase 0: `tunaflow.db` 확인 — 원래 untracked
+- Phase 1: 2 screenshot 제거 + `.gitignore 에 screenshot-*.png` + eval cleanup 기본값 OFF→ON 전환 + 개인 경로 정제 (`context_hub.rs` 테스트)
+- Phase 2: LICENSE (Apache 2.0) + CONTRIBUTING + SECURITY + CoC + .github issue/PR templates + agents/README
+- Phase 3 (부분): README "Why it exists" + 배지 교체 (Apache 2.0 / Status Beta / DB Schema v46) + CLAUDE.md/INSTALL.md/index.md top-line
+- 보류: Built with tunaFlow 섹션 + References _util 원 repo URL (사용자 입력 필요)
+
+**i18n PR A 네 슬라이스 (#158 #159 #160 #161)**
+- A1: 인프라 (react-i18next@17, i18next@26) + common + error namespace + Language 드롭다운 + Rust AppError 재설계 `{ code, context, message }` + `extractErrorCode` util
+- A2: +4 namespace (settings/sidebar/chat/dialog) + SettingsPanel nav + WorldviewSettings + IdentityAnalysisSettings 전환
+- A2-B: NewMessageInput + ChatPanel aria-label (chat.json +8 keys)
+- A2-C: **Sidebar.tsx 15 문자열 전부 전환** (sidebar.json confirm.* 10 keys 추가)
+
+**남은 i18n 경로 (후속 세션에 분할)**
+- A2-D: MessageItem / TreeRow / ChatsSection / FilesSection / DocsSection / ScratchpadSection / SidebarContextMenu
+- A2-E: workflow.json 신규 + WorkflowCard / DevProgressView / PlanCard / PlanProposalCard / ApprovalGate / DraftingActions / ReviewVerdictCard
+- A2-F: branch.json 신규 + BranchPanel / BranchThreadPanel / CreateRoundtableDialog
+- A2-G: insight.json 신규 + InsightPanel 본문 + IdentityView 본문 + 기타 insight 계열
+- A3 (Rust): defaultPersonas.ts 영어 전환 + `tool_handler.rs` 도구 스키마 영어 + RT prompt 함수 영어 (Phase 4A-2/3)
+- PR B (베타 공개 후): insightOrchestration.ts 영어 전환 + A/B 검증 (INV-3)
+- Phase 5 베타 공개: i18n 완료 후 `gh repo edit --visibility public` + `v0.1.0-beta` 태그
+
+**테스트 증가**
+- Rust: 444 → 485 (+41, identity_analyzer + meta_agent + errors + 기타)
+- Frontend: 297 → 322 (+25, parseIdentitySummary + classifier + extractErrorCode + workflow services 확장)
