@@ -15,9 +15,13 @@ import {
   saveFailureLessons,
   createVerdictArtifact,
   createReviewOutcomeArtifact,
+  createReworkReasonArtifact,
+  createFindingSuccessArtifact,
+  createFindingFailureArtifact,
   createTestReportArtifact,
   getPlanSlug,
 } from "./helpers";
+import { classifyIdentityArtifacts, computeReworkRound } from "./services/identityArtifactClassifier";
 import type { CreateBranchResult } from "./helpers";
 import { syncResultReport, syncReviewReport } from "./reportSync";
 import {
@@ -218,6 +222,21 @@ export async function processReviewVerdict(
   const reviewRound = (plan.versionMinor || 0) + 1;
   await createReviewOutcomeArtifact(plan, verdict, undefined, reviewRound);
 
+  // Phase B: subtask 별 finding_success / finding_failure. pass/fail 구분 없이
+  // classifier 가 판정 (failed_subtask_ids 있으면 failure, 없고 done 이면 success).
+  // pass 시 failed_subtask_ids 는 빈 배열 → 모든 done 이 success 로 떨어짐.
+  try {
+    const subtasks = await planApi.listSubtasks(plan.id);
+    const { successes, failures } = classifyIdentityArtifacts(subtasks, verdict);
+    const agentEngine = plan.developerEngine ?? undefined;
+    await Promise.all([
+      ...successes.map((st) => createFindingSuccessArtifact(plan, st, agentEngine)),
+      ...failures.map((st) => createFindingFailureArtifact(plan, st, verdict, agentEngine, null)),
+    ]);
+  } catch (e) {
+    console.warn("[identity-artifact] subtask classification failed:", e);
+  }
+
   if (verdict.verdict === "pass") {
     await planApi.updatePlanPhase(plan.id, "done");
     await planApi.updatePlanStatus(plan.id, "done");
@@ -272,6 +291,18 @@ export async function processReviewVerdict(
     await planApi.createPlanEvent(plan.id, "review_failed", "reviewer", detail);
     await saveFailureLessons(plan, verdict.findings);
     await createVerdictArtifact(plan, verdict);
+
+    // Phase B: Rework 진입 시 rework_reason identity-input artifact.
+    // cycle 은 review_failed plan-event 개수 (방금 추가한 건 포함). plans.rework_cycle
+    // 컬럼이 없어 derive. computeDoomLoopState 와 달리 escalation window 무관한
+    // 누적 count — identity 분석은 plan 전체 생애주기를 보기 위함.
+    try {
+      const eventsAfterFail = await planApi.listPlanEvents(plan.id);
+      const cycle = computeReworkRound(eventsAfterFail);
+      await createReworkReasonArtifact(plan, verdict, cycle);
+    } catch (e) {
+      console.warn("[identity-artifact] rework_reason failed:", e);
+    }
 
     // Tier 2 트리거 — projectKey 조회 후 fail 누적 카운트 체크.
     try {

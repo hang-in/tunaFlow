@@ -2,7 +2,7 @@
  * Shared workflow helpers — slug, project path, branch creation, artifacts.
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { Branch, Plan } from "@/types";
+import type { Branch, Plan, PlanSubtask } from "@/types";
 import * as planApi from "../api/plans";
 import * as artifactApi from "../api/artifacts";
 import * as failureLessonsApi from "../api/failureLessons";
@@ -164,6 +164,106 @@ export async function saveFailureLessons(plan: Plan, findings: string[]): Promis
 }
 
 // ─── Artifact creation ─────────────────────────────────────────────────────
+
+/** subtask-01 Phase B: Rework 진입 시 `rework_reason` identity-input artifact.
+ *  cycle 은 plan_events.review_failed 개수 기반 derive (plans.rework_cycle 컬럼 없음). */
+export async function createReworkReasonArtifact(
+  plan: Plan,
+  verdict: ParsedReviewVerdict,
+  cycle: number,
+): Promise<void> {
+  try {
+    const content = {
+      cycle,
+      findings: verdict.findings,
+      root_cause_hint: verdict.recommendations.join("; "),
+    };
+    await invoke("create_identity_artifact", {
+      input: {
+        kind: "rework_reason",
+        conversationId: plan.conversationId,
+        planId: plan.id,
+        subtaskId: null,
+        title: `Rework ${cycle}: ${plan.title}`,
+        content,
+      },
+    });
+  } catch (e) {
+    console.warn("[identity-artifact] rework_reason failed:", e);
+  }
+}
+
+/** subtask-01 Phase B: review 통과 + subtask done 확정 시 `finding_success` artifact.
+ *  classifier 가 결정한 subtask 에 대해 1건씩 호출. */
+export async function createFindingSuccessArtifact(
+  plan: Plan,
+  subtask: PlanSubtask,
+  agentEngine: string | undefined,
+): Promise<void> {
+  try {
+    const content = {
+      subtask_id: subtask.id,
+      subtask_idx: subtask.idx,
+      duration_ms: null as number | null,
+      agent_engine: agentEngine ?? null,
+      notes: null as string | null,
+    };
+    await invoke("create_identity_artifact", {
+      input: {
+        kind: "finding_success",
+        conversationId: plan.conversationId,
+        planId: plan.id,
+        subtaskId: subtask.id,
+        title: `Subtask ${subtask.idx + 1} success: ${subtask.title}`,
+        content,
+      },
+    });
+  } catch (e) {
+    console.warn("[identity-artifact] finding_success failed:", e);
+  }
+}
+
+/** subtask-01 Phase B: review fail 시 failed_subtask_ids 각 id 에 대해 `finding_failure`. */
+export async function createFindingFailureArtifact(
+  plan: Plan,
+  subtask: PlanSubtask,
+  verdict: ParsedReviewVerdict,
+  agentEngine: string | undefined,
+  evidenceMessageId: string | null,
+): Promise<void> {
+  try {
+    const content = {
+      subtask_id: subtask.id,
+      subtask_idx: subtask.idx,
+      failure_kind: inferFailureKind(verdict.findings),
+      agent_engine: agentEngine ?? null,
+      evidence_msg_id: evidenceMessageId,
+    };
+    await invoke("create_identity_artifact", {
+      input: {
+        kind: "finding_failure",
+        conversationId: plan.conversationId,
+        planId: plan.id,
+        subtaskId: subtask.id,
+        title: `Subtask ${subtask.idx + 1} failure: ${subtask.title}`,
+        content,
+      },
+    });
+  } catch (e) {
+    console.warn("[identity-artifact] finding_failure failed:", e);
+  }
+}
+
+/** findings 문장 내 키워드로 failure_kind 를 추정. 없으면 "other" fallback.
+ *  가벼운 분류로 identity 분석기의 input 다양성 확보가 목적 — 정확도 필수 아님. */
+function inferFailureKind(findings: string[]): string {
+  const joined = findings.join(" ").toLowerCase();
+  if (/scope|범위/.test(joined)) return "scope_violation";
+  if (/blocker|block|막힘/.test(joined)) return "blocker";
+  if (/test|테스트/.test(joined)) return "test_failure";
+  if (/convention|관례/.test(joined)) return "convention";
+  return "other";
+}
 
 /** projectIdentityAnalysisPlan subtask-01: verdict 확정 시 `review_outcome` 구조화
  *  identity-input artifact 를 생성. 기존 `createVerdictArtifact` (review-findings 마크다운)

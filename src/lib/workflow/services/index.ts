@@ -10,3 +10,4 @@ export * from "./reviewVerdict";
 export * from "./doomLoopDetector";
 export * from "./reviewBranchReuse";
 export * from "./fileDisposition";
+export * from "./identityArtifactClassifier";

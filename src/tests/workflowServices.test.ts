@@ -6,8 +6,11 @@ import {
   computeDoomLoopState,
   computeFindingOverlap,
   shouldReuseReviewBranch,
+  classifyIdentityArtifacts,
+  computeReworkRound,
 } from "@/lib/workflow/services";
 import type { Branch, Message, PlanEvent, PlanSubtask } from "@/types";
+import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 
 const subtask = (idx: number, status: PlanSubtask["status"] = "in_progress"): PlanSubtask => ({
   id: `st-${idx}`,
@@ -298,5 +301,84 @@ describe("shouldReuseReviewBranch", () => {
   it("rejects when the branch row is missing from the list", () => {
     const d = shouldReuseReviewBranch(plan, [], "roundtable");
     expect(d.reuse).toBe(false);
+  });
+});
+
+describe("classifyIdentityArtifacts (subtask-01 Phase B)", () => {
+  const verdict = (
+    v: "pass" | "fail" | "conditional",
+    failedIds: number[] = [],
+  ): ParsedReviewVerdict => ({
+    verdict: v,
+    rubric: undefined,
+    findings: [],
+    recommendations: [],
+    failedSubtaskIds: failedIds,
+    raw: "",
+  });
+
+  it("pass verdict + all done → everyone is success", () => {
+    const subtasks = [subtask(0, "done"), subtask(1, "done"), subtask(2, "done")];
+    const { successes, failures } = classifyIdentityArtifacts(subtasks, verdict("pass"));
+    expect(successes.map((s) => s.idx)).toEqual([0, 1, 2]);
+    expect(failures).toEqual([]);
+  });
+
+  it("fail verdict with failed_ids splits success and failure", () => {
+    const subtasks = [subtask(0, "done"), subtask(1, "done"), subtask(2, "done")];
+    const { successes, failures } = classifyIdentityArtifacts(
+      subtasks,
+      verdict("fail", [2]), // idx 1 (1-based 2)
+    );
+    expect(successes.map((s) => s.idx)).toEqual([0, 2]);
+    expect(failures.map((s) => s.idx)).toEqual([1]);
+  });
+
+  it("in_progress/todo subtasks are excluded from both buckets", () => {
+    const subtasks = [
+      subtask(0, "done"),
+      subtask(1, "in_progress"),
+      subtask(2, "todo"),
+      subtask(3, "abandoned"),
+    ];
+    const { successes, failures } = classifyIdentityArtifacts(subtasks, verdict("pass"));
+    expect(successes.map((s) => s.idx)).toEqual([0]);
+    expect(failures).toEqual([]);
+  });
+
+  it("failed_id 우선권 — done 인 subtask 도 failed_ids 에 들어있으면 failure", () => {
+    const subtasks = [subtask(0, "done"), subtask(1, "done")];
+    const { successes, failures } = classifyIdentityArtifacts(
+      subtasks,
+      verdict("fail", [1]), // idx 0 (1-based 1)
+    );
+    expect(failures.map((s) => s.idx)).toEqual([0]);
+    expect(successes.map((s) => s.idx)).toEqual([1]);
+  });
+
+  it("empty subtasks returns empty buckets", () => {
+    const r = classifyIdentityArtifacts([], verdict("pass"));
+    expect(r.successes).toEqual([]);
+    expect(r.failures).toEqual([]);
+  });
+});
+
+describe("computeReworkRound (subtask-01 Phase B)", () => {
+  it("counts only review_failed events", () => {
+    const events = [
+      planEvent("approved", 1),
+      planEvent("review_failed", 2),
+      planEvent("review_failed", 3),
+      planEvent("review_passed", 4),
+    ];
+    expect(computeReworkRound(events)).toBe(2);
+  });
+
+  it("returns 0 when no fail events", () => {
+    expect(computeReworkRound([planEvent("approved", 1)])).toBe(0);
+  });
+
+  it("returns 0 for empty list", () => {
+    expect(computeReworkRound([])).toBe(0);
   });
 });
