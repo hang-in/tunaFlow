@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
 import { getSetting, setSetting } from "@/lib/appStore";
@@ -6,6 +7,7 @@ import { DEFAULT_PERSONAS } from "@/lib/defaultPersonas";
 import type { Persona } from "@/types";
 
 export function PersonasSection() {
+  const { t } = useTranslation("settings");
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -47,8 +49,8 @@ export function PersonasSection() {
 
   return (
     <div>
-      <h2 className="text-[14px] font-[550] text-foreground mb-1">Personas</h2>
-      <p className="text-[12px] text-muted-foreground mb-4">에이전트의 역할과 행동 규칙을 정의합니다. Agent Profile에서 persona를 선택하여 사용합니다.</p>
+      <h2 className="text-[14px] font-[550] text-foreground mb-1">{t("personas.heading")}</h2>
+      <p className="text-[12px] text-muted-foreground mb-4">{t("personas.description")}</p>
 
       <div className="flex gap-4 min-h-[300px]">
         <div className="w-[160px] shrink-0 space-y-1">
