@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ export function PlanCard({
   onSwitchToChat?: () => void;
   defaultExpanded?: boolean;
 }) {
+  const { t } = useTranslation("workflow");
   const { sendFollowup, setHandoffSource, branches, openThread, sendThreadRoundtable, loadBranches, runningThreadIds } = useChatStore();
   const [plan, setPlan] = useState(initialPlan);
   // Sync local plan state when parent re-renders with updated plan (e.g., auto-detect verdict)
@@ -127,10 +129,10 @@ export function PlanCard({
   ];
 
   const allStatusActions: { status: PlanStatus; label: string; icon: React.ReactNode; destructive?: boolean }[] = [
-    { status: "active", label: "Active로 변경", icon: <Play className={ctxMenuIcon} /> },
-    { status: "done", label: "완료 처리", icon: <CheckCircle className={ctxMenuIcon} /> },
-    { status: "draft", label: "Draft로 되돌리기", icon: <RotateCcw className={ctxMenuIcon} /> },
-    { status: "abandoned", label: "Abandon", icon: <Ban className={ctxMenuIcon} />, destructive: true },
+    { status: "active", label: t("plan.context_menu.status_active"), icon: <Play className={ctxMenuIcon} /> },
+    { status: "done", label: t("plan.context_menu.status_done"), icon: <CheckCircle className={ctxMenuIcon} /> },
+    { status: "draft", label: t("plan.context_menu.status_draft"), icon: <RotateCcw className={ctxMenuIcon} /> },
+    { status: "abandoned", label: t("plan.context_menu.status_abandoned"), icon: <Ban className={ctxMenuIcon} />, destructive: true },
   ];
   const statusActions = allStatusActions.filter((a) => a.status !== plan.status);
 
@@ -148,7 +150,7 @@ export function PlanCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-xs font-medium text-foreground leading-snug">{plan.title}</p>
-            <button onClick={(e) => { e.stopPropagation(); setShowDoc(true); }} title="문서 보기" className="shrink-0 text-muted-foreground/30 hover:text-primary/60 transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); setShowDoc(true); }} title={t("plan.header.doc_tooltip")} className="shrink-0 text-muted-foreground/30 hover:text-primary/60 transition-colors">
               <FileText className="w-3 h-3" />
             </button>
             {plan.phase !== "drafting" && (
@@ -234,7 +236,7 @@ export function PlanCard({
                   }}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors"
                 >
-                  <Check className="w-3 h-3" />검토 완료 → Dev 승인
+                  <Check className="w-3 h-3" />{t("plan.subtask_review.approve_button")}
                 </button>
                 <button
                   onClick={async () => {
@@ -244,7 +246,7 @@ export function PlanCard({
                   }}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  수정 필요 → Drafting
+                  {t("plan.subtask_review.revert_button")}
                 </button>
               </div>
             )}
@@ -258,7 +260,7 @@ export function PlanCard({
             {plan.phase === "approval" && plan.reviewBranchId && (
               <div className="mt-1.5 flex items-center gap-2">
                 <button onClick={() => openThread(plan.reviewBranchId!)} className="text-[9px] text-primary/60 hover:text-primary hover:underline flex items-center gap-0.5">
-                  <GitBranch className="w-2.5 h-2.5" />Review Branch 열기
+                  <GitBranch className="w-2.5 h-2.5" />{t("plan.branch_links.review_open")}
                 </button>
                 <MergeBranchButton plan={plan} branchId={plan.reviewBranchId} branchType="review" onPlanUpdate={handlePlanUpdate} />
               </div>
@@ -269,12 +271,12 @@ export function PlanCard({
               <>
                 <div className="mt-1.5 flex items-center gap-2">
                   <button onClick={() => openThread(plan.implementationBranchId!)} className="text-[9px] text-primary/60 hover:text-primary hover:underline flex items-center gap-0.5">
-                    <GitBranch className="w-2.5 h-2.5" />Implementation Branch 열기
+                    <GitBranch className="w-2.5 h-2.5" />{t("plan.branch_links.impl_open")}
                   </button>
                 </div>
                 {implComplete && !runningThreadIds.includes(`branch:${plan.implementationBranchId}`) && (
                   <div className="mt-2 rounded-md border border-status-approved/30 bg-status-approved/5 p-2 text-tf-xs text-status-approved flex items-center gap-1.5">
-                    <Check className="w-3 h-3" />구현 완료 — Review 단계로 전환 가능
+                    <Check className="w-3 h-3" />{t("plan.review_ready.impl_complete_label")}
                     <button
                       onClick={async () => {
                         // 진입 게이트 + roleAssignments 해석으로 model 포함 전달
@@ -309,7 +311,7 @@ export function PlanCard({
                       }}
                       className="ml-auto px-2 py-0.5 rounded text-[9px] font-medium bg-status-approved/20 hover:bg-status-approved/30 transition-colors"
                     >
-                      Review RT 시작
+                      {t("plan.review_ready.review_rt_button")}
                     </button>
                   </div>
                 )}
@@ -322,7 +324,7 @@ export function PlanCard({
                 {plan.reviewBranchId && (
                   <div className="mt-1.5">
                     <button onClick={() => openThread(plan.reviewBranchId!)} className="text-[9px] text-primary/60 hover:text-primary hover:underline flex items-center gap-0.5">
-                      <GitBranch className="w-2.5 h-2.5" />Review Branch 열기
+                      <GitBranch className="w-2.5 h-2.5" />{t("plan.branch_links.review_open")}
                     </button>
                   </div>
                 )}
@@ -332,27 +334,24 @@ export function PlanCard({
                 {/* Fallback: no verdict marker detected — let user manually decide */}
                 {!reviewVerdict && !runningThreadIds.includes(`branch:${plan.reviewBranchId}`) && (
                   <div className="mt-2 rounded-md border border-muted/40 bg-muted/5 p-2.5 space-y-1.5">
-                    <p className="text-[9px] text-muted-foreground/60">리뷰어 마커가 감지되지 않았습니다. 수동으로 판단하세요.</p>
+                    <p className="text-[9px] text-muted-foreground/60">{t("plan.review_fallback.no_verdict_hint")}</p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
                         onClick={async () => {
-                          // Review 진입 자체가 실패한 경우 — 한 단계 전(dev 완료 상태)으로 되돌려
-                          // 사용자가 Review RT 를 다시 시작할 수 있게 한다. 기존 review 브랜치는
-                          // archive (재사용되지 않고 다음 시작 시 새 브랜치 생성됨). s37
                           if (plan.reviewBranchId) {
                             await invoke("archive_branch", { id: plan.reviewBranchId }).catch(() => {});
                           }
                           await planApi.updatePlanPhase(plan.id, "implementation");
                           await planApi.createPlanEvent(
                             plan.id, "review_rolled_back", "user",
-                            "Review 진입 실패로 Dev 단계 복귀",
+                            t("plan.review_fallback.back_to_dev_event_reason"),
                           );
                           handlePlanUpdate({ phase: "implementation" });
                         }}
                         className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                        title="Review RT 진입이 실패했을 때 Dev 완료 상태로 되돌립니다. 기존 review 브랜치는 archive."
+                        title={t("plan.review_fallback.back_to_dev_tooltip")}
                       >
-                        ← Dev 단계로 복귀 (Review 재시도)
+                        {t("plan.review_fallback.back_to_dev_button")}
                       </button>
                       <button
                         onClick={async () => {
@@ -362,7 +361,7 @@ export function PlanCard({
                         }}
                         className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-rejected/10 text-status-rejected hover:bg-status-rejected/20 transition-colors"
                       >
-                        수정 필요 (Rework)
+                        {t("plan.review_fallback.mark_rework_button")}
                       </button>
                       <button
                         onClick={async () => {
@@ -373,7 +372,7 @@ export function PlanCard({
                         }}
                         className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 transition-colors"
                       >
-                        통과 처리 (Done)
+                        {t("plan.review_fallback.mark_done_button")}
                       </button>
                     </div>
                   </div>
@@ -384,12 +383,15 @@ export function PlanCard({
             {/* Rework phase — send findings to Developer or return to Subtask */}
             {plan.phase === "rework" && plan.implementationBranchId && (
               <div className="mt-2 rounded-md border border-status-rejected/30 bg-status-rejected/5 p-2.5 text-tf-xs text-status-rejected space-y-2">
-                <p>Rework 필요 — Review findings를 Developer에게 전달합니다.</p>
+                <p>{t("plan.rework_notice.heading")}</p>
                 {(() => {
                   const failCount = events.filter((e) => e.eventType === "review_failed").length;
                   return failCount >= 2 ? (
                     <p className="text-[9px] font-medium text-amber-500">
-                      ⚠ Review 실패 {failCount}회 — {failCount >= 3 ? "설계 재검토가 필요합니다." : "다음 실패 시 설계 재검토로 에스컬레이션됩니다."}
+                      {t("plan.rework_notice.fail_count_warning", {
+                        count: failCount,
+                        hint: failCount >= 3 ? t("plan.rework_notice.fail_hint_final") : t("plan.rework_notice.fail_hint_next"),
+                      })}
                     </p>
                   ) : null;
                 })()}
@@ -405,26 +407,23 @@ export function PlanCard({
                       await planApi.createPlanEvent(plan.id, "rework_requested", "user");
                       handlePlanUpdate({ phase: "implementation" });
                       await openThread(plan.implementationBranchId!);
-                      // Send review findings to Developer with budget pressure
-                      const findings = reviewVerdict?.findings.join("\n- ") ?? "";
+                      const findingsRaw = reviewVerdict?.findings.join("\n- ") ?? "";
                       const failCount = events.filter((e) => e.eventType === "review_failed").length;
+                      const findings = findingsRaw ? `- ${findingsRaw}` : t("plan.rework_notice.rework_findings_empty");
                       const pressure = failCount >= 2
-                        ? `\n> ⚠️ 이전 ${failCount}회 Review 실패. ${failCount >= 3 ? "이번이 마지막 기회입니다." : "다음 실패 시 설계 재검토로 에스컬레이션됩니다."}`
+                        ? t("plan.rework_notice.rework_pressure", {
+                            count: failCount,
+                            hint: failCount >= 3 ? t("plan.rework_notice.fail_hint_final") : t("plan.rework_notice.fail_hint_next"),
+                          })
                         : "";
-                      const reworkPrompt = [
-                        `[Rework] Review에서 다음 사항이 지적되었습니다:`,
-                        findings ? `- ${findings}` : "(findings 없음)",
-                        "",
-                        `위 사항을 수정하고 완료되면 알려주세요.`,
-                        pressure,
-                      ].filter(Boolean).join("\n");
+                      const reworkPrompt = t("plan.rework_notice.rework_prompt", { findings, pressure });
                       const shadowConvId = `branch:${plan.implementationBranchId}`;
                       const saved = useChatStore.getState().getConversationEngine(shadowConvId);
                       await useChatStore.getState().sendThreadMessage(reworkPrompt, saved?.engine ?? "claude", saved?.model ?? undefined);
                     }}
                     className="px-2.5 py-1 rounded-md text-tf-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                   >
-                    Developer에게 전달 + Rework
+                    {t("plan.rework_notice.deliver_rework_button")}
                   </button>
                   <button
                     onClick={async () => {
@@ -434,7 +433,7 @@ export function PlanCard({
                     }}
                     className="px-2.5 py-1 rounded-md text-tf-xs font-medium bg-accent text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    설계 변경 → Subtask
+                    {t("plan.rework_notice.redesign_subtask_button")}
                   </button>
                 </div>
               </div>
@@ -462,11 +461,11 @@ export function PlanCard({
       <ContextMenu.Portal>
         <ContextMenu.Content className={ctxMenuContent}>
           <ContextMenu.Item className={ctxMenuItem} onSelect={() => setShowDoc(true)}>
-            <FileText className={ctxMenuIcon} /> 문서 보기
+            <FileText className={ctxMenuIcon} /> {t("plan.context_menu.doc_view")}
           </ContextMenu.Item>
           <ContextMenu.Item className={ctxMenuItem} onSelect={handleToggle}>
             {expanded ? <ChevronDown className={ctxMenuIcon} /> : <ChevronRight className={ctxMenuIcon} />}
-            {expanded ? "접기" : "펼치기"}
+            {expanded ? t("plan.context_menu.collapse") : t("plan.context_menu.expand")}
           </ContextMenu.Item>
           <ContextMenu.Separator className={ctxMenuSeparator} />
           {statusActions.map((a) => (
@@ -482,7 +481,7 @@ export function PlanCard({
             </ContextMenu.Item>
           ))}
           <ContextMenu.Separator className={ctxMenuSeparator} />
-          <ContextMenu.Label className="px-2.5 py-1 text-[9px] text-muted-foreground/40 font-medium">Phase 전환</ContextMenu.Label>
+          <ContextMenu.Label className="px-2.5 py-1 text-[9px] text-muted-foreground/40 font-medium">{t("plan.context_menu.phase_section_label")}</ContextMenu.Label>
           {(["drafting", "approval", "implementation", "review", "done"] as PlanPhase[])
             .filter((p) => p !== plan.phase)
             .map((phase) => (
@@ -518,6 +517,7 @@ function extractHeading(md: string): string | null {
 }
 
 function AddSubtasksInline({ plan, onAdded }: { plan: Plan; onAdded: (tasks: PlanSubtask[]) => void }) {
+  const { t } = useTranslation("workflow");
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -584,7 +584,7 @@ function AddSubtasksInline({ plan, onAdded }: { plan: Plan; onAdded: (tasks: Pla
         onClick={() => { setOpen(true); setTimeout(() => textareaRef.current?.focus(), 50); }}
         className="flex items-center gap-1 text-tf-xs text-muted-foreground/40 hover:text-primary/60 transition-colors py-0.5"
       >
-        <Plus className="w-3 h-3" /> 서브태스크 추가
+        <Plus className="w-3 h-3" /> {t("plan.add_subtasks.add_button")}
       </button>
     );
   }
@@ -592,7 +592,7 @@ function AddSubtasksInline({ plan, onAdded }: { plan: Plan; onAdded: (tasks: Pla
   return (
     <div className="space-y-1.5 mt-1">
       <div className="flex items-center justify-between">
-        <p className="text-tf-xs text-muted-foreground/50">한 줄에 하나씩 (마크다운 리스트 형식 OK)</p>
+        <p className="text-tf-xs text-muted-foreground/50">{t("plan.add_subtasks.line_hint")}</p>
         {plan.slug && (
           <button
             onClick={handleParseFromDocs}
@@ -600,7 +600,7 @@ function AddSubtasksInline({ plan, onAdded }: { plan: Plan; onAdded: (tasks: Pla
             className="flex items-center gap-1 text-tf-xs text-primary/50 hover:text-primary transition-colors disabled:opacity-40"
           >
             {parsing ? <Loader2 className="w-3 h-3 animate-spin" /> : <FolderOpen className="w-3 h-3" />}
-            docs에서 가져오기
+            {t("plan.add_subtasks.from_docs_button")}
           </button>
         )}
       </div>
@@ -608,7 +608,7 @@ function AddSubtasksInline({ plan, onAdded }: { plan: Plan; onAdded: (tasks: Pla
         ref={textareaRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={"1. 첫 번째 작업\n2. 두 번째 작업\n3. 세 번째 작업"}
+        placeholder={t("plan.add_subtasks.textarea_placeholder")}
         rows={5}
         className="w-full bg-input rounded-md px-2.5 py-1.5 text-tf-sm outline-none text-foreground placeholder:text-muted-foreground/30 border border-border/30 focus:border-ring/40 resize-none font-mono"
       />
@@ -619,13 +619,13 @@ function AddSubtasksInline({ plan, onAdded }: { plan: Plan; onAdded: (tasks: Pla
           className="flex items-center gap-1 px-2.5 py-1 rounded-md text-tf-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
         >
           {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-          저장
+          {t("plan.add_subtasks.save_button")}
         </button>
         <button
           onClick={() => { setOpen(false); setText(""); }}
           className="px-2 py-1 rounded-md text-tf-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          취소
+          {t("plan.add_subtasks.cancel_button")}
         </button>
       </div>
     </div>

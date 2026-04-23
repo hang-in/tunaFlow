@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { ClipboardList, Check, RotateCcw, Merge, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ interface PlanProposalCardProps {
 }
 
 export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardProps) {
+  const { t } = useTranslation("workflow");
   const [status, setStatus] = useState<"loading" | "idle" | "promoting" | "promoted" | "merged" | "revising" | "warn-empty" | "dismissed">("loading");
   const [revisionInput, setRevisionInput] = useState("");
   const [revisionTarget, setRevisionTarget] = useState<Plan | null>(null);
@@ -139,18 +141,12 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
   const handleOverwrite = async () => {
     if (!overwriteCandidate) return;
     const isResumingDone = overwriteCandidate.status === "done" || overwriteCandidate.status === "abandoned";
-    // 명시적 사용자 confirm — 기존 subtasks/메타가 교체되고 branches 가 archive 됨을 경고.
+    const statusLabel = overwriteCandidate.status === "done"
+      ? t("proposal.confirm.status_done")
+      : t("proposal.confirm.status_abandoned");
     const confirmMsg = isResumingDone
-      ? `완료된 Plan "${overwriteCandidate.title}" 을 이 제안으로 재개하시겠습니까?\n\n` +
-        `- 이미 ${overwriteCandidate.status === "done" ? "완료" : "폐기"} 된 Plan 을 active 로 되돌려 Dev 단계로 진입시킵니다\n` +
-        `- 기존 subtasks 는 모두 제안 내용으로 교체됩니다\n` +
-        `- 이미 archive 된 impl/review branches 는 그대로 (재사용하지 않음 — 신규 Dev 시작 시 새 브랜치)\n` +
-        `- 이미 수정된 파일은 자동 revert 되지 않습니다`
-      : `기존 Plan "${overwriteCandidate.title}" 을 이 제안으로 덮어쓰시겠습니까?\n\n` +
-        `- 기존 subtasks 는 모두 교체됩니다\n` +
-        `- 진행 중인 implementation/review branches 는 archive 됩니다\n` +
-        `- Phase 가 Approval 로 리셋되어 Dev 시작 가능 상태가 됩니다\n` +
-        `- 이미 수정된 파일은 자동 revert 되지 않습니다 (필요 시 수동 처리)`;
+      ? t("proposal.confirm.reopen_body", { title: overwriteCandidate.title, statusLabel })
+      : t("proposal.confirm.overwrite_body", { title: overwriteCandidate.title });
     const ok = window.confirm(confirmMsg);
     if (!ok) return;
 
@@ -208,12 +204,14 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
           disp.revert.length > 0 ? `Revert ${disp.revert.length}` : null,
         ].filter(Boolean).join(" · ");
         if (disp.revert.length > 0) {
+          const items = disp.revert.slice(0, 6).map((f) => `• ${f}`).join("\n");
+          const more = disp.revert.length > 6 ? `\n… +${disp.revert.length - 6}` : "";
           toast.warning(
-            `파일 처리 방침: ${summary}\n\nRevert 대상 (수동 처리 필요):\n${disp.revert.slice(0, 6).map((f) => `• ${f}`).join("\n")}${disp.revert.length > 6 ? `\n… +${disp.revert.length - 6}` : ""}`,
+            t("proposal.toast.disposition_revert_warning", { summary, items, more }),
             { duration: 12000 },
           );
         } else {
-          toast.info(`파일 처리 방침: ${summary}`, { duration: 5000 });
+          toast.info(t("proposal.toast.disposition_summary", { summary }), { duration: 5000 });
         }
       }
     } catch (e) {
@@ -287,7 +285,7 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
     // no main conversation was selected when the card mounted.
     if (planConvId.startsWith("branch:")) {
       import("sonner")
-        .then(({ toast }) => toast.error("Plan 등록 실패: 부모 대화를 선택한 뒤 다시 시도해주세요."))
+        .then(({ toast }) => toast.error(t("proposal.toast.promote_branch_error")))
         .catch(() => {});
       setStatus("idle");
       return;
@@ -377,29 +375,25 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
     return (
       <div className="my-2 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-xs text-primary flex items-center gap-2">
         <Merge className="w-3.5 h-3.5" />
-        <span>Plan &quot;{proposal.title}&quot; rev.{rev} — 수정 반영 완료 (재승인 필요)</span>
+        <span>{t("proposal.status.merged_label", { title: proposal.title, rev })}</span>
       </div>
     );
   }
 
   if (status === "promoted") {
     const isDone = overwriteCandidate?.status === "done" || overwriteCandidate?.status === "abandoned";
-    const locationHint = isDone ? " (워크플로우 탭 → Done)" : "";
+    const locationHint = isDone ? t("proposal.status.location_done_hint") : "";
     return (
       <div className="my-2 rounded-lg border border-status-approved/30 bg-status-approved/5 px-4 py-2.5 text-xs text-status-approved flex items-center gap-2 flex-wrap">
         <Check className="w-3.5 h-3.5 shrink-0" />
-        <span className="flex-1 min-w-0">Plan &quot;{proposal.title}&quot; — Plan 탭에 등록됨{locationHint}</span>
+        <span className="flex-1 min-w-0">{t("proposal.status.promoted_label", { title: proposal.title, locationHint })}</span>
         {overwriteCandidate && (
           <button
             onClick={handleOverwrite}
             className="shrink-0 px-2 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-            title={
-              isDone
-                ? "완료된 Plan 을 이 제안으로 재개 (active + Approval)"
-                : "이 제안으로 기존 Plan 덮어쓰기 (Approval 로 리셋 + branches archive)"
-            }
+            title={isDone ? t("proposal.status.overwrite_done_tooltip") : t("proposal.status.overwrite_active_tooltip")}
           >
-            {isDone ? "완료 Plan 재개" : "rev 로 덮어쓰기"}
+            {isDone ? t("proposal.status.overwrite_done_button") : t("proposal.status.overwrite_active_button")}
           </button>
         )}
       </div>
@@ -409,39 +403,36 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
   if (status === "warn-empty") {
     return (
       <div className="my-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs space-y-2">
-        <p className="text-amber-400 font-medium">서브태스크를 인식하지 못했습니다</p>
-        <p className="text-muted-foreground text-[11px]">
-          에이전트가 서브태스크를 잘못된 형식으로 작성했을 수 있습니다.
-          파서가 인식하는 형식:
-        </p>
+        <p className="text-amber-400 font-medium">{t("proposal.warn_empty.title")}</p>
+        <p className="text-muted-foreground text-[11px]">{t("proposal.warn_empty.body")}</p>
         <pre className="text-[10px] text-muted-foreground/70 bg-black/20 rounded px-2 py-1.5 font-mono leading-relaxed">
 {`### Subtasks        ← 삼중 # 필수
 1. 첫 번째 작업 — 설명
 2. 두 번째 작업 — 설명`}
         </pre>
         <p className="text-muted-foreground/60 text-[10px]">
-          ❌ <code className="font-mono">## Subtasks</code> (이중 #) &nbsp;·&nbsp;
-          ❌ 마크다운 테이블 <code className="font-mono">| # | 제목 |</code> &nbsp;·&nbsp;
-          ❌ 마커 밖 작성
+          {t("proposal.warn_empty.counter_example_double_hash")} &nbsp;·&nbsp;
+          {t("proposal.warn_empty.counter_example_table")} &nbsp;·&nbsp;
+          {t("proposal.warn_empty.counter_example_outside_marker")}
         </p>
         <div className="flex gap-1.5 pt-0.5">
           <button
             onClick={() => setStatus("revising")}
             className="px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
           >
-            수정 요청
+            {t("proposal.warn_empty.revise_button")}
           </button>
           <button
             onClick={() => { void handlePromote(true); }}
             className="px-2.5 py-1 rounded-md text-xs font-medium bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors"
           >
-            그래도 승격
+            {t("proposal.warn_empty.promote_anyway_button")}
           </button>
           <button
             onClick={() => setStatus("idle")}
             className="px-2.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            취소
+            {t("proposal.warn_empty.cancel_button")}
           </button>
         </div>
       </div>
@@ -532,7 +523,7 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
           <textarea
             value={revisionInput}
             onChange={(e) => setRevisionInput(e.target.value)}
-            placeholder="수정 요청 내용을 입력하세요..."
+            placeholder={t("proposal.revise.placeholder")}
             rows={2}
             className="w-full bg-input rounded-md px-2.5 py-1.5 text-xs outline-none text-foreground placeholder:text-muted-foreground border border-border focus:border-ring/50 resize-none"
             autoFocus
@@ -548,13 +539,13 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
               }}
               className="px-2.5 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
             >
-              전송
+              {t("proposal.revise.send_button")}
             </button>
             <button
               onClick={() => { setStatus("idle"); setRevisionInput(""); }}
               className="px-2.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              취소
+              {t("proposal.revise.cancel_button")}
             </button>
           </div>
         </div>
@@ -573,22 +564,22 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
             )}
           >
             <Check className="w-3 h-3" />
-            {status === "promoting" ? "처리 중..." : "Plan으로 승격"}
+            {status === "promoting" ? t("proposal.action.promote_busy") : t("proposal.action.promote_button")}
           </button>
           <button
             onClick={() => setStatus("revising")}
             className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors"
           >
             <RotateCcw className="w-3 h-3" />
-            수정 요청
+            {t("proposal.action.revise_button")}
           </button>
           <button
             onClick={() => setStatus("dismissed")}
             className="ml-auto flex items-center gap-1 px-2 py-1 rounded-md text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent/20 transition-colors"
-            title="이 제안 닫기"
+            title={t("proposal.action.dismiss_tooltip")}
           >
             <X className="w-3 h-3" />
-            닫기
+            {t("proposal.action.dismiss_button")}
           </button>
         </div>
       )}

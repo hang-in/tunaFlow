@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/stores/chatStore";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, Pause } from "lucide-react";
@@ -19,6 +20,7 @@ export function ApprovalGate({
   subtasks: PlanSubtask[] | null;
   onPlanUpdate: (update: Partial<Plan>) => void;
 }) {
+  const { t } = useTranslation("workflow");
   const { openThread, loadBranches, sendThreadMessage, saveConversationEngine } = useChatStore();
   const profiles = useChatStore((s) => s.agentProfiles);
   const [mode, setMode] = useState<"idle" | "agent-select" | "busy">("idle");
@@ -36,7 +38,7 @@ export function ApprovalGate({
       if (projectKey) {
         const activePlans = await invoke<number>("count_active_plans", { projectKey }).catch(() => 0);
         if (activePlans >= 5) {
-          toast.warning(`동시 진행 Plan ${activePlans}개 — 리뷰 병목 주의. WIP 줄이기 권장.`);
+          toast.warning(t("approval.wip_warning", { count: activePlans }));
         }
       }
       const engine = selectedProfile?.engine ?? "claude";
@@ -51,7 +53,7 @@ export function ApprovalGate({
       await sendThreadMessage(prompt, engine, selectedProfile?.model);
     } catch (e) {
       console.error("[ApprovalGate] dev start failed:", e);
-      toast.error("Dev 시작 실패: " + errorMessage(e));
+      toast.error(t("approval.dev_start_error", { error: errorMessage(e) }));
       setMode("idle");
     }
   };
@@ -64,7 +66,7 @@ export function ApprovalGate({
       onPlanUpdate({ phase: "subtask_review" as PlanPhase });
     } catch (e) {
       console.error("[ApprovalGate] revert failed:", e);
-      toast.error("되돌리기 실패: " + errorMessage(e));
+      toast.error(t("approval.revert_error", { error: errorMessage(e) }));
       setMode("idle");
     }
   };
@@ -75,7 +77,7 @@ export function ApprovalGate({
   return (
     <div className="mt-2 pt-2 border-t border-border/20 space-y-1.5">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-muted-foreground shrink-0">Developer:</span>
+        <span className="text-[10px] text-muted-foreground shrink-0">{t("approval.developer_label")}</span>
         <select
           value={selectedProfileId}
           onChange={(e) => setSelectedProfileId(e.target.value)}
@@ -93,16 +95,16 @@ export function ApprovalGate({
           onClick={handleDevStart}
           disabled={mode === "busy" || !selectedProfile}
           className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-status-approved/10 text-status-approved hover:bg-status-approved/20 disabled:opacity-50 transition-colors"
-          title="선택된 Developer 에이전트로 즉시 구현 시작"
+          title={t("approval.dev_start_tooltip")}
         >
-          <Check className="w-3 h-3" />Dev 시작
+          <Check className="w-3 h-3" />{mode === "busy" ? t("approval.dev_start_busy") : t("approval.dev_start_button")}
         </button>
         <button
           onClick={handleRevert}
           disabled={mode === "busy"}
           className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-accent text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
         >
-          <Pause className="w-3 h-3" />되돌리기
+          <Pause className="w-3 h-3" />{t("approval.revert_button")}
         </button>
       </div>
     </div>

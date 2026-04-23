@@ -1,0 +1,228 @@
+{
+  "approval": {
+    "developer_label": "Developer:",
+    "dev_start_button": "Dev 시작",
+    "dev_start_tooltip": "선택된 Developer 에이전트로 즉시 구현 시작",
+    "dev_start_busy": "시작 중...",
+    "revert_button": "되돌리기",
+    "dev_start_error": "Dev 시작 실패: {{error}}",
+    "revert_error": "되돌리기 실패: {{error}}",
+    "wip_warning": "동시 진행 Plan {{count}}개 — 리뷰 병목 주의. WIP 줄이기 권장."
+  },
+  "drafting": {
+    "empty_details_warning": "일부 subtask에 상세 설계가 없습니다.",
+    "detail_design_button": "상세 설계 요청",
+    "detail_design_busy": "요청 중...",
+    "sync_docs_button": "docs에서 동기화",
+    "sync_docs_busy": "동기화 중...",
+    "subtask_review_button": "Subtask 검토",
+    "subtask_review_busy": "이동 중...",
+    "no_subtasks_hint": "Subtask가 없습니다. Chat에서 Architect에게 Plan 수정을 요청하세요.",
+    "architect_writing": "아키텍트 문서 작성 중...",
+    "detail_design_error": "상세 설계 요청 실패: {{error}}",
+    "no_project_path_error": "프로젝트 경로를 찾을 수 없습니다.",
+    "no_task_files_error": "docs/plans/{{slug}}-task-*.md 파일을 찾지 못했습니다.",
+    "sync_success": "{{count}}개 subtask 상세 설계 동기화 완료",
+    "sync_error": "문서 동기화 실패: {{error}}",
+    "review_transition_error": "Subtask 검토 전환 실패: {{error}}",
+    "detail_design_prompt": "[상세 설계 요청] \"{{title}}\"\n\n아래 Plan의 각 subtask에 **구현 방법(how)**을 추가해주세요.\n각 subtask별로: 수정/생성할 파일, 접근 방법, 주의사항을 details에 작성하세요.\n\n{{planContext}}\n\n`<!-- tunaflow:plan-proposal -->` 형식으로 상세 설계가 포함된 수정 Plan을 제안하세요.",
+    "no_details_suffix": " — (상세 설계 없음)"
+  },
+  "subtask": {
+    "empty_details_row": "상세 설계 없음",
+    "follow_up_suffix": "\n위 작업을 진행해주세요."
+  },
+  "merge": {
+    "busy": "병합 중...",
+    "button": "Plan에 병합",
+    "error": "Plan 병합 실패: {{error}}"
+  },
+  "plan": {
+    "header": {
+      "doc_tooltip": "문서 보기"
+    },
+    "context_menu": {
+      "status_active": "Active로 변경",
+      "status_done": "완료 처리",
+      "status_draft": "Draft로 되돌리기",
+      "status_abandoned": "Abandon",
+      "doc_view": "문서 보기",
+      "collapse": "접기",
+      "expand": "펼치기",
+      "phase_section_label": "Phase 전환"
+    },
+    "subtask_review": {
+      "approve_button": "검토 완료 → Dev 승인",
+      "revert_button": "수정 필요 → Drafting"
+    },
+    "branch_links": {
+      "review_open": "Review Branch 열기",
+      "impl_open": "Implementation Branch 열기"
+    },
+    "review_ready": {
+      "impl_complete_label": "구현 완료 — Review 단계로 전환 가능",
+      "review_rt_button": "Review RT 시작"
+    },
+    "review_fallback": {
+      "no_verdict_hint": "리뷰어 마커가 감지되지 않았습니다. 수동으로 판단하세요.",
+      "back_to_dev_button": "← Dev 단계로 복귀 (Review 재시도)",
+      "back_to_dev_tooltip": "Review RT 진입이 실패했을 때 Dev 완료 상태로 되돌립니다. 기존 review 브랜치는 archive.",
+      "back_to_dev_event_reason": "Review 진입 실패로 Dev 단계 복귀",
+      "mark_rework_button": "수정 필요 (Rework)",
+      "mark_done_button": "통과 처리 (Done)"
+    },
+    "rework_notice": {
+      "heading": "Rework 필요 — Review findings를 Developer에게 전달합니다.",
+      "fail_count_warning": "⚠ Review 실패 {{count}}회 — {{hint}}",
+      "fail_hint_final": "설계 재검토가 필요합니다.",
+      "fail_hint_next": "다음 실패 시 설계 재검토로 에스컬레이션됩니다.",
+      "deliver_rework_button": "Developer에게 전달 + Rework",
+      "redesign_subtask_button": "설계 변경 → Subtask",
+      "rework_prompt": "[Rework] Review에서 다음 사항이 지적되었습니다:\n{{findings}}\n\n위 사항을 수정하고 완료되면 알려주세요.{{pressure}}",
+      "rework_findings_empty": "(findings 없음)",
+      "rework_pressure": "\n> ⚠️ 이전 {{count}}회 Review 실패. {{hint}}"
+    },
+    "add_subtasks": {
+      "add_button": "서브태스크 추가",
+      "line_hint": "한 줄에 하나씩 (마크다운 리스트 형식 OK)",
+      "from_docs_button": "docs에서 가져오기",
+      "textarea_placeholder": "1. 첫 번째 작업\n2. 두 번째 작업\n3. 세 번째 작업",
+      "save_button": "저장",
+      "cancel_button": "취소"
+    }
+  },
+  "progress": {
+    "header": {
+      "implementing": "구현 중...",
+      "branch_open": "Branch 열기",
+      "doc_button": "문서",
+      "loading": "Loading..."
+    },
+    "subtask": {
+      "done_label": "완료",
+      "rerun_button": "재수행"
+    },
+    "rework": {
+      "design_review_required_title": "⚠️ 설계 재검토 필요 — Architect 재설계 진행 중",
+      "design_review_required_body": "이전 싸이클에서 Review 5회 이상 실패로 에스컬레이션 되었습니다. Architect 의 rev 제안을 검토/승인한 뒤 Dev 를 다시 시작하세요.",
+      "review_failed_once_title": "⚠️ Review 1회 실패 — 이전 싸이클 설계 재검토 이력 있음",
+      "review_failed_once_body": "동일 패턴이 반복되면 설계 재검토가 또 필요할 수 있습니다. Rework 으로 해소되지 않으면 Architect 재설계를 요청하세요.",
+      "review_failed_many_title": "⚠️ Review {{count}}회 연속 실패 — 설계 재검토가 필요합니다",
+      "review_failed_many_body": "동일한 문제가 반복되고 있어 Rework 으로 해결되지 않습니다. Subtask 설계를 재검토하고 Architect 에게 수정을 요청하세요.",
+      "rework_needed": "Rework 필요 — Review에서 다음 사항이 지적되었습니다.",
+      "design_review_suggested": "⚠️ 동일 파일에서 반복 실패 — Rework 대신 설계 재검토를 권장합니다.",
+      "deliver_button": "Developer에게 전달 + Rework",
+      "deliver_busy": "전달 중...",
+      "design_review_button": "설계 재검토 시작 →",
+      "design_change_button": "설계 변경 → Subtask"
+    },
+    "test": {
+      "running": "테스트 실행 중...",
+      "result_pass": "PASS",
+      "result_fail": "FAIL",
+      "result_label": "{{type}} 테스트: {{status}}",
+      "passed_label": "통과:",
+      "failed_label": "실패:",
+      "skipped_label": "건너뜀:",
+      "output_toggle": "출력 보기"
+    },
+    "rereview": {
+      "findings_header": "이전 Review Findings (Re-review #{{round}})",
+      "reverify_note": "위 사항이 수정되었는지 중심으로 재검증됩니다."
+    },
+    "summary": {
+      "completed_count": "{{done}}/{{total}} 완료",
+      "scope_label": "리뷰 대상:",
+      "rest_pass": "나머지는 이전 pass"
+    },
+    "track": {
+      "quick_suffix": "(단일)",
+      "deep_suffix": "(다명 합의)"
+    },
+    "reviewer": {
+      "single_label": "Reviewer:",
+      "multi_label": "Reviewers:",
+      "selection_count": "{{count}}명 선택{{suffix}}",
+      "min_required_suffix": " — 최소 2명 필요",
+      "start_busy": "시작 중...",
+      "review_start": "Review 시작",
+      "re_review_start": "Re-review 시작",
+      "review_rt_start": "Review RT 시작",
+      "re_review_rt_start": "Re-review RT 시작"
+    }
+  },
+  "proposal": {
+    "status": {
+      "merged_label": "Plan \"{{title}}\" rev.{{rev}} — 수정 반영 완료 (재승인 필요)",
+      "promoted_label": "Plan \"{{title}}\" — Plan 탭에 등록됨{{locationHint}}",
+      "location_done_hint": " (워크플로우 탭 → Done)",
+      "overwrite_done_button": "완료 Plan 재개",
+      "overwrite_active_button": "rev 로 덮어쓰기",
+      "overwrite_done_tooltip": "완료된 Plan 을 이 제안으로 재개 (active + Approval)",
+      "overwrite_active_tooltip": "이 제안으로 기존 Plan 덮어쓰기 (Approval 로 리셋 + branches archive)"
+    },
+    "warn_empty": {
+      "title": "서브태스크를 인식하지 못했습니다",
+      "body": "에이전트가 서브태스크를 잘못된 형식으로 작성했을 수 있습니다. 파서가 인식하는 형식:",
+      "counter_example_double_hash": "❌ `## Subtasks` (이중 #)",
+      "counter_example_table": "❌ 마크다운 테이블 `| # | 제목 |`",
+      "counter_example_outside_marker": "❌ 마커 밖 작성",
+      "revise_button": "수정 요청",
+      "promote_anyway_button": "그래도 승격",
+      "cancel_button": "취소"
+    },
+    "action": {
+      "promote_button": "Plan으로 승격",
+      "promote_busy": "처리 중...",
+      "revise_button": "수정 요청",
+      "dismiss_button": "닫기",
+      "dismiss_tooltip": "이 제안 닫기"
+    },
+    "revise": {
+      "placeholder": "수정 요청 내용을 입력하세요...",
+      "send_button": "전송",
+      "cancel_button": "취소"
+    },
+    "confirm": {
+      "status_done": "완료",
+      "status_abandoned": "폐기",
+      "reopen_body": "완료된 Plan \"{{title}}\" 을 이 제안으로 재개하시겠습니까?\n\n- 이미 {{statusLabel}} 된 Plan 을 active 로 되돌려 Dev 단계로 진입시킵니다\n- 기존 subtasks 는 모두 제안 내용으로 교체됩니다\n- 이미 archive 된 impl/review branches 는 그대로 (재사용하지 않음 — 신규 Dev 시작 시 새 브랜치)\n- 이미 수정된 파일은 자동 revert 되지 않습니다",
+      "overwrite_body": "기존 Plan \"{{title}}\" 을 이 제안으로 덮어쓰시겠습니까?\n\n- 기존 subtasks 는 모두 교체됩니다\n- 진행 중인 implementation/review branches 는 archive 됩니다\n- Phase 가 Approval 로 리셋되어 Dev 시작 가능 상태가 됩니다\n- 이미 수정된 파일은 자동 revert 되지 않습니다 (필요 시 수동 처리)"
+    },
+    "toast": {
+      "promote_branch_error": "Plan 등록 실패: 부모 대화를 선택한 뒤 다시 시도해주세요.",
+      "disposition_summary": "파일 처리 방침: {{summary}}",
+      "disposition_revert_warning": "파일 처리 방침: {{summary}}\n\nRevert 대상 (수동 처리 필요):\n{{items}}{{more}}"
+    }
+  },
+  "review": {
+    "verdict": {
+      "verdict_fail_label": "실패",
+      "verdict_conditional_label": "조건부",
+      "edit_label": "수정:",
+      "code_rewrite_button": "코드 재작성",
+      "code_rewrite_tooltip": "Findings를 DEV에 전달하고 바로 구현 단계로 전환",
+      "redesign_button": "처음부터 재설계",
+      "redesign_tooltip": "Plan 단계로 복귀 — Architect가 처음부터 재설계",
+      "done_button": "완료-> Done",
+      "approve_anyway_button": "그래도 완료",
+      "back_button": "돌아가기",
+      "done_confirm_prefix": "리뷰어 판정이 ",
+      "done_confirm_suffix": "입니다. 이대로 완료 시 기대 동작을 하지 않을 수 있습니다.",
+      "auto_completed": "자동 처리 완료",
+      "approve_error": "완료 처리 실패: {{error}}",
+      "rework_error": "Rework 처리 실패: {{error}}",
+      "dev_delivery_success": "DEV에게 conditional findings를 전달했습니다",
+      "dev_delivery_error": "DEV 전달 실패: {{error}}",
+      "redesign_success": "원안이 폐기되었습니다. Architect가 재설계를 시작합니다.",
+      "redesign_error": "재설계 전환 실패: {{error}}",
+      "redesign_event_reason": "리뷰 실패 — 원안 폐기, 재설계 요청",
+      "findings_empty_conditional": " (세부 findings 없음 — Review Branch를 직접 확인하세요)",
+      "findings_empty_redesign": "- (세부 findings 없음 — Review Branch를 참고하세요)",
+      "conditional_prompt": "[Conditional Review] 리뷰어가 일부 수정을 요청했습니다.\n\n**Findings (수정 필요):{{findings}}\n{{recsBlock}}\n\n수정 후 impl-complete 마커를 출력해 주세요.",
+      "conditional_recs_block": "**Recommendations:{{recs}}",
+      "redesign_prompt": "[Plan 개정 요청] \"{{title}}\" (rev.{{revision}})이 리뷰 실패로 폐기되었습니다.\n\n**리뷰어 판정**: {{verdict}}\n\n**Findings (실패 원인)**:\n{{findings}}\n{{recsBlock}}\n\n위 findings를 분석하여 실패한 서브태스크를 수정한 rev.{{nextRevision}} Plan을 `<!-- tunaflow:plan-proposal -->` 형식으로 제안해 주세요.\n성공한 서브태스크는 유지하고, 실패 원인이 된 부분만 수정하세요.",
+      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}"
+    }
+  }
+}

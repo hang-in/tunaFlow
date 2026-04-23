@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Forward, GitBranch } from "lucide-react";
 import type { PlanSubtask, SubtaskStatus } from "@/types";
@@ -24,6 +25,7 @@ export function SubtaskRow({
   linkedBranch?: { id: string; label: string; customLabel?: string; status: string } | null;
   onOpenThread?: (branchId: string) => void;
 }) {
+  const { t } = useTranslation("workflow");
   const profiles = useChatStore((s) => s.agentProfiles);
   const cfg = SUBTASK_STATUS_CFG[subtask.status];
   const owner = subtask.ownerAgent;
@@ -38,7 +40,7 @@ export function SubtaskRow({
     if (owner) lines.push(`Owner: ${owner}`);
     if (subtask.details) lines.push(`\nDetails:\n${subtask.details}`);
     if (linkedBranch) lines.push(`\nLinked branch: ${linkedBranch.customLabel ?? linkedBranch.label} (${linkedBranch.status})`);
-    lines.push("\n위 작업을 진행해주세요.");
+    lines.push(t("subtask.follow_up_suffix"));
     return lines.join("\n");
   };
 
@@ -71,7 +73,7 @@ export function SubtaskRow({
         {subtask.details ? (
           <p className="text-[10px] text-muted-foreground leading-snug mt-0.5 line-clamp-2">{subtask.details}</p>
         ) : (
-          <p className="text-[10px] text-amber-600/40 italic mt-0.5">상세 설계 없음</p>
+          <p className="text-[10px] text-amber-600/40 italic mt-0.5">{t("subtask.empty_details_row")}</p>
         )}
         {/* Linked branch — if any */}
         {linkedBranch && (

@@ -1,0 +1,228 @@
+{
+  "approval": {
+    "developer_label": "Developer:",
+    "dev_start_button": "Start Dev",
+    "dev_start_tooltip": "Start implementation immediately with the selected Developer agent",
+    "dev_start_busy": "Starting...",
+    "revert_button": "Revert",
+    "dev_start_error": "Failed to start Dev: {{error}}",
+    "revert_error": "Failed to revert: {{error}}",
+    "wip_warning": "{{count}} active plans — review bottleneck risk. Reducing WIP is recommended."
+  },
+  "drafting": {
+    "empty_details_warning": "Some subtasks are missing detailed design.",
+    "detail_design_button": "Request detailed design",
+    "detail_design_busy": "Requesting...",
+    "sync_docs_button": "Sync from docs",
+    "sync_docs_busy": "Syncing...",
+    "subtask_review_button": "Review subtasks",
+    "subtask_review_busy": "Switching...",
+    "no_subtasks_hint": "No subtasks. Ask Architect in Chat to revise the Plan.",
+    "architect_writing": "Architect is writing docs...",
+    "detail_design_error": "Detailed design request failed: {{error}}",
+    "no_project_path_error": "Project path not found.",
+    "no_task_files_error": "Could not find docs/plans/{{slug}}-task-*.md files.",
+    "sync_success": "Synced {{count}} subtask details",
+    "sync_error": "Doc sync failed: {{error}}",
+    "review_transition_error": "Subtask review switch failed: {{error}}",
+    "detail_design_prompt": "[Detailed design request] \"{{title}}\"\n\nPlease add **implementation method (how)** to each subtask in the Plan below.\nFor each subtask, write to details: files to modify/create, approach, and caveats.\n\n{{planContext}}\n\nPropose the revised Plan with detailed design in `<!-- tunaflow:plan-proposal -->` format.",
+    "no_details_suffix": " — (no detailed design)"
+  },
+  "subtask": {
+    "empty_details_row": "No detailed design",
+    "follow_up_suffix": "\nPlease proceed with the task above."
+  },
+  "merge": {
+    "busy": "Merging...",
+    "button": "Merge into Plan",
+    "error": "Plan merge failed: {{error}}"
+  },
+  "plan": {
+    "header": {
+      "doc_tooltip": "View document"
+    },
+    "context_menu": {
+      "status_active": "Set to Active",
+      "status_done": "Mark as Done",
+      "status_draft": "Revert to Draft",
+      "status_abandoned": "Abandon",
+      "doc_view": "View document",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "phase_section_label": "Phase transition"
+    },
+    "subtask_review": {
+      "approve_button": "Review done → Approve Dev",
+      "revert_button": "Needs revision → Drafting"
+    },
+    "branch_links": {
+      "review_open": "Open Review Branch",
+      "impl_open": "Open Implementation Branch"
+    },
+    "review_ready": {
+      "impl_complete_label": "Implementation complete — ready for Review phase",
+      "review_rt_button": "Start Review RT"
+    },
+    "review_fallback": {
+      "no_verdict_hint": "Reviewer marker not detected. Decide manually.",
+      "back_to_dev_button": "← Back to Dev (retry Review)",
+      "back_to_dev_tooltip": "If Review RT entry failed, revert to Dev-complete state. The existing review branch is archived.",
+      "back_to_dev_event_reason": "Back to Dev — Review entry failed",
+      "mark_rework_button": "Needs revision (Rework)",
+      "mark_done_button": "Pass (Done)"
+    },
+    "rework_notice": {
+      "heading": "Rework needed — sending Review findings to Developer.",
+      "fail_count_warning": "⚠ Review failed {{count}} times — {{hint}}",
+      "fail_hint_final": "Design review is required.",
+      "fail_hint_next": "Another failure will escalate to design review.",
+      "deliver_rework_button": "Deliver to Developer + Rework",
+      "redesign_subtask_button": "Redesign → Subtask",
+      "rework_prompt": "[Rework] The Review pointed out the following:\n{{findings}}\n\nPlease fix the items above and report when complete.{{pressure}}",
+      "rework_findings_empty": "(no findings)",
+      "rework_pressure": "\n> ⚠️ {{count}} previous Review failures. {{hint}}"
+    },
+    "add_subtasks": {
+      "add_button": "Add subtasks",
+      "line_hint": "One per line (markdown list format OK)",
+      "from_docs_button": "Import from docs",
+      "textarea_placeholder": "1. First task\n2. Second task\n3. Third task",
+      "save_button": "Save",
+      "cancel_button": "Cancel"
+    }
+  },
+  "progress": {
+    "header": {
+      "implementing": "Implementing...",
+      "branch_open": "Open Branch",
+      "doc_button": "Doc",
+      "loading": "Loading..."
+    },
+    "subtask": {
+      "done_label": "Done",
+      "rerun_button": "Rerun"
+    },
+    "rework": {
+      "design_review_required_title": "⚠️ Design review required — Architect redesign in progress",
+      "design_review_required_body": "Escalated after 5+ Review failures in the previous cycle. Review/approve the Architect's rev proposal, then restart Dev.",
+      "review_failed_once_title": "⚠️ Review failed once — prior cycle had a design review",
+      "review_failed_once_body": "If the same pattern repeats, another design review may be needed. If Rework doesn't resolve it, request an Architect redesign.",
+      "review_failed_many_title": "⚠️ Review failed {{count}} times in a row — design review required",
+      "review_failed_many_body": "The same issue keeps recurring and Rework is not resolving it. Review the Subtask design and ask the Architect for revisions.",
+      "rework_needed": "Rework needed — Review pointed out the following items.",
+      "design_review_suggested": "⚠️ Repeated failures on the same file — design review is recommended instead of Rework.",
+      "deliver_button": "Deliver to Developer + Rework",
+      "deliver_busy": "Delivering...",
+      "design_review_button": "Start design review →",
+      "design_change_button": "Design change → Subtask"
+    },
+    "test": {
+      "running": "Running tests...",
+      "result_pass": "PASS",
+      "result_fail": "FAIL",
+      "result_label": "{{type}} test: {{status}}",
+      "passed_label": "Passed:",
+      "failed_label": "Failed:",
+      "skipped_label": "Skipped:",
+      "output_toggle": "View output"
+    },
+    "rereview": {
+      "findings_header": "Previous Review Findings (Re-review #{{round}})",
+      "reverify_note": "Re-verified with focus on whether the items above were fixed."
+    },
+    "summary": {
+      "completed_count": "{{done}}/{{total}} done",
+      "scope_label": "Review scope:",
+      "rest_pass": "others previously passed"
+    },
+    "track": {
+      "quick_suffix": "(single)",
+      "deep_suffix": "(multi consensus)"
+    },
+    "reviewer": {
+      "single_label": "Reviewer:",
+      "multi_label": "Reviewers:",
+      "selection_count": "{{count}} selected{{suffix}}",
+      "min_required_suffix": " — at least 2 required",
+      "start_busy": "Starting...",
+      "review_start": "Start Review",
+      "re_review_start": "Start Re-review",
+      "review_rt_start": "Start Review RT",
+      "re_review_rt_start": "Start Re-review RT"
+    }
+  },
+  "proposal": {
+    "status": {
+      "merged_label": "Plan \"{{title}}\" rev.{{rev}} — revision merged (re-approval needed)",
+      "promoted_label": "Plan \"{{title}}\" — registered in the Plan tab{{locationHint}}",
+      "location_done_hint": " (Workflow tab → Done)",
+      "overwrite_done_button": "Reopen completed Plan",
+      "overwrite_active_button": "Overwrite with rev",
+      "overwrite_done_tooltip": "Reopen the completed Plan with this proposal (active + Approval)",
+      "overwrite_active_tooltip": "Overwrite the existing Plan with this proposal (reset to Approval + archive branches)"
+    },
+    "warn_empty": {
+      "title": "Subtasks not recognized",
+      "body": "The agent may have written subtasks in an invalid format. The parser accepts:",
+      "counter_example_double_hash": "❌ `## Subtasks` (double #)",
+      "counter_example_table": "❌ Markdown table `| # | title |`",
+      "counter_example_outside_marker": "❌ Written outside the marker",
+      "revise_button": "Request revision",
+      "promote_anyway_button": "Promote anyway",
+      "cancel_button": "Cancel"
+    },
+    "action": {
+      "promote_button": "Promote to Plan",
+      "promote_busy": "Processing...",
+      "revise_button": "Request revision",
+      "dismiss_button": "Dismiss",
+      "dismiss_tooltip": "Dismiss this proposal"
+    },
+    "revise": {
+      "placeholder": "Enter revision request...",
+      "send_button": "Send",
+      "cancel_button": "Cancel"
+    },
+    "confirm": {
+      "status_done": "done",
+      "status_abandoned": "abandoned",
+      "reopen_body": "Reopen the completed Plan \"{{title}}\" with this proposal?\n\n- The {{statusLabel}} Plan will be restored to active and enter the Dev phase\n- Existing subtasks will all be replaced with the proposal\n- Archived impl/review branches remain archived (not reused — a new branch is created on next Dev start)\n- Already modified files are not auto-reverted",
+      "overwrite_body": "Overwrite the existing Plan \"{{title}}\" with this proposal?\n\n- Existing subtasks will all be replaced\n- Running implementation/review branches will be archived\n- Phase resets to Approval so Dev can start\n- Already modified files are not auto-reverted (handle manually if needed)"
+    },
+    "toast": {
+      "promote_branch_error": "Plan registration failed: select the parent conversation and try again.",
+      "disposition_summary": "File disposition: {{summary}}",
+      "disposition_revert_warning": "File disposition: {{summary}}\n\nRevert targets (manual):\n{{items}}{{more}}"
+    }
+  },
+  "review": {
+    "verdict": {
+      "verdict_fail_label": "Fail",
+      "verdict_conditional_label": "Conditional",
+      "edit_label": "Edit:",
+      "code_rewrite_button": "Rewrite code",
+      "code_rewrite_tooltip": "Send findings to DEV and switch straight to implementation",
+      "redesign_button": "Redesign from scratch",
+      "redesign_tooltip": "Return to Plan phase — Architect redesigns from the start",
+      "done_button": "Complete → Done",
+      "approve_anyway_button": "Complete anyway",
+      "back_button": "Back",
+      "done_confirm_prefix": "Reviewer verdict is ",
+      "done_confirm_suffix": ". Completing as-is may not produce expected behavior.",
+      "auto_completed": "Auto-completed",
+      "approve_error": "Failed to mark done: {{error}}",
+      "rework_error": "Rework failed: {{error}}",
+      "dev_delivery_success": "Sent conditional findings to DEV",
+      "dev_delivery_error": "Failed to deliver to DEV: {{error}}",
+      "redesign_success": "Original plan abandoned. Architect is starting a redesign.",
+      "redesign_error": "Redesign transition failed: {{error}}",
+      "redesign_event_reason": "Review failed — original abandoned, redesign requested",
+      "findings_empty_conditional": " (No detailed findings — check the Review Branch directly)",
+      "findings_empty_redesign": "- (No detailed findings — refer to the Review Branch)",
+      "conditional_prompt": "[Conditional Review] The reviewer requested partial revisions.\n\n**Findings (must fix):{{findings}}\n{{recsBlock}}\n\nAfter fixing, emit the impl-complete marker.",
+      "conditional_recs_block": "**Recommendations:{{recs}}",
+      "redesign_prompt": "[Plan revision request] \"{{title}}\" (rev.{{revision}}) was abandoned after review failure.\n\n**Reviewer verdict**: {{verdict}}\n\n**Findings (failure causes)**:\n{{findings}}\n{{recsBlock}}\n\nAnalyze the findings above and propose a revised rev.{{nextRevision}} Plan that fixes the failed subtasks, in `<!-- tunaflow:plan-proposal -->` format.\nKeep successful subtasks as-is; only revise the parts that caused the failure.",
+      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}"
+    }
+  }
+}
