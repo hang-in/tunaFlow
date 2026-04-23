@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/stores/chatStore";
 import { ChevronDown, ChevronRight, FolderOpen, Folder, Trash2, Loader2, GitBranch, Archive, Users, Plus, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -105,6 +106,7 @@ function SectionResizeHandle({ onDrag, onDragEnd }: { onDrag: (delta: number) =>
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 export function Sidebar() {
+  const { t } = useTranslation("sidebar");
   const projects = useChatStore((s) => s.projects);
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const selectProject = useChatStore((s) => s.selectProject);
@@ -264,7 +266,7 @@ export function Sidebar() {
       y: e.clientY,
       items: [
         {
-          label: "새 Scratchpad",
+          label: t("action.new_scratchpad"),
           icon: <Plus className="w-3.5 h-3.5" />,
           onClick: async () => {
             const scratchCount = conversations.filter((c) => c.type === "scratchpad").length;
@@ -286,7 +288,7 @@ export function Sidebar() {
     <aside
       data-testid="sidebar"
       role="navigation"
-      aria-label="프로젝트 사이드바"
+      aria-label={t("aria_label")}
       className="flex flex-col w-full bg-sidebar h-full overflow-hidden text-sidebar-foreground"
       onContextMenu={handleSidebarCtx}
     >
@@ -342,7 +344,7 @@ export function Sidebar() {
                     <button
                       onClick={async (e) => {
                         e.stopPropagation();
-                        const yes = await ask(`"${p.name}" 프로젝트를 삭제하시겠습니까?\n(프로젝트 데이터는 보존되며, 같은 경로로 다시 추가할 수 있습니다)`, { title: "프로젝트 삭제", kind: "warning" });
+                        const yes = await ask(t("confirm.project_delete_body", { name: p.name }), { title: t("confirm.project_delete_title"), kind: "warning" });
                         if (yes) {
                           hideProject(p.key);
                           if (projects.length <= 1) setProjectDropdownOpen(false);
@@ -395,17 +397,17 @@ export function Sidebar() {
                 activeChatBranches.map((b) => (
                   <button key={b.id} onClick={() => openThread(b.id)}
                     onContextMenu={(e) => openCtx(e, [
-                      { label: "이름 변경", icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => {
-                        const val = window.prompt("새 이름을 입력하세요", b.customLabel ?? b.label ?? "");
+                      { label: t("action.rename"), icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => {
+                        const val = window.prompt(t("prompt.rename_new_name"), b.customLabel ?? b.label ?? "");
                         if (val) renameBranch(b.id, val);
                       }},
                       { separator: true, label: "", onClick: () => {} },
-                      { label: "아카이브", icon: <Archive className="w-3.5 h-3.5" />, onClick: async () => {
-                        const yes = await ask("이 브랜치를 아카이브하시겠습니까?", { title: "브랜치 아카이브", kind: "warning" });
+                      { label: t("action.archive"), icon: <Archive className="w-3.5 h-3.5" />, onClick: async () => {
+                        const yes = await ask(t("confirm.branch_archive_body"), { title: t("confirm.branch_archive_title"), kind: "warning" });
                         if (yes) invoke("archive_branch", { id: b.id }).catch(console.error);
                       }},
-                      { label: "삭제", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: async () => {
-                        const yes = await ask("이 브랜치를 삭제하시겠습니까?", { title: "브랜치 삭제", kind: "warning" });
+                      { label: t("action.delete"), icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: async () => {
+                        const yes = await ask(t("confirm.branch_delete_body"), { title: t("confirm.branch_delete_title"), kind: "warning" });
                         if (yes) deleteBranch(b.id);
                       }},
                     ])}
@@ -450,13 +452,13 @@ export function Sidebar() {
                 activeRTBranches.map((b) => (
                   <button key={b.id} onClick={() => openThread(b.id)}
                     onContextMenu={(e) => openCtx(e, [
-                      { label: "이름 변경", icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => {
-                        const val = window.prompt("새 이름을 입력하세요", b.customLabel ?? b.label ?? "");
+                      { label: t("action.rename"), icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => {
+                        const val = window.prompt(t("prompt.rename_new_name"), b.customLabel ?? b.label ?? "");
                         if (val) renameBranch(b.id, val);
                       }},
                       { separator: true, label: "", onClick: () => {} },
-                      { label: "삭제", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: async () => {
-                        const yes = await ask("이 Roundtable을 삭제하시겠습니까?", { title: "RT 삭제", kind: "warning" });
+                      { label: t("action.delete"), icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: async () => {
+                        const yes = await ask(t("confirm.rt_delete_body"), { title: t("confirm.rt_delete_title"), kind: "warning" });
                         if (yes) deleteBranch(b.id);
                       }},
                     ])}
@@ -556,8 +558,8 @@ export function Sidebar() {
                   archivedBranches.map((b) => (
                     <button key={b.id} onClick={() => openThread(b.id)}
                       onContextMenu={(e) => openCtx(e, [
-                        { label: "삭제", icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: async () => {
-                          const yes = await ask("이 아카이브를 삭제하시겠습니까?", { title: "아카이브 삭제", kind: "warning" });
+                        { label: t("action.delete"), icon: <Trash2 className="w-3.5 h-3.5" />, danger: true, onClick: async () => {
+                          const yes = await ask(t("confirm.archive_delete_body"), { title: t("confirm.archive_delete_title"), kind: "warning" });
                           if (yes) deleteBranch(b.id);
                         }},
                       ])}
