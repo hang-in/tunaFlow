@@ -89,6 +89,54 @@ pub struct Memo {
     pub created_at: i64,
 }
 
+/// projectIdentityAnalysisPlan subtask-01: 정체성 분석 입력 / 출력으로 쓰이는
+/// artifact 의 taxonomy. 6 종이 "입력" 이고 `IdentitySummary` 1 종은 subtask-03
+/// 에서만 생성되는 "출력". `is_identity_input()` 으로 구분해 자동 생성 헬퍼가
+/// 오용되는 걸 방지한다 (INV-1).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ArtifactKind {
+    Decision,
+    ReviewOutcome,
+    ReworkReason,
+    FindingSuccess,
+    FindingFailure,
+    WorkflowMilestone,
+    IdentitySummary,
+}
+
+impl ArtifactKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Decision => "decision",
+            Self::ReviewOutcome => "review_outcome",
+            Self::ReworkReason => "rework_reason",
+            Self::FindingSuccess => "finding_success",
+            Self::FindingFailure => "finding_failure",
+            Self::WorkflowMilestone => "workflow_milestone",
+            Self::IdentitySummary => "identity_summary",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "decision" => Self::Decision,
+            "review_outcome" => Self::ReviewOutcome,
+            "rework_reason" => Self::ReworkReason,
+            "finding_success" => Self::FindingSuccess,
+            "finding_failure" => Self::FindingFailure,
+            "workflow_milestone" => Self::WorkflowMilestone,
+            "identity_summary" => Self::IdentitySummary,
+            _ => return None,
+        })
+    }
+
+    /// `IdentitySummary` 만 분석 output — identity 분석기 (subtask-03) 의 전용 경로로
+    /// 생성되어야 한다. 자동 생성 헬퍼가 이 kind 를 받으면 Err (INV-1).
+    pub fn is_identity_input(&self) -> bool {
+        !matches!(self, Self::IdentitySummary)
+    }
+}
+
 /// DATA_MODEL.md §1.9 Artifact
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

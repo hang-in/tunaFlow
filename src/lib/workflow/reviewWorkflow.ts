@@ -14,6 +14,7 @@ import {
   getOrCreateReviewBranch,
   saveFailureLessons,
   createVerdictArtifact,
+  createReviewOutcomeArtifact,
   createTestReportArtifact,
   getPlanSlug,
 } from "./helpers";
@@ -210,6 +211,12 @@ export async function processReviewVerdict(
     findings: verdict.findings,
     recommendations: verdict.recommendations,
   });
+
+  // Pre-emit identity-input artifact regardless of verdict — identity 분석 input 은
+  // pass/fail/conditional 모든 경로에서 "Plan 가치 · 품질 곡선" 을 복원하는 원천.
+  // createVerdictArtifact (markdown) 와 별도. subtask-01 INV-1 "이벤트 시점" 기반.
+  const reviewRound = (plan.versionMinor || 0) + 1;
+  await createReviewOutcomeArtifact(plan, verdict, undefined, reviewRound);
 
   if (verdict.verdict === "pass") {
     await planApi.updatePlanPhase(plan.id, "done");

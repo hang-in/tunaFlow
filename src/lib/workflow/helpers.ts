@@ -165,6 +165,39 @@ export async function saveFailureLessons(plan: Plan, findings: string[]): Promis
 
 // ─── Artifact creation ─────────────────────────────────────────────────────
 
+/** projectIdentityAnalysisPlan subtask-01: verdict 확정 시 `review_outcome` 구조화
+ *  identity-input artifact 를 생성. 기존 `createVerdictArtifact` (review-findings 마크다운)
+ *  와 별개 경로 — identity 분석 input 으로 쓰이는 JSON payload 형태. fire-and-forget. */
+export async function createReviewOutcomeArtifact(
+  plan: Plan,
+  verdict: ParsedReviewVerdict,
+  reviewerEngine?: string,
+  roundNumber?: number,
+): Promise<void> {
+  try {
+    const content = {
+      verdict: verdict.verdict,
+      rubric: verdict.rubric ?? null,
+      findings_count: verdict.findings.length,
+      failed_subtask_ids: verdict.failedSubtaskIds,
+      reviewer_engine: reviewerEngine ?? null,
+      round: roundNumber ?? null,
+    };
+    await invoke("create_identity_artifact", {
+      input: {
+        kind: "review_outcome",
+        conversationId: plan.conversationId,
+        planId: plan.id,
+        subtaskId: null,
+        title: `Review outcome: ${plan.title} (${verdict.verdict})`,
+        content,
+      },
+    });
+  } catch (e) {
+    console.warn("[identity-artifact] review_outcome failed:", e);
+  }
+}
+
 /** Create review-findings artifact from verdict (fire-and-forget). */
 export async function createVerdictArtifact(plan: Plan, verdict: ParsedReviewVerdict): Promise<void> {
   try {

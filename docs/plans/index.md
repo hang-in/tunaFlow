@@ -27,7 +27,7 @@
 | [liveRuntimeTraceParityValidationPlan_2026-03-30](./liveRuntimeTraceParityValidationPlan_2026-03-30.md) | P1 — 4-engine trace/meta parity 실제 확인 |
 | [metaAgentInitialSetupPlan_2026-04-16](./metaAgentInitialSetupPlan_2026-04-16.md) | — |
 | [metaAgentOnboardingPlan_2026-04-16](./metaAgentOnboardingPlan_2026-04-16.md) | — |
-| [metaAgentPlan](./metaAgentPlan.md) | **P0** — 메타에이전트. 온보딩, 이슈 감지, 우선순위 제안. 모든 프로젝트 대상 |
+| [metaAgentPlan](./metaAgentPlan.md) | **P0** — 메타에이전트. 온보딩, 이슈 감지, 우선순위 제안 + Phase 3 (identity analysis trigger) + Phase 4 (background insight worker). INV 6개. Phase 0 부분 구현 (persona_meta, metaConversation.ts, v33 migration) |
 | [projectIdentityAnalysisPlan](./projectIdentityAnalysisPlan.md) | **P1** — Artifacts 기반 "Karma" 파이프라인: 6 타입 자동 생성 + plan 3개/volume 10 trigger + identity_summary 분석 + ContextPack 주입 + Insight 정체성 뷰 (metaAgent 의존) |
 | [perProjectDatabaseSplitPlan](./perProjectDatabaseSplitPlan.md) | — |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |

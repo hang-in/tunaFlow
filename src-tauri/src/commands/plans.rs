@@ -4,8 +4,9 @@ use tauri::State;
 use uuid::Uuid;
 
 use std::path::Path;
-use crate::db::{migrations::{now_epoch, now_epoch_ms}, models::{Plan, PlanEvent, PlanSubtask}, DbState};
+use crate::db::{migrations::{now_epoch, now_epoch_ms}, models::{ArtifactKind, Plan, PlanEvent, PlanSubtask}, DbState};
 use crate::errors::AppError;
+use super::artifacts::create_identity_input_artifact;
 
 // ─── Input types ─────────────────────────────────────────────────────────────
 
@@ -291,6 +292,12 @@ pub fn update_plan_status(
 ) -> Result<(), AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let now = now_epoch_ms();
+
+    // 전이 전 상태 snapshot — milestone emit 시 "prior status" 로 활용
+    let prior_status: Option<String> = conn
+        .query_row("SELECT status FROM plans WHERE id = ?1", params![&input.id], |r| r.get(0))
+        .ok();
+
     conn.execute(
         "UPDATE plans SET status = ?1, updated_at = ?2 WHERE id = ?3",
         params![input.status, now, input.id],
@@ -311,6 +318,15 @@ pub fn update_plan_status(
             params![input.id],
         )?;
     }
+
+    // projectIdentityAnalysisPlan subtask-01: Plan 완료 (status → 'done') 시점에
+    // `workflow_milestone` artifact 1건 자동 생성. 동일 상태 재진입은 dedup 이 처리.
+    let _ = emit_milestone_on_status_change(
+        &conn,
+        &input.id,
+        prior_status.as_deref(),
+        &input.status,
+    );
     Ok(())
 }
 
@@ -458,14 +474,99 @@ pub async fn update_plan_phase(
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
         let conn = write.lock().map_err(|_| AppError::Lock)?;
         let now = now_epoch_ms();
+
+        // projectIdentityAnalysisPlan subtask-01: phase → implementation 전이는
+        // "Plan 승인" 시점이므로 `decision` identity-input artifact 1건 자동 생성.
+        // 이미 implementation 이면 중복 호출로 간주, emit 안 함 (dedup 이 방어하지만
+        // query 자체를 줄이는 빠른 path). INV-1 준수 — 대화 내용 파싱 없이 phase 전이만 사용.
+        let prior_phase: Option<String> = conn
+            .query_row("SELECT phase FROM plans WHERE id = ?1", params![&id], |r| r.get(0))
+            .ok();
+
         conn.execute(
             "UPDATE plans SET phase = ?1, updated_at = ?2 WHERE id = ?3",
             params![phase, now, id],
         )?;
+
+        let _ = emit_decision_on_phase_change(&conn, &id, prior_phase.as_deref(), &phase);
+
         Ok(())
     })
     .await
     .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
+}
+
+/// plan id → (conversation_id, title) 를 읽어오는 소형 헬퍼. artifact title 용.
+fn load_plan_context(conn: &rusqlite::Connection, plan_id: &str) -> Result<Option<(String, String)>, AppError> {
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT conversation_id, title FROM plans WHERE id = ?1",
+            params![plan_id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )
+        .ok();
+    Ok(row)
+}
+
+/// phase 전이가 `implementation` 으로 들어올 때 `decision` artifact 생성.
+/// prior_phase 가 같으면 no-op. 테스트 가능한 pure helper.
+pub(crate) fn emit_decision_on_phase_change(
+    conn: &rusqlite::Connection,
+    plan_id: &str,
+    prior_phase: Option<&str>,
+    new_phase: &str,
+) -> Result<Option<String>, AppError> {
+    if new_phase != "implementation" || prior_phase == Some("implementation") {
+        return Ok(None);
+    }
+    let Some((conv_id, title)) = load_plan_context(conn, plan_id)? else {
+        return Ok(None);
+    };
+    let content = serde_json::json!({
+        "what": "plan_approved",
+        "plan_id": plan_id,
+        "previous_phase": prior_phase,
+        "approved_by": "user",
+    });
+    create_identity_input_artifact(
+        conn,
+        ArtifactKind::Decision,
+        Some(&conv_id),
+        Some(plan_id),
+        None,
+        &format!("Plan '{}' approved", title),
+        content,
+    )
+}
+
+/// status 전이가 `done` 으로 들어올 때 `workflow_milestone` artifact 생성.
+/// prior_status 가 이미 done 이면 no-op. 테스트 가능한 pure helper.
+pub(crate) fn emit_milestone_on_status_change(
+    conn: &rusqlite::Connection,
+    plan_id: &str,
+    prior_status: Option<&str>,
+    new_status: &str,
+) -> Result<Option<String>, AppError> {
+    if new_status != "done" || prior_status == Some("done") {
+        return Ok(None);
+    }
+    let Some((conv_id, title)) = load_plan_context(conn, plan_id)? else {
+        return Ok(None);
+    };
+    let content = serde_json::json!({
+        "milestone_kind": "plan_done",
+        "plan_id": plan_id,
+        "summary": title,
+    });
+    create_identity_input_artifact(
+        conn,
+        ArtifactKind::WorkflowMilestone,
+        Some(&conv_id),
+        Some(plan_id),
+        None,
+        &format!("Plan '{}' completed", title),
+        content,
+    )
 }
 
 /// Create a plan event (history log entry).
@@ -845,4 +946,132 @@ fn build_plan_markdown(plan: &Plan, subtasks: &[PlanSubtask], events: &[PlanEven
     }
 
     md
+}
+
+// ─── Tests — identity-artifact emit helpers (subtask-01) ─────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                id                       TEXT PRIMARY KEY,
+                conversation_id          TEXT NOT NULL,
+                title                    TEXT NOT NULL,
+                status                   TEXT NOT NULL,
+                phase                    TEXT NOT NULL,
+                created_at               INTEGER NOT NULL,
+                updated_at               INTEGER NOT NULL
+            );
+            CREATE TABLE artifacts (
+                id              TEXT PRIMARY KEY,
+                conversation_id TEXT,
+                branch_id       TEXT,
+                subtask_id      TEXT,
+                plan_id         TEXT,
+                type            TEXT NOT NULL,
+                title           TEXT NOT NULL,
+                content         TEXT NOT NULL,
+                status          TEXT NOT NULL DEFAULT 'draft',
+                created_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO plans (id, conversation_id, title, status, phase, created_at, updated_at) \
+             VALUES ('p1', 'c1', 'Test plan', 'active', 'subtask_review', 0, 0)",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn count_artifacts(conn: &Connection, kind: &str) -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM artifacts WHERE type = ?1",
+            [kind],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn phase_to_implementation_emits_decision() {
+        let conn = test_conn();
+        let out = emit_decision_on_phase_change(&conn, "p1", Some("subtask_review"), "implementation")
+            .unwrap();
+        assert!(out.is_some());
+        assert_eq!(count_artifacts(&conn, "decision"), 1);
+    }
+
+    #[test]
+    fn phase_non_implementation_does_not_emit() {
+        let conn = test_conn();
+        let out = emit_decision_on_phase_change(&conn, "p1", Some("subtask_review"), "review")
+            .unwrap();
+        assert!(out.is_none());
+        assert_eq!(count_artifacts(&conn, "decision"), 0);
+    }
+
+    #[test]
+    fn phase_implementation_to_implementation_noop() {
+        let conn = test_conn();
+        let out = emit_decision_on_phase_change(&conn, "p1", Some("implementation"), "implementation")
+            .unwrap();
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn status_to_done_emits_milestone() {
+        let conn = test_conn();
+        let out = emit_milestone_on_status_change(&conn, "p1", Some("active"), "done").unwrap();
+        assert!(out.is_some());
+        assert_eq!(count_artifacts(&conn, "workflow_milestone"), 1);
+    }
+
+    #[test]
+    fn status_non_done_does_not_emit() {
+        let conn = test_conn();
+        for terminal in ["abandoned", "active", "draft"] {
+            let out = emit_milestone_on_status_change(&conn, "p1", Some("active"), terminal).unwrap();
+            assert!(out.is_none(), "status={} 은 emit 안 해야", terminal);
+        }
+        assert_eq!(count_artifacts(&conn, "workflow_milestone"), 0);
+    }
+
+    #[test]
+    fn status_done_to_done_noop() {
+        let conn = test_conn();
+        let out = emit_milestone_on_status_change(&conn, "p1", Some("done"), "done").unwrap();
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn missing_plan_returns_none_without_error() {
+        let conn = test_conn();
+        let out = emit_decision_on_phase_change(&conn, "nonexistent", None, "implementation")
+            .unwrap();
+        assert!(out.is_none());
+        let out = emit_milestone_on_status_change(&conn, "nonexistent", Some("active"), "done")
+            .unwrap();
+        assert!(out.is_none());
+    }
+
+    /// INV-1 negative test: user message 내용 분석 기반이 아닌, plan phase/status
+    /// 전이에만 의존함을 보여주는 증거 테스트. 임의 문자열을 phase 로 주어도
+    /// "implementation" 이 아니면 emit 안 됨.
+    #[test]
+    fn no_surveillance_emit_is_event_driven() {
+        let conn = test_conn();
+        for bogus in ["user_said_decision", "결정", "pass", "done"] {
+            let out = emit_decision_on_phase_change(&conn, "p1", None, bogus).unwrap();
+            assert!(out.is_none(), "phase='{}' → emit 안 해야 (INV-1)", bogus);
+        }
+        assert_eq!(count_artifacts(&conn, "decision"), 0);
+    }
 }
