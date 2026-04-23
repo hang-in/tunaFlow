@@ -1,0 +1,40 @@
+{
+  "approval": {
+    "developer_label": "Developer:",
+    "dev_start_button": "Start Dev",
+    "dev_start_tooltip": "Start implementation immediately with the selected Developer agent",
+    "dev_start_busy": "Starting...",
+    "revert_button": "Revert",
+    "dev_start_error": "Failed to start Dev: {{error}}",
+    "revert_error": "Failed to revert: {{error}}",
+    "wip_warning": "{{count}} active plans — review bottleneck risk. Reducing WIP is recommended."
+  },
+  "drafting": {
+    "empty_details_warning": "Some subtasks are missing detailed design.",
+    "detail_design_button": "Request detailed design",
+    "detail_design_busy": "Requesting...",
+    "sync_docs_button": "Sync from docs",
+    "sync_docs_busy": "Syncing...",
+    "subtask_review_button": "Review subtasks",
+    "subtask_review_busy": "Switching...",
+    "no_subtasks_hint": "No subtasks. Ask Architect in Chat to revise the Plan.",
+    "architect_writing": "Architect is writing docs...",
+    "detail_design_error": "Detailed design request failed: {{error}}",
+    "no_project_path_error": "Project path not found.",
+    "no_task_files_error": "Could not find docs/plans/{{slug}}-task-*.md files.",
+    "sync_success": "Synced {{count}} subtask details",
+    "sync_error": "Doc sync failed: {{error}}",
+    "review_transition_error": "Subtask review switch failed: {{error}}",
+    "detail_design_prompt": "[Detailed design request] \"{{title}}\"\n\nPlease add **implementation method (how)** to each subtask in the Plan below.\nFor each subtask, write to details: files to modify/create, approach, and caveats.\n\n{{planContext}}\n\nPropose the revised Plan with detailed design in `<!-- tunaflow:plan-proposal -->` format.",
+    "no_details_suffix": " — (no detailed design)"
+  },
+  "subtask": {
+    "empty_details_row": "No detailed design",
+    "follow_up_suffix": "\nPlease proceed with the task above."
+  },
+  "merge": {
+    "busy": "Merging...",
+    "button": "Merge into Plan",
+    "error": "Plan merge failed: {{error}}"
+  }
+}

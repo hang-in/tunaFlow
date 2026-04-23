@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
 import { Merge } from "lucide-react";
@@ -20,6 +21,7 @@ export function MergeBranchButton({
   branchType: "review" | "implementation";
   onPlanUpdate: (update: Partial<Plan>) => void;
 }) {
+  const { t } = useTranslation("workflow");
   const { closeThread, loadBranches } = useChatStore();
   const [busy, setBusy] = useState(false);
 
@@ -57,14 +59,14 @@ export function MergeBranchButton({
       }
     } catch (e) {
       console.error("[MergeBranchButton] merge failed:", e);
-      toast.error("Plan 병합 실패: " + errorMessage(e));
+      toast.error(t("merge.error", { error: errorMessage(e) }));
     }
     setBusy(false);
   };
 
   return (
     <button onClick={handleMerge} disabled={busy} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium text-primary/70 hover:text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors">
-      <Merge className="w-3 h-3" />{busy ? "병합 중..." : "Plan에 병합"}
+      <Merge className="w-3 h-3" />{busy ? t("merge.busy") : t("merge.button")}
     </button>
   );
 }

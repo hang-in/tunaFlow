@@ -1,0 +1,40 @@
+{
+  "approval": {
+    "developer_label": "Developer:",
+    "dev_start_button": "Dev 시작",
+    "dev_start_tooltip": "선택된 Developer 에이전트로 즉시 구현 시작",
+    "dev_start_busy": "시작 중...",
+    "revert_button": "되돌리기",
+    "dev_start_error": "Dev 시작 실패: {{error}}",
+    "revert_error": "되돌리기 실패: {{error}}",
+    "wip_warning": "동시 진행 Plan {{count}}개 — 리뷰 병목 주의. WIP 줄이기 권장."
+  },
+  "drafting": {
+    "empty_details_warning": "일부 subtask에 상세 설계가 없습니다.",
+    "detail_design_button": "상세 설계 요청",
+    "detail_design_busy": "요청 중...",
+    "sync_docs_button": "docs에서 동기화",
+    "sync_docs_busy": "동기화 중...",
+    "subtask_review_button": "Subtask 검토",
+    "subtask_review_busy": "이동 중...",
+    "no_subtasks_hint": "Subtask가 없습니다. Chat에서 Architect에게 Plan 수정을 요청하세요.",
+    "architect_writing": "아키텍트 문서 작성 중...",
+    "detail_design_error": "상세 설계 요청 실패: {{error}}",
+    "no_project_path_error": "프로젝트 경로를 찾을 수 없습니다.",
+    "no_task_files_error": "docs/plans/{{slug}}-task-*.md 파일을 찾지 못했습니다.",
+    "sync_success": "{{count}}개 subtask 상세 설계 동기화 완료",
+    "sync_error": "문서 동기화 실패: {{error}}",
+    "review_transition_error": "Subtask 검토 전환 실패: {{error}}",
+    "detail_design_prompt": "[상세 설계 요청] \"{{title}}\"\n\n아래 Plan의 각 subtask에 **구현 방법(how)**을 추가해주세요.\n각 subtask별로: 수정/생성할 파일, 접근 방법, 주의사항을 details에 작성하세요.\n\n{{planContext}}\n\n`<!-- tunaflow:plan-proposal -->` 형식으로 상세 설계가 포함된 수정 Plan을 제안하세요.",
+    "no_details_suffix": " — (상세 설계 없음)"
+  },
+  "subtask": {
+    "empty_details_row": "상세 설계 없음",
+    "follow_up_suffix": "\n위 작업을 진행해주세요."
+  },
+  "merge": {
+    "busy": "병합 중...",
+    "button": "Plan에 병합",
+    "error": "Plan 병합 실패: {{error}}"
+  }
+}
