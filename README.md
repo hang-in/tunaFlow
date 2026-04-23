@@ -78,7 +78,7 @@ Agents from multiple engines discuss a single topic. Supports `Sequential` or `D
 
 ### ContextPack
 
-A common prompt assembly engine for all 4 engines. Features automatic `Lite` / `Standard` / `Full` tiering. Includes `rawq` code search, long-term memory, failure learning, and role documentation in the context.
+A common prompt assembly engine for all supported engines (Claude / Codex / Gemini / Ollama / LM Studio). Features automatic `Lite` / `Standard` / `Full` tiering. Includes `rawq` code search, long-term memory, failure learning, and role documentation in the context.
 
 ### Insight
 

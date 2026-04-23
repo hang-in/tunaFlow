@@ -78,7 +78,7 @@ Architect 가 Plan 을 세우면 Developer 가 구현하고, Reviewer 가 교차
 
 ### ContextPack
 
-4 개 엔진이 공유하는 프롬프트 조립 엔진입니다. Lite / Standard / Full 로 자동 티어링되며, rawq 코드 검색 · 장기 기억 · 실패 학습 · 역할 문서까지 한 번에 묶어 보냅니다.
+지원 엔진 (Claude / Codex / Gemini / Ollama / LM Studio) 이 공유하는 프롬프트 조립 엔진입니다. Lite / Standard / Full 로 자동 티어링되며, rawq 코드 검색 · 장기 기억 · 실패 학습 · 역할 문서까지 한 번에 묶어 보냅니다.
 
 ### Insight
 

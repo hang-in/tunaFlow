@@ -37,15 +37,19 @@ SSOT: `docs/reference/dataModelRevised.md`
 | WebSocket Events | done | agent:completed, agent:error, roundtable:* bridge |
 | Auth | done | UUID v4 Bearer token (per startup) |
 
-### Multi-Agent (4-engine parity)
+### Multi-Agent (5-engine parity — UI, + OpenCode backend-only)
+
+UI `ENGINE_CONFIGS` 기준으로 **5 엔진** 디스패치 (`claude` / `codex` / `gemini` / `ollama` / `lmstudio`). OpenCode 는 백엔드(`start_opencode_run`, roundtable executor, skills/identity) 는 완성돼 있으나 **프론트 `ENGINE_CONFIGS` 맵에는 등재 안 돼 있음** → 사용자 노출 경로 없음. 복귀 시 `src/lib/engineConfig.ts` 에 한 줄 추가하면 활성화.
 
 | 기능 | 상태 | 비고 |
 |---|---|---|
 | Claude send + stream | done | ContextPack, resume token, background start_claude_stream |
 | Codex send + stream | done | normalized prompt, JSONL synthetic streaming, background start_codex_run |
 | Gemini send + stream | done | normalized prompt, stream-json, background start_gemini_stream |
-| OpenCode send | done | normalized prompt, background start_opencode_run, `opencode models` discovery |
-| Roundtable run/followup | done | Sequential + Deliberative, background execution |
+| Ollama send + stream | done | OpenAI-compat (`start_openai_compat_stream`), UI 디스패치 O |
+| LM Studio send + stream | done | OpenAI-compat (`start_openai_compat_stream`), UI 디스패치 O |
+| OpenCode send (backend) | done | start_opencode_run, `opencode models` discovery, roundtable executor 연결됨 — **UI 디스패치 X** (ENGINE_CONFIGS 미등재) |
+| Roundtable run/followup | done | Sequential + Deliberative, background execution. RT 참가자로는 OpenCode 포함 가능 |
 | Unified send factory | done | runtimeSlice.sendWithEngine() — ENGINE_CONFIGS map, 중복 제거 |
 | Identity framing | done | ## Identity 블록, profile/engine/persona 3층 분리, 혼합 표현 금지 |
 | Message author attribution | done | per-message author 태그 [assistant:Profile (engine)] |
@@ -55,7 +59,7 @@ SSOT: `docs/reference/dataModelRevised.md`
 
 | 기능 | 상태 | 비고 |
 |---|---|---|
-| Normalized prompt assembly | done | build_normalized_prompt_with_budget(), 4-engine 공용 |
+| Normalized prompt assembly | done | build_normalized_prompt_with_budget(), 전 엔진 공용 (claude/codex/gemini/ollama/lmstudio + opencode) |
 | Mode system (Lite/Standard/Full) | done | mode-specific ModeProfile caps + resolution |
 | Auto mode heuristic | done | 신호 기반 scoring → profile 자동 선택 + trace reason 기록 |
 | Context budget control | done | Settings UI (mode selector + total cap slider) + appStore + backend override |
@@ -73,7 +77,7 @@ SSOT: `docs/reference/dataModelRevised.md`
 | Jaccard block folding | done | cross-session 유사 블록 접기 (0.8+ threshold) |
 | Markdown lightening | done | bold/italic 제거, 코드 블록 보존 |
 | Typed compression | done | section별 압축 목표 (context=800, cross-session=600, findings=400) |
-| 4-engine context metadata | done | trace_log에 context_mode/sections/length/truncated 기록 |
+| context metadata | done | trace_log에 context_mode/sections/length/truncated 기록 (전 엔진 공통) |
 | Trace visibility | done | TracePanel pills (active/skipped), mode badge, budget breakdown, RuntimeStatusBar hint |
 
 ### context-hub
@@ -92,7 +96,7 @@ SSOT: `docs/reference/dataModelRevised.md`
 | ProfileSelector | done | 드롭다운 + Custom fallback |
 | Persona 7종 built-in | done | General/Reviewer/Tester/Architect/Implementer/Debugger/UX Critic |
 | Persona Settings UI | done | priorities/behaviors/constraints/tone/outputStyle/promptFragment |
-| Runtime persona binding | done | promptFragment → ## Persona section, 4-engine parity |
+| Runtime persona binding | done | promptFragment → ## Persona section, 전 엔진 공통 |
 | Applied config visibility | done | message.persona DB 저장 → MessageMeta 표시 |
 
 ### Plan / Evaluation
