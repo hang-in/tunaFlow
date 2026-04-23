@@ -1,3 +1,9 @@
+> ⚠️ **SUPERSEDED (2026-04-23)** — 본 subtask 는 구현되지 않음.
+>
+> Background job 스켈레톤만 단독 머지되면 dead feature 리스크 (사용자 원 설계: metaAgent 와 묶여 의미 생김). `docs/plans/projectIdentityAnalysisPlan.md` 의 **subtask-02** (metaAgent trigger + analysis job) 로 이관됨.
+>
+> 본 파일은 git history 보존 목적으로 유지. Developer 는 `docs/archive/plans/superseded/` 로 git mv 고려.
+
 # Subtask 04 — Background Job 스켈레톤 (enqueue API + UI status + pending cancel)
 
 > 상위 plan: [userWorldviewInjectionPlan.md](./userWorldviewInjectionPlan.md)

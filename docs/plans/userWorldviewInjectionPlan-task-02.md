@@ -1,3 +1,9 @@
+> ⚠️ **SUPERSEDED (2026-04-23)** — 본 subtask 는 구현되지 않음.
+>
+> Artifacts 재사용이 사용자 원 설계 의도임이 확인됨 (2026-04-23 세션). 별도 `preference_events` / `preference_snapshots` 테이블 신설 대신 `docs/plans/projectIdentityAnalysisPlan.md` 의 **subtask-01** (artifact 자동 생성 6 타입) 로 이관됨.
+>
+> 본 파일은 git history 보존 목적으로 유지. Developer 는 `docs/archive/plans/superseded/` 로 git mv 고려.
+
 # Subtask 02 — Migration v46: `preference_events` + `preference_snapshots` + `agent_jobs` 확장
 
 > 상위 plan: [userWorldviewInjectionPlan.md](./userWorldviewInjectionPlan.md)

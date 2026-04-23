@@ -28,6 +28,7 @@
 | [metaAgentInitialSetupPlan_2026-04-16](./metaAgentInitialSetupPlan_2026-04-16.md) | — |
 | [metaAgentOnboardingPlan_2026-04-16](./metaAgentOnboardingPlan_2026-04-16.md) | — |
 | [metaAgentPlan](./metaAgentPlan.md) | **P0** — 메타에이전트. 온보딩, 이슈 감지, 우선순위 제안. 모든 프로젝트 대상 |
+| [projectIdentityAnalysisPlan](./projectIdentityAnalysisPlan.md) | **P1** — Artifacts 기반 "Karma" 파이프라인: 6 타입 자동 생성 + plan 3개/volume 10 trigger + identity_summary 분석 + ContextPack 주입 + Insight 정체성 뷰 (metaAgent 의존) |
 | [perProjectDatabaseSplitPlan](./perProjectDatabaseSplitPlan.md) | — |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
@@ -44,7 +45,7 @@
 | [structuralImprovementPlan](./structuralImprovementPlan.md) | — |
 | [systemMessageChannelPlan](./systemMessageChannelPlan.md) | — |
 | [toolCallHandlerPlan](./toolCallHandlerPlan.md) | P1 — function calling으로 마커 대체 |
-| [userWorldviewInjectionPlan](./userWorldviewInjectionPlan.md) | **P1** — Identity/Interface/Continuity 3축 번들: worldview 주입 + preference_timeline (event+snapshot) + stance-conflict (rule-first) + low-priority visible background job |
+| [userWorldviewInjectionPlan](./userWorldviewInjectionPlan.md) | P1 (**partial**) — Identity 축 (worldview 주입) 만 유지, subtask-01 머지 완료 (PR #144). Interface/Continuity 축은 2026-04-23 `projectIdentityAnalysisPlan` 으로 이관. 자세한 사유는 본 plan 의 superseded_subtasks 섹션 |
 | [traceOverhaulPlan_2026-04-16](./traceOverhaulPlan_2026-04-16.md) | — |
 
 ## 🟡 부분 완료 — 추가 구현 필요

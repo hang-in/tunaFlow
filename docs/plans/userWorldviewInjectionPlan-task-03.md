@@ -1,3 +1,9 @@
+> ⚠️ **SUPERSEDED / DEPRECATED (2026-04-23)** — 본 subtask 는 **설계 자체가 폐기됨**.
+>
+> 2026-04-23 사용자 리마인드: stance-conflict 판정은 rule + model verify + modal 엔진이 아니라 **LLM 자연 능력 + ContextPack 에 `worldview` / `identity_summary` 주입** 으로 충분. Modal 은 UX 침습 과다. agent 가 응답 안에서 자연스럽게 "현실적 관점" 제공하는 수준이 적합.
+>
+> 필요 시 `docs/ideas/stanceConflictStrongIdea.md` 로 idea 만 보존 가능. 본 파일은 git history 보존 목적으로 유지. Developer 는 `docs/archive/plans/superseded/` 로 git mv 고려.
+
 # Subtask 03 — Stance-conflict detection (rule-first + small model verify + modal)
 
 > 상위 plan: [userWorldviewInjectionPlan.md](./userWorldviewInjectionPlan.md)
