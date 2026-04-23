@@ -1,0 +1,30 @@
+{
+  "delete": {
+    "title": "삭제 확인",
+    "message": "정말 {{name}}을(를) 삭제하시겠습니까?",
+    "message_generic": "이 항목을 정말 삭제하시겠습니까?",
+    "confirm": "삭제",
+    "cancel": "취소",
+    "irreversible_hint": "이 작업은 되돌릴 수 없습니다."
+  },
+  "rename": {
+    "title": "이름 변경",
+    "label": "새 이름",
+    "confirm": "변경",
+    "cancel": "취소"
+  },
+  "confirm": {
+    "title": "확인",
+    "default_message": "계속 진행하시겠습니까?",
+    "yes": "예",
+    "no": "아니오"
+  },
+  "save_artifact": {
+    "title": "Artifact 저장",
+    "name_label": "이름",
+    "type_label": "종류",
+    "description_label": "설명",
+    "save": "저장",
+    "cancel": "취소"
+  }
+}

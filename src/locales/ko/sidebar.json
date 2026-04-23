@@ -1,0 +1,31 @@
+{
+  "section": {
+    "chats": "대화",
+    "branches": "브랜치",
+    "roundtables": "라운드테이블",
+    "scratchpad": "스크래치패드",
+    "docs": "문서",
+    "archive": "아카이브",
+    "projects": "프로젝트"
+  },
+  "action": {
+    "new_chat": "새 대화",
+    "new_project": "프로젝트 추가",
+    "rename": "이름 변경",
+    "delete": "삭제",
+    "archive": "아카이브",
+    "unarchive": "복원",
+    "pin": "고정",
+    "unpin": "고정 해제",
+    "open_folder": "폴더 열기"
+  },
+  "placeholder": {
+    "search_chats": "대화 검색...",
+    "new_project_path": "프로젝트 경로 또는 이름"
+  },
+  "empty": {
+    "no_chats": "대화 없음",
+    "no_branches": "브랜치 없음",
+    "no_projects": "등록된 프로젝트 없음"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "input": {
+    "placeholder": "Type a message... (Shift+Enter for newline)",
+    "placeholder_empty_project": "Select a project first",
+    "send_button": "Send",
+    "stop_button": "Stop",
+    "attach_button": "Attach file"
+  },
+  "message": {
+    "role_user": "You",
+    "role_assistant": "Agent",
+    "role_system": "System",
+    "copy": "Copy",
+    "copied": "Copied",
+    "retry": "Retry",
+    "delete_pair": "Delete pair",
+    "created_branch": "Create branch",
+    "streaming_hint": "Streaming..."
+  },
+  "branch": {
+    "create": "Create branch",
+    "default_label": "New branch",
+    "from_here": "Branch from here"
+  },
+  "error": {
+    "send_failed": "Send failed",
+    "empty_response": "Agent returned an empty response",
+    "engine_not_available": "Engine is not available"
+  },
+  "status": {
+    "sending": "Sending...",
+    "waiting_agent": "Waiting for agent response...",
+    "tool_call": "Tool call: {{name}}",
+    "thinking": "Thinking..."
+  }
+}

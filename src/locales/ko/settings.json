@@ -1,0 +1,86 @@
+{
+  "title": "Settings",
+  "section": {
+    "profile": "Profile",
+    "worldview": "Worldview",
+    "identity": "Identity",
+    "agents": "Agents",
+    "personas": "Personas",
+    "skills": "Skills",
+    "runtime": "Runtime",
+    "terminal": "Terminal",
+    "mobile": "Mobile",
+    "help": "Help"
+  },
+  "profile": {
+    "description": "에이전트 컨텍스트와 개발자 정보를 설정합니다.",
+    "group": {
+      "basic": "기본 정보",
+      "agent_context": "에이전트 맥락",
+      "dev_info": "개발자 정보",
+      "advanced": "고급"
+    },
+    "field": {
+      "name": "이름",
+      "title": "직함",
+      "github_username": "GitHub 사용자명",
+      "bio": "Bio",
+      "preferred_languages": "선호 언어",
+      "git_name": "Git 사용자명",
+      "git_email": "Git 이메일",
+      "github_org": "GitHub 조직",
+      "github_token": "GitHub 토큰"
+    },
+    "toast": {
+      "saved": "프로필 저장됨"
+    }
+  },
+  "worldview": {
+    "heading": "User Worldview",
+    "description": "에이전트가 매 요청 시 ContextPack 의 identity 바로 앞에서 참조하는 사용자 stance 문서입니다. 최대 {{max}} tokens.",
+    "toggle_label": "Worldview 주입 활성화",
+    "token_counter": "{{current}} / {{max}} tokens",
+    "over_limit_note": " — 앞부분만 주입됨",
+    "button": {
+      "save": "저장",
+      "load_default": "기본 문구 로드"
+    },
+    "toast": {
+      "saved": "Worldview 저장됨 — 다음 요청부터 적용",
+      "load_failed": "Worldview 로드 실패",
+      "save_failed": "저장 실패: {{error}}",
+      "toggle_on": "Worldview 주입 활성화",
+      "toggle_off": "Worldview 주입 비활성화"
+    },
+    "placeholder": "(비어있음 — 기본 문구 로드 또는 직접 작성)"
+  },
+  "identity": {
+    "heading": "Identity Analysis",
+    "description": "Plan 완료 artifact 를 주기적으로 분석해 프로젝트 정체성 요약을 생성합니다. ContextPack 에 자동 주입되어 이후 agent 응답의 정합성을 높입니다.",
+    "toggle_label": "Background 분석 활성화 (OFF 시 worker 는 pending job 을 pick 하지 않음)",
+    "threshold_label": "Eligible artifact threshold",
+    "threshold_hint": "Plan done 이 3의 배수이고, 이전 분석 이후 누적된 eligible artifact 수가 이 값 이상이면 자동 실행됩니다. 기본 10 (범위 3~50).",
+    "status": {
+      "heading": "현재 상태",
+      "plans_done": "Plans done:",
+      "eligible": "Eligible artifacts:",
+      "reason": "reason:",
+      "will_run": "✓ 다음 Plan 완료 시 자동 실행",
+      "wont_run": "⏸ 조건 미충족"
+    },
+    "button": {
+      "run_now": "지금 실행 (threshold 무시)",
+      "enqueuing": "enqueue 중..."
+    },
+    "force_hint": "plan done %3 조건은 유지됩니다 (partial period 분석 품질 저하 방지)",
+    "toast": {
+      "toggle_on": "Background insight 활성화",
+      "toggle_off": "Background insight 비활성화 (큐 보존)",
+      "toggle_failed": "토글 실패: {{error}}",
+      "threshold_save_failed": "threshold 저장 실패: {{error}}",
+      "enqueued": "분석 job enqueue — 30s 내 worker 가 실행",
+      "skipped": "skip — {{reason}}",
+      "run_failed": "실행 실패: {{error}}"
+    }
+  }
+}

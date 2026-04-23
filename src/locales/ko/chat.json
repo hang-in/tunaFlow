@@ -1,0 +1,36 @@
+{
+  "input": {
+    "placeholder": "메시지를 입력하세요... (Shift+Enter 줄바꿈)",
+    "placeholder_empty_project": "먼저 프로젝트를 선택하세요",
+    "send_button": "보내기",
+    "stop_button": "중지",
+    "attach_button": "파일 첨부"
+  },
+  "message": {
+    "role_user": "사용자",
+    "role_assistant": "에이전트",
+    "role_system": "시스템",
+    "copy": "복사",
+    "copied": "복사됨",
+    "retry": "재시도",
+    "delete_pair": "쌍 삭제",
+    "created_branch": "브랜치 생성",
+    "streaming_hint": "스트리밍 중..."
+  },
+  "branch": {
+    "create": "브랜치 만들기",
+    "default_label": "새 브랜치",
+    "from_here": "여기서 분기"
+  },
+  "error": {
+    "send_failed": "전송 실패",
+    "empty_response": "에이전트가 빈 응답을 반환했습니다",
+    "engine_not_available": "엔진을 사용할 수 없습니다"
+  },
+  "status": {
+    "sending": "전송 중...",
+    "waiting_agent": "에이전트 응답 대기 중...",
+    "tool_call": "도구 호출: {{name}}",
+    "thinking": "생각 중..."
+  }
+}

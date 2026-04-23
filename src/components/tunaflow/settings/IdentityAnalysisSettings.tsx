@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { Brain, Play } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import {
@@ -20,6 +21,7 @@ import {
  *  - TriggerStatus 배지 (Plans done / Eligible / reason)
  */
 export function IdentityAnalysisSettings() {
+  const { t } = useTranslation("settings");
   const projectKey = useChatStore((s) => s.selectedProjectKey);
   const [enabled, setEnabled] = useState(true);
   const [threshold, setThreshold] = useState(10);
@@ -59,9 +61,9 @@ export function IdentityAnalysisSettings() {
     try {
       await setBackgroundInsightEnabled(next);
       setEnabled(next);
-      toast.success(next ? "Background insight 활성화" : "Background insight 비활성화 (큐 보존)");
+      toast.success(t(next ? "identity.toast.toggle_on" : "identity.toast.toggle_off"));
     } catch (e) {
-      toast.error(`토글 실패: ${e}`);
+      toast.error(t("identity.toast.toggle_failed", { error: String(e) }));
     }
   };
 
@@ -70,7 +72,7 @@ export function IdentityAnalysisSettings() {
     try {
       await setIdentityAnalysisThreshold(next);
     } catch (e) {
-      toast.error(`threshold 저장 실패: ${e}`);
+      toast.error(t("identity.toast.threshold_save_failed", { error: String(e) }));
     }
   };
 
@@ -82,11 +84,11 @@ export function IdentityAnalysisSettings() {
       setStatus(decision);
       toast.success(
         decision.shouldRun
-          ? "분석 job enqueue — 30s 내 worker 가 실행"
-          : `skip — ${decision.reason}`,
+          ? t("identity.toast.enqueued")
+          : t("identity.toast.skipped", { reason: decision.reason }),
       );
     } catch (e) {
-      toast.error(`실행 실패: ${e}`);
+      toast.error(t("identity.toast.run_failed", { error: String(e) }));
     } finally {
       setBusy(false);
     }
@@ -97,11 +99,10 @@ export function IdentityAnalysisSettings() {
       <div>
         <h2 className="text-[14px] font-[550] text-foreground mb-1 flex items-center gap-2">
           <Brain className="w-4 h-4" />
-          Identity Analysis
+          {t("identity.heading")}
         </h2>
         <p className="text-[12px] text-muted-foreground leading-relaxed">
-          Plan 완료 artifact 를 주기적으로 분석해 프로젝트 정체성 요약을 생성합니다.
-          ContextPack 에 자동 주입되어 이후 agent 응답의 정합성을 높입니다.
+          {t("identity.description")}
         </p>
       </div>
 
@@ -114,13 +115,13 @@ export function IdentityAnalysisSettings() {
           onChange={(e) => handleToggle(e.target.checked)}
           className="accent-primary"
         />
-        Background 분석 활성화 (OFF 시 worker 는 pending job 을 pick 하지 않음)
+        {t("identity.toggle_label")}
       </label>
 
       {/* Threshold slider */}
       <div className="space-y-1">
         <label className="text-[12px] font-medium text-foreground/80 flex items-center justify-between">
-          <span>Eligible artifact threshold</span>
+          <span>{t("identity.threshold_label")}</span>
           <span className="text-[11px] text-muted-foreground font-mono">{threshold}</span>
         </label>
         <input
@@ -134,20 +135,19 @@ export function IdentityAnalysisSettings() {
           className="w-full accent-primary"
         />
         <p className="text-[11px] text-muted-foreground/70">
-          Plan done 이 3의 배수이고, 이전 분석 이후 누적된 eligible artifact 수가 이 값 이상이면 자동 실행됩니다.
-          기본 10 (범위 3~50).
+          {t("identity.threshold_hint")}
         </p>
       </div>
 
       {/* TriggerStatus */}
       {projectKey && status && (
         <div className="text-[11px] bg-muted/30 rounded-md p-3 space-y-1">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">현재 상태</div>
-          <div>Plans done: <span className="font-mono">{status.donePlanCount}</span></div>
-          <div>Eligible artifacts: <span className="font-mono">{status.eligibleArtifactCount} / {status.threshold}</span></div>
-          <div className="text-muted-foreground">reason: <span className="font-mono">{status.reason}</span></div>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-wide">{t("identity.status.heading")}</div>
+          <div>{t("identity.status.plans_done")} <span className="font-mono">{status.donePlanCount}</span></div>
+          <div>{t("identity.status.eligible")} <span className="font-mono">{status.eligibleArtifactCount} / {status.threshold}</span></div>
+          <div className="text-muted-foreground">{t("identity.status.reason")} <span className="font-mono">{status.reason}</span></div>
           <div className="text-muted-foreground/80">
-            {status.shouldRun ? "✓ 다음 Plan 완료 시 자동 실행" : "⏸ 조건 미충족"}
+            {status.shouldRun ? t("identity.status.will_run") : t("identity.status.wont_run")}
           </div>
         </div>
       )}
@@ -160,10 +160,10 @@ export function IdentityAnalysisSettings() {
           className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <Play className="w-3 h-3" />
-          {busy ? "enqueue 중..." : "지금 실행 (threshold 무시)"}
+          {busy ? t("identity.button.enqueuing") : t("identity.button.run_now")}
         </button>
         <span className="text-[11px] text-muted-foreground">
-          plan done %3 조건은 유지됩니다 (partial period 분석 품질 저하 방지)
+          {t("identity.force_hint")}
         </span>
       </div>
     </div>

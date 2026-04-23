@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import { Globe, FileText } from "lucide-react";
 
 const WORLDVIEW_MAX_TOKENS = 500;
@@ -31,6 +32,7 @@ function estimateTokens(text: string): number {
 }
 
 export function WorldviewSettings() {
+  const { t } = useTranslation("settings");
   const [content, setContent] = useState<string>("");
   const [saved, setSaved] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
@@ -51,12 +53,12 @@ export function WorldviewSettings() {
         setSaved(true);
       } catch (err) {
         console.error("[worldview] load failed", err);
-        toast.error("Worldview 로드 실패");
+        toast.error(t("worldview.toast.load_failed"));
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [t]);
 
   const tokens = estimateTokens(content);
   const overLimit = tokens > WORLDVIEW_MAX_TOKENS;
@@ -69,10 +71,10 @@ export function WorldviewSettings() {
         input: { projectPath: null },
       });
       setAppliedPath(newPath);
-      toast.success("Worldview 저장됨 — 다음 요청부터 적용");
+      toast.success(t("worldview.toast.saved"));
     } catch (err) {
       console.error("[worldview] save failed", err);
-      toast.error(`저장 실패: ${err}`);
+      toast.error(t("worldview.toast.save_failed", { error: String(err) }));
     }
   };
 
@@ -85,10 +87,10 @@ export function WorldviewSettings() {
     try {
       await invoke("set_worldview_enabled", { input: { enabled: next } });
       setEnabled(next);
-      toast.success(next ? "Worldview 주입 활성화" : "Worldview 주입 비활성화");
+      toast.success(t(next ? "worldview.toast.toggle_on" : "worldview.toast.toggle_off"));
     } catch (err) {
       console.error("[worldview] toggle failed", err);
-      toast.error(`토글 실패: ${err}`);
+      toast.error(t("worldview.toast.save_failed", { error: String(err) }));
     }
   };
 
@@ -97,11 +99,10 @@ export function WorldviewSettings() {
       <div>
         <h2 className="text-[14px] font-[550] text-foreground mb-1 flex items-center gap-2">
           <Globe className="w-4 h-4" />
-          User Worldview
+          {t("worldview.heading")}
         </h2>
         <p className="text-[12px] text-muted-foreground leading-relaxed">
-          에이전트가 매 요청 시 ContextPack 의 identity 바로 앞에서 참조하는 사용자 stance 문서입니다.
-          최대 {WORLDVIEW_MAX_TOKENS} tokens.
+          {t("worldview.description", { max: WORLDVIEW_MAX_TOKENS })}
         </p>
       </div>
 
@@ -113,7 +114,7 @@ export function WorldviewSettings() {
           onChange={(e) => handleToggleEnabled(e.target.checked)}
           className="accent-primary"
         />
-        Worldview 주입 활성화
+        {t("worldview.toggle_label")}
       </label>
 
       {/* Editor */}
@@ -125,13 +126,13 @@ export function WorldviewSettings() {
             setContent(e.target.value);
             setSaved(false);
           }}
-          placeholder="(비어있음 — 기본 문구 로드 또는 직접 작성)"
+          placeholder={t("worldview.placeholder")}
           className="w-full h-72 font-mono text-[12px] bg-background border border-border/40 rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring/50 resize-none"
         />
         <div className="flex items-center justify-between text-[11px]">
           <span className={overLimit ? "text-red-500 font-medium" : "text-muted-foreground/70"}>
-            {tokens} / {WORLDVIEW_MAX_TOKENS} tokens
-            {overLimit ? " — 앞부분만 주입됨" : ""}
+            {t("worldview.token_counter", { current: tokens, max: WORLDVIEW_MAX_TOKENS })}
+            {overLimit ? t("worldview.over_limit_note") : ""}
           </span>
           {appliedPath && (
             <span className="text-muted-foreground/60 inline-flex items-center gap-1 truncate max-w-[60%]">
@@ -149,14 +150,14 @@ export function WorldviewSettings() {
           disabled={saved || loading}
           className="px-3 py-1.5 text-[12px] font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          저장
+          {t("worldview.button.save")}
         </button>
         <button
           onClick={handleLoadDefault}
           disabled={loading}
           className="px-3 py-1.5 text-[12px] font-medium rounded-md text-foreground/70 hover:text-foreground hover:bg-accent transition-colors"
         >
-          기본 문구 로드
+          {t("worldview.button.load_default")}
         </button>
       </div>
     </div>

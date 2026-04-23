@@ -8,6 +8,10 @@
 import "i18next";
 import type koCommon from "../locales/ko/common.json";
 import type koError from "../locales/ko/error.json";
+import type koSettings from "../locales/ko/settings.json";
+import type koSidebar from "../locales/ko/sidebar.json";
+import type koChat from "../locales/ko/chat.json";
+import type koDialog from "../locales/ko/dialog.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -15,6 +19,10 @@ declare module "i18next" {
     resources: {
       common: typeof koCommon;
       error: typeof koError;
+      settings: typeof koSettings;
+      sidebar: typeof koSidebar;
+      chat: typeof koChat;
+      dialog: typeof koDialog;
     };
   }
 }

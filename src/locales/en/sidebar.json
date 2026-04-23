@@ -1,0 +1,31 @@
+{
+  "section": {
+    "chats": "Chats",
+    "branches": "Branches",
+    "roundtables": "Roundtables",
+    "scratchpad": "Scratchpad",
+    "docs": "Docs",
+    "archive": "Archive",
+    "projects": "Projects"
+  },
+  "action": {
+    "new_chat": "New chat",
+    "new_project": "Add project",
+    "rename": "Rename",
+    "delete": "Delete",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "open_folder": "Open folder"
+  },
+  "placeholder": {
+    "search_chats": "Search chats...",
+    "new_project_path": "Project path or name"
+  },
+  "empty": {
+    "no_chats": "No chats yet",
+    "no_branches": "No branches",
+    "no_projects": "No registered projects"
+  }
+}

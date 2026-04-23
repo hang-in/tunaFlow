@@ -4,8 +4,16 @@ import LanguageDetector from "i18next-browser-languagedetector";
 
 import koCommon from "./ko/common.json";
 import koError from "./ko/error.json";
+import koSettings from "./ko/settings.json";
+import koSidebar from "./ko/sidebar.json";
+import koChat from "./ko/chat.json";
+import koDialog from "./ko/dialog.json";
 import enCommon from "./en/common.json";
 import enError from "./en/error.json";
+import enSettings from "./en/settings.json";
+import enSidebar from "./en/sidebar.json";
+import enChat from "./en/chat.json";
+import enDialog from "./en/dialog.json";
 
 /** Supported locales. Add 'ja', 'zh', etc. in later PRs. */
 export type SupportedLocale = "ko" | "en";
@@ -19,10 +27,18 @@ export const resources = {
   ko: {
     common: koCommon,
     error: koError,
+    settings: koSettings,
+    sidebar: koSidebar,
+    chat: koChat,
+    dialog: koDialog,
   },
   en: {
     common: enCommon,
     error: enError,
+    settings: enSettings,
+    sidebar: enSidebar,
+    chat: enChat,
+    dialog: enDialog,
   },
 } as const;
 
@@ -36,7 +52,7 @@ i18n
     // 누락 키는 빈 문자열 대신 키 그대로 표시 → 누락 즉시 인지.
     returnEmptyString: false,
     defaultNS: "common",
-    ns: ["common", "error"],
+    ns: ["common", "error", "settings", "sidebar", "chat", "dialog"],
     detection: {
       // appStore (IndexedDB) 우선, 그 다음 localStorage/navigator.
       order: ["localStorage", "navigator"],

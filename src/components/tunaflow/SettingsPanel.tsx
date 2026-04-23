@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User, HelpCircle, Globe, Brain } from "lucide-react";
 import { SkillsPanel } from "./context-panel/SkillsPanel";
@@ -14,17 +15,19 @@ import { IdentityAnalysisSettings } from "./settings/IdentityAnalysisSettings";
 
 type SettingsSection = "profile" | "worldview" | "identity" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile" | "help";
 
-const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
-  { id: "profile", label: "Profile", icon: <User className="w-4 h-4" /> },
-  { id: "worldview", label: "Worldview", icon: <Globe className="w-4 h-4" /> },
-  { id: "identity", label: "Identity", icon: <Brain className="w-4 h-4" /> },
-  { id: "agents", label: "Agents", icon: <Bot className="w-4 h-4" /> },
-  { id: "personas", label: "Personas", icon: <UserCircle className="w-4 h-4" /> },
-  { id: "skills", label: "Skills", icon: <Zap className="w-4 h-4" /> },
-  { id: "runtime", label: "Runtime", icon: <Cpu className="w-4 h-4" /> },
-  { id: "terminal", label: "Terminal", icon: <Terminal className="w-4 h-4" /> },
-  { id: "mobile", label: "Mobile", icon: <Smartphone className="w-4 h-4" /> },
-  { id: "help", label: "Help", icon: <HelpCircle className="w-4 h-4" /> },
+/** Section labels come from `settings.section.*` i18n keys. The order is visual
+ *  layout, not config — 새 섹션 추가 시 JSON 키 + 이 배열 양쪽에 등록. */
+const SECTION_CONFIG: { id: SettingsSection; icon: React.ReactNode }[] = [
+  { id: "profile", icon: <User className="w-4 h-4" /> },
+  { id: "worldview", icon: <Globe className="w-4 h-4" /> },
+  { id: "identity", icon: <Brain className="w-4 h-4" /> },
+  { id: "agents", icon: <Bot className="w-4 h-4" /> },
+  { id: "personas", icon: <UserCircle className="w-4 h-4" /> },
+  { id: "skills", icon: <Zap className="w-4 h-4" /> },
+  { id: "runtime", icon: <Cpu className="w-4 h-4" /> },
+  { id: "terminal", icon: <Terminal className="w-4 h-4" /> },
+  { id: "mobile", icon: <Smartphone className="w-4 h-4" /> },
+  { id: "help", icon: <HelpCircle className="w-4 h-4" /> },
 ];
 
 interface SettingsPanelProps {
@@ -38,6 +41,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
     ? (initialSection as SettingsSection)
     : "profile";
   const [activeSection, setActiveSection] = useState<SettingsSection>(initial);
+  const { t } = useTranslation("settings");
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center">
@@ -45,7 +49,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
 
       <div className="relative bg-sidebar border border-border/40 rounded-xl shadow-2xl w-[80vw] max-w-[900px] h-[70vh] max-h-[600px] overflow-hidden flex flex-col">
         <div className="flex items-center px-5 h-12 shrink-0">
-          <span className="text-[14px] font-[550] text-foreground flex-1">Settings</span>
+          <span className="text-[14px] font-[550] text-foreground flex-1">{t("title")}</span>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors">
             <X className="w-4 h-4" />
           </button>
@@ -53,7 +57,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
 
         <div className="flex flex-1 min-h-0">
           <nav className="w-[180px] shrink-0 px-3 py-2 space-y-0.5">
-            {SECTIONS.map((section) => (
+            {SECTION_CONFIG.map((section) => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
@@ -65,7 +69,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
                 )}
               >
                 {section.icon}
-                {section.label}
+                {t(`section.${section.id}`)}
               </button>
             ))}
           </nav>

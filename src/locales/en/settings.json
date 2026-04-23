@@ -1,0 +1,86 @@
+{
+  "title": "Settings",
+  "section": {
+    "profile": "Profile",
+    "worldview": "Worldview",
+    "identity": "Identity",
+    "agents": "Agents",
+    "personas": "Personas",
+    "skills": "Skills",
+    "runtime": "Runtime",
+    "terminal": "Terminal",
+    "mobile": "Mobile",
+    "help": "Help"
+  },
+  "profile": {
+    "description": "Configure your agent context and developer information.",
+    "group": {
+      "basic": "Basic info",
+      "agent_context": "Agent context",
+      "dev_info": "Developer info",
+      "advanced": "Advanced"
+    },
+    "field": {
+      "name": "Name",
+      "title": "Title",
+      "github_username": "GitHub username",
+      "bio": "Bio",
+      "preferred_languages": "Preferred languages",
+      "git_name": "Git name",
+      "git_email": "Git email",
+      "github_org": "GitHub org",
+      "github_token": "GitHub token"
+    },
+    "toast": {
+      "saved": "Profile saved"
+    }
+  },
+  "worldview": {
+    "heading": "User Worldview",
+    "description": "A user-stance document referenced by the agent on every request, placed right before the identity section of the ContextPack. Max {{max}} tokens.",
+    "toggle_label": "Enable worldview injection",
+    "token_counter": "{{current}} / {{max}} tokens",
+    "over_limit_note": " — only the first portion will be injected",
+    "button": {
+      "save": "Save",
+      "load_default": "Load default"
+    },
+    "toast": {
+      "saved": "Worldview saved — will apply from the next request",
+      "load_failed": "Failed to load worldview",
+      "save_failed": "Save failed: {{error}}",
+      "toggle_on": "Worldview injection enabled",
+      "toggle_off": "Worldview injection disabled"
+    },
+    "placeholder": "(Empty — load default or write your own)"
+  },
+  "identity": {
+    "heading": "Identity Analysis",
+    "description": "Periodically analyzes completed-plan artifacts to generate a project identity summary. The summary is auto-injected into ContextPack to improve consistency of future agent responses.",
+    "toggle_label": "Enable background analysis (when OFF, the worker will not pick pending jobs)",
+    "threshold_label": "Eligible artifact threshold",
+    "threshold_hint": "Runs automatically when Plan done count is a multiple of 3 AND eligible artifacts since the last summary reach this value. Default 10 (range 3-50).",
+    "status": {
+      "heading": "Current status",
+      "plans_done": "Plans done:",
+      "eligible": "Eligible artifacts:",
+      "reason": "reason:",
+      "will_run": "✓ Will run on next plan completion",
+      "wont_run": "⏸ Conditions not met"
+    },
+    "button": {
+      "run_now": "Run now (bypass threshold)",
+      "enqueuing": "Enqueueing..."
+    },
+    "force_hint": "Plan done %3 condition is still enforced (partial-period analysis degrades quality)",
+    "toast": {
+      "toggle_on": "Background insight enabled",
+      "toggle_off": "Background insight disabled (queue preserved)",
+      "toggle_failed": "Toggle failed: {{error}}",
+      "threshold_save_failed": "Failed to save threshold: {{error}}",
+      "enqueued": "Analysis job enqueued — worker will run within 30s",
+      "skipped": "Skip — {{reason}}",
+      "run_failed": "Run failed: {{error}}"
+    }
+  }
+}
