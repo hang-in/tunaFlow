@@ -19,19 +19,35 @@
     "unarchive": "Unarchive",
     "pin": "Pin",
     "unpin": "Unpin",
-    "open_folder": "Open folder"
+    "open_folder": "Open folder",
+    "show_in_finder": "Show in Finder",
+    "copy_path": "Copy path",
+    "add": "Add",
+    "cancel": "Cancel",
+    "pick_folder": "Pick folder"
   },
   "prompt": {
     "rename_new_name": "Enter a new name"
   },
   "placeholder": {
     "search_chats": "Search chats...",
-    "new_project_path": "Project path or name"
+    "new_project_path": "Project path or name",
+    "project_path": "Path",
+    "project_name_optional": "Name (optional)"
   },
   "empty": {
     "no_chats": "No chats yet",
     "no_branches": "No branches",
-    "no_projects": "No registered projects"
+    "no_projects": "No registered projects",
+    "no_scratchpads": "No scratchpads yet",
+    "no_docs": "No docs found"
+  },
+  "error": {
+    "path_required": "Enter a path",
+    "invalid_path": "Invalid path"
+  },
+  "dialog": {
+    "pick_project_folder": "Pick project folder"
   },
   "confirm": {
     "project_delete_title": "Delete project",
@@ -43,6 +59,8 @@
     "rt_delete_title": "Delete roundtable",
     "rt_delete_body": "Delete this roundtable?",
     "archive_delete_title": "Delete archive",
-    "archive_delete_body": "Delete this archive?"
+    "archive_delete_body": "Delete this archive?",
+    "scratchpad_delete_title": "Delete scratchpad",
+    "scratchpad_delete_body": "Delete this scratchpad?"
   }
 }

@@ -19,19 +19,35 @@
     "unarchive": "복원",
     "pin": "고정",
     "unpin": "고정 해제",
-    "open_folder": "폴더 열기"
+    "open_folder": "폴더 열기",
+    "show_in_finder": "Finder에서 보기",
+    "copy_path": "경로 복사",
+    "add": "추가",
+    "cancel": "취소",
+    "pick_folder": "폴더 선택"
   },
   "prompt": {
     "rename_new_name": "새 이름을 입력하세요"
   },
   "placeholder": {
     "search_chats": "대화 검색...",
-    "new_project_path": "프로젝트 경로 또는 이름"
+    "new_project_path": "프로젝트 경로 또는 이름",
+    "project_path": "경로",
+    "project_name_optional": "이름 (선택)"
   },
   "empty": {
     "no_chats": "대화 없음",
     "no_branches": "브랜치 없음",
-    "no_projects": "등록된 프로젝트 없음"
+    "no_projects": "등록된 프로젝트 없음",
+    "no_scratchpads": "스크래치패드 없음",
+    "no_docs": "문서 없음"
+  },
+  "error": {
+    "path_required": "경로를 입력하세요",
+    "invalid_path": "유효하지 않은 경로"
+  },
+  "dialog": {
+    "pick_project_folder": "프로젝트 폴더 선택"
   },
   "confirm": {
     "project_delete_title": "프로젝트 삭제",
@@ -43,6 +59,8 @@
     "rt_delete_title": "RT 삭제",
     "rt_delete_body": "이 Roundtable을 삭제하시겠습니까?",
     "archive_delete_title": "아카이브 삭제",
-    "archive_delete_body": "이 아카이브를 삭제하시겠습니까?"
+    "archive_delete_body": "이 아카이브를 삭제하시겠습니까?",
+    "scratchpad_delete_title": "스크래치패드 삭제",
+    "scratchpad_delete_body": "이 스크래치패드를 삭제하시겠습니까?"
   }
 }

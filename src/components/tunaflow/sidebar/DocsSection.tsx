@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { FileText, ChevronRight, ChevronDown, Folder, FolderOpen, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,7 @@ interface DocsSectionProps {
 }
 
 export function DocsSection({ projectPath }: DocsSectionProps) {
+  const { t } = useTranslation("sidebar");
   const [docs, setDocs] = useState<DocEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
@@ -104,12 +106,12 @@ export function DocsSection({ projectPath }: DocsSectionProps) {
       y: e.clientY,
       items: [
         {
-          label: "Finder에서 보기",
+          label: t("action.show_in_finder"),
           icon: <FolderOpen className="w-3.5 h-3.5" />,
           onClick: () => revealInFinder(entry.path),
         },
         {
-          label: "경로 복사",
+          label: t("action.copy_path"),
           icon: <Copy className="w-3.5 h-3.5" />,
           onClick: () => copyToClipboard(entry.path),
         },
@@ -157,7 +159,7 @@ export function DocsSection({ projectPath }: DocsSectionProps) {
   return (
     <div className="py-1">
       {docs.length === 0 ? (
-        <p className="px-3 text-[10px] text-sidebar-foreground/25 italic">No docs found</p>
+        <p className="px-3 text-[10px] text-sidebar-foreground/25 italic">{t("empty.no_docs")}</p>
       ) : (
         docs.map((entry) => renderEntry(entry, 0))
       )}

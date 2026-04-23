@@ -1,4 +1,5 @@
 import { memo, useMemo, useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
@@ -21,6 +22,7 @@ import { ChevronRight } from "lucide-react";
 
 /** Collapsible display for tool-request follow-up results (auto-injected by tunaFlow). */
 function ToolResultCollapsible({ content, conversationId }: { content: string; conversationId?: string }) {
+  const { t } = useTranslation("chat");
   const [open, setOpen] = useState(false);
   const lineCount = content.split("\n").length;
   return (
@@ -30,8 +32,8 @@ function ToolResultCollapsible({ content, conversationId }: { content: string; c
         className="flex items-center gap-1.5 w-full px-3 py-1.5 text-muted-foreground/70 hover:text-foreground hover:bg-accent/30 transition-colors"
       >
         <ChevronRight className={cn("w-3 h-3 transition-transform", open && "rotate-90")} />
-        <span className="font-medium">도구 호출 결과</span>
-        <span className="text-muted-foreground/40 ml-1">({lineCount}줄)</span>
+        <span className="font-medium">{t("message.tool_result_label")}</span>
+        <span className="text-muted-foreground/40 ml-1">{t("message.tool_result_lines", { count: lineCount })}</span>
       </button>
       {open && (
         <div className="px-3 py-2 border-t border-border/20 text-xs">
@@ -126,6 +128,7 @@ interface MessageItemProps {
 }
 
 export const MessageItem = memo(function MessageItem({ message, onBranch, onBranchRT, onMemo, onFollowup, onDeletePair, onSaveArtifact, threadBranches, onOpenThread, showActions = true, variant = "default", grouped = false }: MessageItemProps) {
+  const { t } = useTranslation("chat");
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isStreaming = message.status === "streaming";
@@ -169,7 +172,7 @@ export const MessageItem = memo(function MessageItem({ message, onBranch, onBran
       onFollowup={onFollowup ? () => onFollowup("claude", message.content) : undefined}
       onDelete={onDeletePair ? async () => {
         const { ask } = await import("@tauri-apps/plugin-dialog");
-        if (await ask("이 메시지를 삭제하시겠습니까?", { title: "메시지 삭제", kind: "warning" })) onDeletePair(message.id);
+        if (await ask(t("message.delete_confirm_body"), { title: t("message.delete_confirm_title"), kind: "warning" })) onDeletePair(message.id);
       } : undefined}
     >
       <div

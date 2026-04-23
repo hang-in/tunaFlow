@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Lightbulb, Plus, Trash2, ChevronRight, Pencil } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
@@ -19,6 +20,7 @@ export function ScratchpadSection({
   selectConversation,
   renameConversation,
 }: ScratchpadSectionProps) {
+  const { t } = useTranslation("sidebar");
   const [expanded, setExpanded] = useState(true);
   const createConversation = useChatStore((s) => s.createConversation);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
@@ -40,7 +42,7 @@ export function ScratchpadSection({
   };
 
   const handleDelete = async (id: string) => {
-    const ok = await ask("Delete this scratchpad?", { kind: "warning", title: "Delete" });
+    const ok = await ask(t("confirm.scratchpad_delete_body"), { kind: "warning", title: t("confirm.scratchpad_delete_title") });
     if (ok) await deleteConversation(id);
   };
 
@@ -52,16 +54,16 @@ export function ScratchpadSection({
       y: e.clientY,
       items: [
         {
-          label: "이름 변경",
+          label: t("action.rename"),
           icon: <Pencil className="w-3.5 h-3.5" />,
           onClick: () => {
-            const val = window.prompt("새 이름을 입력하세요", sp.label ?? "");
+            const val = window.prompt(t("prompt.rename_new_name"), sp.label ?? "");
             if (val) renameConversation(sp.id, val);
           },
         },
         { separator: true, label: "", onClick: () => {} },
         {
-          label: "삭제",
+          label: t("action.delete"),
           icon: <Trash2 className="w-3.5 h-3.5" />,
           danger: true,
           onClick: () => handleDelete(sp.id),
@@ -80,12 +82,12 @@ export function ScratchpadSection({
         >
           <ChevronRight className={cn("w-3 h-3 transition-transform", expanded && "rotate-90")} />
           <Lightbulb className="w-3 h-3" />
-          Scratchpad
+          {t("section.scratchpad")}
         </button>
         <button
           onClick={handleAdd}
           className="p-0.5 rounded text-muted-foreground/30 hover:text-foreground hover:bg-accent/40 transition-colors"
-          title="New scratchpad"
+          title={t("action.new_scratchpad")}
         >
           <Plus className="w-3 h-3" />
         </button>
@@ -95,7 +97,7 @@ export function ScratchpadSection({
       {expanded && (
         <div className="space-y-0.5 mt-0.5">
           {scratchpads.length === 0 && (
-            <p className="text-[10px] text-muted-foreground/30 px-3 py-1">No scratchpads yet</p>
+            <p className="text-[10px] text-muted-foreground/30 px-3 py-1">{t("empty.no_scratchpads")}</p>
           )}
           {scratchpads.map((sp) => {
             const isSelected = sp.id === selectedConversationId;

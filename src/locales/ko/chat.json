@@ -23,7 +23,11 @@
     "retry": "재시도",
     "delete_pair": "쌍 삭제",
     "created_branch": "브랜치 생성",
-    "streaming_hint": "스트리밍 중..."
+    "streaming_hint": "스트리밍 중...",
+    "tool_result_label": "도구 호출 결과",
+    "tool_result_lines": "({{count}}줄)",
+    "delete_confirm_title": "메시지 삭제",
+    "delete_confirm_body": "이 메시지를 삭제하시겠습니까?"
   },
   "branch": {
     "create": "브랜치 만들기",
