@@ -45,6 +45,9 @@ Experiment with the same topic by branching it to multiple agents (**Branch**). 
 ### CLI-first — Maximizing existing subscriptions
 The primary execution paths are via Claude Code, Codex, and Gemini **CLI**. The SDK (API billing) is used only as a fallback. This is designed so users with existing subscriptions can utilize all features without additional token costs.
 
+### Quality over token thrift — tunaFlow is not a token-saving app
+Output quality comes first. Identity documents, worldview files, and analysis summaries are allowed to be rich (AGENTS.md-level, 1,500–3,000 tokens) when that richness improves agent output. The wasteful axis we do avoid is **redundancy** — re-injecting context already held in the claude session buffer, stale compression leaking into current requests, or the same information doubled across sections. Here, "lean" means "no redundancy", not "compressed to the minimum".
+
 ---
 
 ## Key Features

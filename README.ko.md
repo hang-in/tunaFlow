@@ -45,6 +45,9 @@ Plan 은 Architect(Claude Opus) 가 작성하고, 독립된 Reviewer(Codex, blin
 ### CLI-first — 구독 요금제 내에서 최대치
 기본 경로는 Claude Code / Codex / Gemini **CLI**. SDK(API 과금) 는 fallback 으로만 씁니다. 이미 구독 중인 사용자가 추가 토큰 비용 없이 모든 기능을 쓸 수 있도록 설계됐습니다.
 
+### 품질 우선 — tunaFlow 는 토큰 절약 도구가 아님
+결과물 품질이 최우선입니다. identity 문서 / worldview / 분석 요약 같은 맥락 자료는 agent 응답 품질에 기여하면 **AGENTS.md 수준 (1,500~3,000 tokens)** 으로 풍부하게 허용합니다. 대신 회피하는 낭비 축은 **중복** — 이미 claude 세션 버퍼에 있는 컨텍스트를 tunaFlow 가 또 주입하거나, stale 한 압축본이 현재 요청에 섞이거나, 같은 정보가 여러 섹션에 복사되는 것. 여기서 "lean" 은 "극단 압축" 이 아니라 **"중복 없음"** 입니다.
+
 ---
 
 ## 주요 기능
