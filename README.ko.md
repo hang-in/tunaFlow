@@ -2,12 +2,12 @@
 
 # tunaFlow
 
-**AI Agent Orchestration Client**
+**Claude Code · Codex · Gemini · OpenCode 를 한 화면에서 — plan · branch · review 까지.**
 
+[![CI](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
 [![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![DB Schema](https://img.shields.io/badge/DB_Schema-v46-8b5cf6)](.)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](./LICENSE)
 [![Status](https://img.shields.io/badge/Status-Beta-f59e0b)](./docs/plans/publicReadinessChecklistPlan.md)
 
@@ -16,7 +16,7 @@
 
 > **Of the agent, By the agent, For the agent**
 
-도메인 전문가가 여러 AI 에이전트를 하나의 작업 흐름 안에서 운영하기 위한 데스크톱 클라이언트
+tmux 로 CLI 여러 개 오가는 피로에서 벗어나는 데스크톱 앱. Claude Code / Codex / Gemini / OpenCode 를 단일 Plan → Dev → Review 워크플로우 안에서 함께 운영합니다.
 
 </div>
 

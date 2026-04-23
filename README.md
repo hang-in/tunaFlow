@@ -2,12 +2,12 @@
 
 # tunaFlow
 
-**AI Agent Orchestration Client**
+**One surface for Claude Code, Codex, Gemini, and OpenCode — plan, branch, and review across engines.**
 
+[![CI](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
 [![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![DB Schema](https://img.shields.io/badge/DB_Schema-v46-8b5cf6)](.)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](./LICENSE)
 [![Status](https://img.shields.io/badge/Status-Beta-f59e0b)](./docs/plans/publicReadinessChecklistPlan.md)
 
@@ -16,7 +16,7 @@
 
 > **Of the agent, By the agent, For the agent**
 
-A desktop client for domain experts to orchestrate multiple AI agents within a single workflow.
+Stop shuttling between tmux panes. tunaFlow is a desktop client that runs multiple CLI coding agents (Claude Code, Codex, Gemini, OpenCode) side by side under a unified Plan → Dev → Review workflow.
 
 </div>
 
@@ -165,12 +165,17 @@ External Integration: HTTP API + WebSocket · MCP Server (`tunaflow-mcp`)
 
 ## Known Constraints (Beta)
 
-- **macOS Exclusive** — Windows/Linux builds are pending tasks.
-- **Ad-hoc Signature** — Requires Gatekeeper bypass (`xattr -cr /Applications/tunaFlow.app`).
-- **No RT Intermediate Streaming** — `Roundtable` results are displayed only after each round.
-- **Initial Indexing Delay** — Large projects may take several minutes for the first run (CPU spikes are mitigated via ONNX thread limits, semaphores, and incremental indexing).
+### Will be fixed (P0 / P1)
+
 - **PTY Terminal — Work in Progress** — The in-app terminal panel is temporarily unavailable in the Beta bundle and is being rewired. Use an external terminal (iTerm2 / Terminal.app / Warp) alongside tunaFlow until a follow-up release restores it.
 - **JSONL Completion Detection Failure (P1)** — Occasional issues where PTY session responses are not reflected in the UI (transitioning to `sdk-session` WebSocket path).
+- **Windows / Linux builds** — Not yet supported; packaging pipeline in progress.
+
+### By design / Beta stage
+
+- **Ad-hoc Signature** — No Apple Developer ID signing in Beta. Requires Gatekeeper bypass (`xattr -cr /Applications/tunaFlow.app`).
+- **No RT Intermediate Streaming** — `Roundtable` results are displayed only after each round completes (structural — requires significant rewiring to change).
+- **Initial Indexing Delay** — Large projects may take several minutes for the first run (CPU spikes mitigated via ONNX thread limits, semaphores, and incremental indexing).
 
 Detailed list: [CLAUDE.md §5](./CLAUDE.md)
 
@@ -213,7 +218,7 @@ Full third-party attribution list is in [NOTICE](./NOTICE).
 
 ---
 
-*100% AI-authored codebase — Written by Claude Code; humans provide direction only.*
+*100% AI-authored codebase — Claude Code wrote every line; humans provide architecture and direction.*
 
 ---
 🇺🇸 English · 🇰🇷 [한국어](./README.ko.md)
