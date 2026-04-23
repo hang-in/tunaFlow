@@ -83,8 +83,8 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
               {activeSection === "personas" && <PersonasSection />}
               {activeSection === "skills" && (
                 <div>
-                  <h2 className="text-[14px] font-[550] text-foreground mb-1">Skills</h2>
-                  <p className="text-[12px] text-muted-foreground mb-4">에이전트에게 적용할 스킬을 관리합니다.</p>
+                  <h2 className="text-[14px] font-[550] text-foreground mb-1">{t("section.skills")}</h2>
+                  <p className="text-[12px] text-muted-foreground mb-4">{t("skills_description")}</p>
                   <SkillsPanel />
                 </div>
               )}
