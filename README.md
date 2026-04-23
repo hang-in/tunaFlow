@@ -169,6 +169,7 @@ External Integration: HTTP API + WebSocket · MCP Server (`tunaflow-mcp`)
 - **Ad-hoc Signature** — Requires Gatekeeper bypass (`xattr -cr /Applications/tunaFlow.app`).
 - **No RT Intermediate Streaming** — `Roundtable` results are displayed only after each round.
 - **Initial Indexing Delay** — Large projects may take several minutes for the first run (CPU spikes are mitigated via ONNX thread limits, semaphores, and incremental indexing).
+- **PTY Terminal — Work in Progress** — The in-app terminal panel is temporarily unavailable in the Beta bundle and is being rewired. Use an external terminal (iTerm2 / Terminal.app / Warp) alongside tunaFlow until a follow-up release restores it.
 - **JSONL Completion Detection Failure (P1)** — Occasional issues where PTY session responses are not reflected in the UI (transitioning to `sdk-session` WebSocket path).
 
 Detailed list: [CLAUDE.md §5](./CLAUDE.md)
@@ -181,14 +182,38 @@ Key shortcuts, feature summaries, and troubleshooting tips are available in the 
 
 ---
 
+## Built with tunaFlow
+
+Projects developed using tunaFlow's multi-agent orchestration workflow:
+
+- **[secall](https://github.com/hang-in/secall)** — Hybrid search "second brain" for AI conversations. A CJK-adapted take on Andrej Karpathy's LLM wiki concept.
+
+---
+
+## References & Acknowledgments
+
+tunaFlow borrows ideas and code from several open-source projects. They are not bundled in this repository, but their work shaped tunaFlow's design. Thanks to the following maintainers:
+
+- **[rawq](https://github.com/auyelbekov/rawq)** (MIT) — code-search sidecar. tunaFlow ships a locally-patched build as a bundled binary.
+- **[codex](https://github.com/openai/codex)** (Apache 2.0) — reference implementation for CLI agent protocol work.
+- **[xterm.js](https://xtermjs.org/)** (MIT) — terminal rendering in the PTY panel.
+- **[react-markdown](https://github.com/remarkjs/react-markdown)** (MIT) — chat markdown rendering.
+- **[D2Coding](https://github.com/naver/d2codingfont)** (OFL 1.1) — bundled monospace font.
+- **[Tauri](https://tauri.app/)** (MIT / Apache 2.0) — desktop shell framework.
+
+Full third-party attribution list is in [NOTICE](./NOTICE).
+
+---
+
 ## Contact
 
 - Email: d9ng@outlook.com
 - Issues: https://github.com/hang-in/tunaFlow/issues
+- Security: see [SECURITY.md](./SECURITY.md)
 
 ---
 
-*Private project. 100% AI-authored codebase — Written by Claude Code, humans provide direction only.*
+*100% AI-authored codebase — Written by Claude Code; humans provide direction only.*
 
 ---
 🇺🇸 English · 🇰🇷 [한국어](./README.ko.md)

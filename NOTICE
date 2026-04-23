@@ -1,0 +1,60 @@
+tunaFlow
+Copyright 2026 d9ng, tunaflow.dev
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---
+
+This product includes software developed by third parties. Each of the
+following projects is subject to its own license terms. Full license texts
+are available at the respective project URLs or in the installed
+node_modules/ and src-tauri/target/ directories.
+
+Ideas and patches borrowed (not bundled in this repository):
+
+- rawq — https://github.com/auyelbekov/rawq
+  License: MIT
+  Use: code-search sidecar. tunaFlow ships a locally-patched build as a
+  bundled binary. The upstream repository is unmodified.
+
+- codex — https://github.com/openai/codex
+  License: Apache License 2.0
+  Use: reference implementation for CLI agent protocol work.
+
+Bundled runtime dependencies (selected highlights — see package.json and
+src-tauri/Cargo.toml for the full dependency tree):
+
+- Tauri — https://tauri.app/
+  License: MIT / Apache 2.0
+
+- React, React DOM — https://react.dev/
+  License: MIT
+
+- Zustand — https://github.com/pmndrs/zustand
+  License: MIT
+
+- i18next, react-i18next — https://www.i18next.com/
+  License: MIT
+
+- react-markdown, remark-gfm, react-syntax-highlighter
+  License: MIT
+
+- lucide-react — https://lucide.dev/
+  License: ISC
+
+- xterm.js — https://xtermjs.org/
+  License: MIT
+
+- ONNX Runtime (via sqlite-vec / bge-m3 pipeline)
+  License: MIT
+
+Bundled fonts:
+
+- D2Coding — https://github.com/naver/d2codingfont
+  License: SIL Open Font License 1.1
+
+---
+
+This NOTICE file is provided for informational purposes and attribution.
+It does not grant or modify any rights under the Apache License. See the
+individual project repositories for the authoritative license texts.
