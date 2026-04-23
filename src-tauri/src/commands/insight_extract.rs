@@ -399,49 +399,63 @@ pub async fn run_insight_analysis(
     };
 
     let engine_name = engine.unwrap_or_else(|| "claude".to_string());
+    let engine_for_log = engine_name.clone();
     eprintln!("[insight] run_insight_analysis: engine={}, model={:?}, prompt_len={}, project_path={:?}",
         engine_name, input.model, input.prompt.len(), input.project_path);
 
-    // Run synchronously in a blocking thread — dispatch by engine
-    let result: RunOutput = match engine_name.as_str() {
-        "gemini" => {
-            tokio::task::spawn_blocking(move || {
-                crate::agents::gemini::stream_run(
-                    input,
-                    |_| {}, |_| {}, || false,
-                )
-            })
-            .await
-            .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
-            .map_err(|e| AppError::Agent(format!("gemini analysis failed: {}", e)))?
-        }
-        "codex" => {
-            tokio::task::spawn_blocking(move || {
-                crate::agents::codex::stream_run(
-                    input,
-                    |_| {}, |_| {},
-                )
-            })
-            .await
-            .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
-            .map_err(|e| AppError::Agent(format!("codex analysis failed: {}", e)))?
-        }
-        _ => {
-            // Default: claude
-            tokio::task::spawn_blocking(move || {
-                crate::agents::claude::stream_run(
-                    input,
-                    |_| {}, |_| {}, || false,
-                )
-            })
-            .await
-            .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
-            .map_err(|e| AppError::Agent(format!("claude analysis failed: {}", e)))?
+    // insightStabilityPlan Subtask 04 (INV-4): Wall-clock timeout 12분 (agent idle
+    // watchdog 10분 + 2분 buffer). Agent 내부 watchdog 이 hang 되는 edge case 에서도
+    // Tauri 커맨드가 반드시 에러로 반환되어 FE 의 catch 가 session status='failed'
+    // 로 전이 → spinner off.
+    let wall_clock_timeout = std::time::Duration::from_secs(12 * 60);
+
+    let run_fut = async move {
+        let result: Result<RunOutput, AppError> = match engine_name.as_str() {
+            "gemini" => {
+                tokio::task::spawn_blocking(move || {
+                    crate::agents::gemini::stream_run(input, |_| {}, |_| {}, || false)
+                })
+                .await
+                .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
+                .map_err(|e| AppError::Agent(format!("gemini analysis failed: {}", e)))
+            }
+            "codex" => {
+                tokio::task::spawn_blocking(move || {
+                    crate::agents::codex::stream_run(input, |_| {}, |_| {})
+                })
+                .await
+                .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
+                .map_err(|e| AppError::Agent(format!("codex analysis failed: {}", e)))
+            }
+            _ => {
+                tokio::task::spawn_blocking(move || {
+                    crate::agents::claude::stream_run(input, |_| {}, |_| {}, || false)
+                })
+                .await
+                .map_err(|e| AppError::Agent(format!("spawn_blocking failed: {}", e)))?
+                .map_err(|e| AppError::Agent(format!("claude analysis failed: {}", e)))
+            }
+        };
+        result
+    };
+
+    let result: RunOutput = match tokio::time::timeout(wall_clock_timeout, run_fut).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return Err(e),
+        Err(_elapsed) => {
+            eprintln!(
+                "[insight] run_insight_analysis: wall-clock timeout after {}s",
+                wall_clock_timeout.as_secs()
+            );
+            return Err(AppError::Agent(format!(
+                "insight analysis wall-clock timeout after {}s (agent watchdog likely hung)",
+                wall_clock_timeout.as_secs()
+            )));
         }
     };
 
     eprintln!("[insight] analysis done: engine={}, input_tokens={}, output_tokens={}, cost=${:.4}",
-        engine_name, result.input_tokens, result.output_tokens, result.cost_usd);
+        engine_for_log, result.input_tokens, result.output_tokens, result.cost_usd);
 
     // Return content + usage as JSON
     let response = serde_json::json!({
