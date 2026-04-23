@@ -39,7 +39,6 @@ Projects that shaped tunaFlow's status bar, menu-bar metaphors, and token/cost d
 | **claude-status-bar** | https://github.com/kangraemin/claude-status-bar | MIT |
 | **claude-code-stats** | https://github.com/dmelo/claude-code-stats | MIT |
 | **duckbar** | https://github.com/rofeels/duckbar | MIT |
-| **DINKIssTyle-Markdown-Browser** | https://github.com/DINKIssTyle/DINKIssTyle-Markdown-Browser | MIT |
 
 ## 4. Orchestration / multi-agent references
 
