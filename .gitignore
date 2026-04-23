@@ -50,3 +50,8 @@ _stash_recovery/
 
 # Eval run artifacts (results emitted at runtime; suite README preserved)
 evals/results/
+
+# Dev-log posts + community drafts — published externally, not in repo
+/docs/posts/
+
+/.claude/scheduled_tasks.lock
