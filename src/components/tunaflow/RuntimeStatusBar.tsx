@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
-import { Activity, Loader2, Zap, Terminal, Settings, Moon, Sun } from "lucide-react";
+import { Activity, Loader2, Zap, Terminal, Settings, Moon, Sun, Brain } from "lucide-react";
 import { SettingsPanel } from "./SettingsPanel";
 import { TraceModal } from "./TraceModal";
 import { getSetting, setSetting } from "@/lib/appStore";
+import { countBackgroundJobs, type BackgroundJobCounts } from "@/lib/api/identityAnalysis";
 
 function ThemeToggleButton() {
   const [themeMode, setThemeMode] = useState<"dark" | "light">("dark");
@@ -94,6 +96,7 @@ export function RuntimeStatusBar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
   const hasPtySession = usePtyStore((s) => s.sessions.size > 0);
+  const [bgJobs, setBgJobs] = useState<BackgroundJobCounts>({ pending: 0, running: 0 });
 
   // 외부 컴포넌트(역할 게이트, CommandPalette)가 Settings 를 여는 단일 이벤트.
   useEffect(() => {
@@ -203,6 +206,26 @@ export function RuntimeStatusBar() {
     return () => { cancelled = true; clearInterval(timer); };
   }, [selectedProjectKey]);
 
+  // Background insight job counts — metaAgent Phase 4.
+  // 15s 폴링 + `background_insight_progress` 이벤트 수신 시 즉시 refresh.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const counts = await countBackgroundJobs();
+        if (!cancelled) setBgJobs(counts);
+      } catch { /* counts 실패 무시 */ }
+    };
+    refresh();
+    const timer = setInterval(refresh, 15000);
+    const unlistenPromise = listen("background_insight_progress", () => refresh());
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      unlistenPromise.then((u) => u()).catch(() => {});
+    };
+  }, []);
+
   // Rate limit — slow poll (60s), reads cached files only (no API calls)
   useEffect(() => {
     let cancelled = false;
@@ -298,6 +321,24 @@ export function RuntimeStatusBar() {
           </span>
           <span className="w-px h-3 bg-border/30" />
           <span>{runningJobCount} jobs</span>
+          {(bgJobs.pending > 0 || bgJobs.running > 0) && (
+            <>
+              <span className="w-px h-3 bg-border/30" />
+              <span
+                className="flex items-center gap-1"
+                title={`Background insight: pending=${bgJobs.pending}, running=${bgJobs.running}`}
+              >
+                {bgJobs.running > 0 ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-primary/70" />
+                ) : (
+                  <Brain className="w-3 h-3 text-muted-foreground/60" />
+                )}
+                <span className={cn("text-tf-micro", bgJobs.running > 0 ? "text-primary/70" : "text-muted-foreground")}>
+                  bg {bgJobs.running > 0 ? `${bgJobs.running}↺` : bgJobs.pending}
+                </span>
+              </span>
+            </>
+          )}
           {lastContextMode && (
             <>
               <span className="w-px h-3 bg-border/30" />

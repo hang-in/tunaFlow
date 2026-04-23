@@ -296,6 +296,8 @@ pub fn run() {
             // metaAgent Phase 3 — identity analysis trigger
             commands::meta_agent::identity_trigger::trigger_identity_analysis_now,
             commands::meta_agent::identity_trigger::get_identity_trigger_status,
+            commands::meta_agent::identity_trigger::get_identity_analysis_threshold,
+            commands::meta_agent::identity_trigger::set_identity_analysis_threshold,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

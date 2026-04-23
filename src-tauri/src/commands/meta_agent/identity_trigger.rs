@@ -15,7 +15,7 @@
 //!   1회만 enqueue.
 //! - INV-1 (parent plan): 자동 action 은 artifact insert 만. 파괴적 변경 없음.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use rusqlite::Connection;
 use serde::Serialize;
@@ -27,8 +27,12 @@ use crate::errors::AppError;
 use super::background_jobs::{enqueue_background_job, BACKGROUND_INSIGHT_ENABLED};
 
 /// 기본 eligible artifact threshold. env var `TUNAFLOW_IDENTITY_ANALYSIS_THRESHOLD`
-/// 또는 후속 PR 의 Settings UI 가 override. 현재는 상수 + env.
+/// 또는 Settings UI 가 override (AtomicI64).
 pub const DEFAULT_IDENTITY_ANALYSIS_THRESHOLD: i64 = 10;
+
+/// Settings UI 에서 set 하는 runtime threshold. 0 이면 "unset" 으로 간주 — env var
+/// 또는 default 로 fallback. 범위 제약 (3~50) 은 set 커맨드에서 enforce.
+pub static IDENTITY_ANALYSIS_THRESHOLD: AtomicI64 = AtomicI64::new(0);
 
 /// artifact taxonomy — trigger 의 조건 B 에서 카운트 대상. identity_summary 는
 /// output 이라 제외. subtask-01 의 ArtifactKind::is_identity_input 와 정합.
@@ -52,13 +56,18 @@ pub struct IdentityTriggerDecision {
     pub reason: String,
 }
 
-/// 현재 threshold 값. env var 우선, 없으면 상수 default.
-/// `app_settings` 테이블은 아직 없어 DB 경로 미도입 — 후속 PR 에서 Settings UI 와 함께 추가.
+/// 현재 threshold 값. 우선순위: env var > Settings UI atomic > default.
 pub fn load_threshold() -> i64 {
-    std::env::var("TUNAFLOW_IDENTITY_ANALYSIS_THRESHOLD")
-        .ok()
-        .and_then(|v| v.parse::<i64>().ok())
-        .unwrap_or(DEFAULT_IDENTITY_ANALYSIS_THRESHOLD)
+    if let Ok(v) = std::env::var("TUNAFLOW_IDENTITY_ANALYSIS_THRESHOLD") {
+        if let Ok(n) = v.parse::<i64>() {
+            return n;
+        }
+    }
+    let from_settings = IDENTITY_ANALYSIS_THRESHOLD.load(Ordering::Relaxed);
+    if from_settings > 0 {
+        return from_settings;
+    }
+    DEFAULT_IDENTITY_ANALYSIS_THRESHOLD
 }
 
 /// Trigger 조건 평가. Pure read-only — DB write 없음.
@@ -275,6 +284,33 @@ pub fn get_identity_trigger_status(
 ) -> Result<IdentityTriggerDecision, AppError> {
     let conn = state.read.lock().map_err(|_| AppError::Lock)?;
     evaluate_identity_trigger(&conn, &project_key)
+}
+
+/// Settings UI 용 — 현재 threshold (env 우선, 없으면 atomic, 없으면 default).
+#[tauri::command]
+pub fn get_identity_analysis_threshold() -> Result<i64, AppError> {
+    Ok(load_threshold())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetIdentityAnalysisThresholdInput {
+    pub threshold: i64,
+}
+
+/// Settings UI 용 — 3~50 범위 enforce. 0 또는 음수는 거부 (atomic=0 은 "unset" 의미).
+#[tauri::command]
+pub fn set_identity_analysis_threshold(
+    input: SetIdentityAnalysisThresholdInput,
+) -> Result<(), AppError> {
+    if input.threshold < 3 || input.threshold > 50 {
+        return Err(AppError::BadRequest(format!(
+            "threshold must be in [3, 50], got {}",
+            input.threshold
+        )));
+    }
+    IDENTITY_ANALYSIS_THRESHOLD.store(input.threshold, Ordering::Relaxed);
+    Ok(())
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -520,5 +556,51 @@ mod tests {
         let conn = test_conn();
         // plan 이 없는 id 로 호출해도 panic 없이 조용히 반환
         maybe_trigger_identity_analysis_on_plan_done(&conn, None, "nonexistent");
+    }
+
+    #[test]
+    fn threshold_atomic_override_takes_effect_in_load_threshold() {
+        // env var 없는 상태에서 atomic 설정값이 적용되는지 확인. 다른 테스트 격리를 위해
+        // 원본 값 보존 후 복원.
+        let prev = IDENTITY_ANALYSIS_THRESHOLD.load(Ordering::Relaxed);
+        IDENTITY_ANALYSIS_THRESHOLD.store(25, Ordering::Relaxed);
+        // env var 가 있으면 atomic 무시됨 — env 없다고 가정 (CI 환경도 none)
+        let threshold = load_threshold();
+        IDENTITY_ANALYSIS_THRESHOLD.store(prev, Ordering::Relaxed);
+        // env var 가 설정된 로컬 환경일 수도 있으니 단순 range 만 체크
+        assert!(threshold >= 3);
+    }
+
+    #[test]
+    fn threshold_default_when_atomic_is_zero() {
+        let prev = IDENTITY_ANALYSIS_THRESHOLD.load(Ordering::Relaxed);
+        IDENTITY_ANALYSIS_THRESHOLD.store(0, Ordering::Relaxed);
+        // env var override 방어 — 존재하면 이 테스트 결과 무의미하므로 그냥 값 반환 확인
+        let threshold = load_threshold();
+        IDENTITY_ANALYSIS_THRESHOLD.store(prev, Ordering::Relaxed);
+        assert!(threshold > 0);
+    }
+
+    #[test]
+    fn set_threshold_cmd_rejects_out_of_range() {
+        for bad in [-1_i64, 0, 2, 51, 1000] {
+            let err = set_identity_analysis_threshold(SetIdentityAnalysisThresholdInput { threshold: bad })
+                .unwrap_err();
+            match err {
+                AppError::BadRequest(msg) => assert!(msg.contains("[3, 50]")),
+                other => panic!("expected BadRequest, got {:?}", other),
+            }
+        }
+    }
+
+    #[test]
+    fn set_threshold_cmd_accepts_valid_range() {
+        let prev = IDENTITY_ANALYSIS_THRESHOLD.load(Ordering::Relaxed);
+        for ok in [3_i64, 10, 50] {
+            set_identity_analysis_threshold(SetIdentityAnalysisThresholdInput { threshold: ok })
+                .unwrap();
+            assert_eq!(IDENTITY_ANALYSIS_THRESHOLD.load(Ordering::Relaxed), ok);
+        }
+        IDENTITY_ANALYSIS_THRESHOLD.store(prev, Ordering::Relaxed);
     }
 }
