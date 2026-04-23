@@ -7,8 +7,9 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
 [![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![DB Schema](https://img.shields.io/badge/DB_Schema-v44-8b5cf6)](.)
-[![License](https://img.shields.io/badge/License-Private-9ca3af)](.)
+[![DB Schema](https://img.shields.io/badge/DB_Schema-v46-8b5cf6)](.)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](./LICENSE)
+[![Status](https://img.shields.io/badge/Status-Beta-f59e0b)](./docs/plans/publicReadinessChecklistPlan.md)
 
 [![🇺🇸 English](https://img.shields.io/badge/🇺🇸-English-9ca3af)](./README.md)
 [![🇰🇷 한국어](https://img.shields.io/badge/🇰🇷-한국어-2563eb)](./README.ko.md)
@@ -28,6 +29,10 @@
 - Claude Code, Codex, Gemini CLI를 쓰면서 **대화 이상의 작업 구조**가 필요한 사람
 - 에이전트에게 실행을 맡기되 **방향과 판단은 직접 유지**하고 싶은 사람
 - AI 에이전트를 일상적인 개발 워크플로우에 넣으려는 소규모 팀 또는 개인
+
+### 왜 만들어졌나
+
+tunaFlow 는 구체적 고통에서 시작됐습니다 — Claude Code / Codex / Gemini CLI 를 동시에 쓸 때 tmux / iTerm / cmux 등 터미널에서 복붙으로 반복하는 작업이 많다는 것. 각 엔진은 강력한데 워크플로우는 수동 조립이었습니다. tunaFlow 는 그 조립을 한 화면 안에 묶어, 사용자의 주의가 "터미널 pane 관리" 가 아니라 "의도" 에 머물게 합니다.
 
 ---
 

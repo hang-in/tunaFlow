@@ -42,6 +42,7 @@ resume_*.md
 
 # Design reference screenshots (kept locally, not committed)
 claude-new.png
+screenshot-*.png
 
 # External tool clones / scratch (not part of tunaFlow source)
 _util/

@@ -1,5 +1,7 @@
 # Plans — 진행 현황
 
+> **For external readers**: these are active development plans — artifacts of tunaFlow's self-hosting (Plan → Dev → Review) methodology. You do **not** need to read these to use tunaFlow. For product overview see [README](../../README.md). For architecture see [docs/reference/](../reference/).
+
 > 갱신: 2026-04-22 (docs/reorg-phase-a 작업)
 > 완료·보류·초안 문서는 `docs/archive/plans/{completed,deferred,misc}/`로 이동.
 
@@ -24,6 +26,7 @@
 | [engineServerModePlan](./engineServerModePlan.md) | — |
 | [geminiSdkIntegrationPlan](./geminiSdkIntegrationPlan.md) | P1 — Google AI SDK 직접 통합 (CLI 대체, SSE/token/function calling) |
 | [i18nPlan](./i18nPlan.md) | P1 — UI 한/영 분리 (react-i18next) + 프롬프트 영어 통일 + ContextPack 응답 언어 주입 |
+| [insightStabilityPlan](./insightStabilityPlan.md) | **P0 (베타 blocker)** — Insight 분석 4 버그 직렬 수정 (rawq OOB / skip 강화 / claude usage 파서 / timeout→status 전이). 4 subtask, 반나절. |
 | [liveRuntimeTraceParityValidationPlan_2026-03-30](./liveRuntimeTraceParityValidationPlan_2026-03-30.md) | P1 — 4-engine trace/meta parity 실제 확인 |
 | [metaAgentInitialSetupPlan_2026-04-16](./metaAgentInitialSetupPlan_2026-04-16.md) | — |
 | [metaAgentOnboardingPlan_2026-04-16](./metaAgentOnboardingPlan_2026-04-16.md) | — |

@@ -1,0 +1,44 @@
+name: Feature request
+description: Propose an enhancement
+title: "[feat] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests work best when paired with a short design sketch. Larger proposals usually end up as a plan in `docs/plans/`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is the user or developer problem this solves?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / impact
+      description: Which subsystems are affected (ContextPack, Branch/RT, search, UI, etc.)?
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I have searched existing issues and plans
+          required: true
+        - label: This is not a bug report (use the bug template instead)
+          required: true
