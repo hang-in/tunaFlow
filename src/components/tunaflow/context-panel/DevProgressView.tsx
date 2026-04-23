@@ -68,7 +68,11 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
     setBusy(true);
     try {
       await openThread(plan.implementationBranchId);
-      const prompt = `Subtask ${index + 1} "${subtask.title}"을(를) 다시 구현해주세요.\n\n상세 설계:\n${subtask.details ?? "(없음)"}`;
+      const prompt = t("progress.rerun_prompt", {
+        num: index + 1,
+        title: subtask.title,
+        details: subtask.details ?? t("progress.rerun_details_empty"),
+      });
       const shadowConvId = `branch:${plan.implementationBranchId}`;
       const saved = useChatStore.getState().getConversationEngine(shadowConvId);
       await sendThreadMessage(prompt, saved?.engine ?? "claude", saved?.model ?? undefined);
@@ -112,32 +116,27 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       const isScoped = failedIds.length > 0 && reviewVerdict;
 
       const prevFindingsBlock = reviewVerdict && reviewVerdict.findings.length > 0
-        ? [``, `**이전 Review Findings (중점 확인 대상)**:`,
-           ...reviewVerdict.findings.map((f, i) => `${i + 1}. ${f.slice(0, 500)}`),
-           ``, `> 위 사항이 해결되었는지 확인하세요.`]
-        : [];
+        ? "\n\n" + t("progress.review_prompt.prev_findings_header") + "\n"
+          + reviewVerdict.findings.map((f, i) => `${i + 1}. ${f.slice(0, 500)}`).join("\n")
+          + "\n\n" + t("progress.review_prompt.prev_findings_footer")
+        : "";
 
       const taskScope = isScoped
-        ? failedIds.map((id) => `- \`docs/plans/${slug}-task-${String(id).padStart(2, "0")}.md\``)
-        : [`- \`docs/plans/${slug}-task-*.md\``];
+        ? "\n" + failedIds.map((id) => `- \`docs/plans/${slug}-task-${String(id).padStart(2, "0")}.md\``).join("\n")
+        : `\n- \`docs/plans/${slug}-task-*.md\``;
 
       const scopeNote = isScoped
-        ? [``, `**리뷰 범위**: Task ${failedIds.join(", ")}번만 검토하세요. 나머지 subtask는 이전 리뷰에서 pass되었습니다.`]
-        : [];
+        ? "\n\n" + t("progress.review_prompt.scope_note", { ids: failedIds.join(", ") })
+        : "";
 
-      const prompt = [
-        `### 🔍 ${roundLabel} 요청`, ``,
-        `**Plan**: "${plan.title}"`, ``,
-        `**검증 문서**:`,
-        `- Plan: \`docs/plans/${slug}.md\``,
-        `- 결과: \`docs/plans/${slug}-result.md\``,
-        ...taskScope,
-        ...scopeNote,
-        ...prevFindingsBlock, ``,
-        `각 task 파일의 **변경 내용**과 **검증 조건**을 기준으로 구현 결과를 검증하세요.`,
-        `Plan에 명시되지 않은 코드 스타일이나 범위 밖 파일의 기존 문제는 fail 사유가 아닙니다.`, ``,
-        `> 완료 후 리뷰 verdict를 제출하세요.`,
-      ].join("\n");
+      const prompt = t("progress.review_prompt.body", {
+        roundLabel,
+        title: plan.title,
+        slug,
+        taskScope,
+        scopeNote,
+        prevFindings: prevFindingsBlock,
+      });
 
       // 자동 생성 프롬프트 → role="system" 으로 persist 후 sendThreadMessage 에 pre-existing
       // id 로 전달. UI 는 사용자 말풍선이 아닌 접힘 시스템 블록으로 렌더 (s37 원칙).
@@ -203,12 +202,17 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
     const { sendWithEngine } = useChatStore.getState();
     setBusy(true);
     try {
+      const existingDesign = subtask.details
+        ? t("progress.sub_plan_prompt.existing_design_block", { details: subtask.details })
+        : "";
       const prompt = [
-        `[Sub-plan 요청] Plan "${plan.title}" → Subtask ${index + 1} "${subtask.title}"`, "",
-        `이 subtask의 구현이 복잡하여 별도 Plan이 필요합니다.`,
-        subtask.details ? `\n### 기존 상세 설계\n${subtask.details}` : "", "",
-        `이 subtask를 위한 별도 Plan을 \`<!-- tunaflow:plan-proposal -->\` 형식으로 제안하세요.`,
-        `부모 Plan: ${plan.title}`,
+        t("progress.sub_plan_prompt.header", { plan: plan.title, num: index + 1, title: subtask.title }),
+        "",
+        t("progress.sub_plan_prompt.body"),
+        existingDesign,
+        "",
+        t("progress.sub_plan_prompt.instruction"),
+        t("progress.sub_plan_prompt.parent_label", { plan: plan.title }),
       ].filter(Boolean).join("\n");
       await sendWithEngine("claude", prompt);
     } catch (e) { console.warn("[tunaflow]", e); }
@@ -226,7 +230,9 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         const fileMatch = f.match(/([a-zA-Z0-9_./-]+\.[a-zA-Z]+(?:[:#]L?\d+)?)/);
         const file = fileMatch ? fileMatch[1] : "";
         const summary = f.slice(0, 500);
-        return file ? `□ ${i + 1}. ${summary}\n  파일: ${file}` : `□ ${i + 1}. ${summary}`;
+        return file
+          ? t("progress.rework_prompt.finding_with_file", { n: i + 1, summary, file })
+          : t("progress.rework_prompt.finding_without_file", { n: i + 1, summary });
       }) ?? [];
       const recItems = reviewVerdict?.recommendations.map((r) => `• ${r.slice(0, 300)}`) ?? [];
 
@@ -240,7 +246,12 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       const failEvents = sinceReset.filter((e) => e.eventType === "review_failed");
       const failCount = failEvents.length;
       const pressureWarning = failCount >= 2
-        ? `\n> ⚠️ 이전 ${failCount}회 Review 실패. ${failCount >= 3 ? "이번이 마지막 기회입니다." : "다음 실패 시 설계 재검토로 에스컬레이션됩니다."}`
+        ? t("progress.rework_prompt.pressure", {
+            count: failCount,
+            hint: failCount >= 3
+              ? t("progress.rework_prompt.pressure_final")
+              : t("progress.rework_prompt.pressure_next"),
+          })
         : "";
 
       let historySection = "";
@@ -250,10 +261,17 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           try {
             const d = JSON.parse(ev.detail ?? "{}");
             const findings = (d.findings as string[] ?? []).slice(0, 3).map((f: string) => f.slice(0, 200));
-            return `- ${i + 1}차: ${findings.join("; ") || "상세 없음"} → ❌`;
-          } catch { return `- ${i + 1}차: (파싱 불가) → ❌`; }
+            const findingsStr = findings.join("; ") || t("progress.rework_prompt.history_empty");
+            return t("progress.rework_prompt.history_entry", { n: i + 1, findings: findingsStr });
+          } catch {
+            return t("progress.rework_prompt.history_entry_parse_error", { n: i + 1 });
+          }
         });
-        historySection = [`**이전 시도 이력** (${previousFails.length}회 실패):`, ...historyItems, ``].join("\n");
+        historySection = [
+          t("progress.rework_prompt.history_header", { count: previousFails.length }),
+          ...historyItems,
+          ``,
+        ].join("\n");
       }
 
       const failedIds = reviewVerdict?.failedSubtaskIds ?? [];
@@ -264,16 +282,22 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           .map((id) => { const st = subtasks.find((s) => s.idx === id); return st ? `Task ${String(id).padStart(2, "0")} (${st.title})` : `Task ${String(id).padStart(2, "0")}`; })
           .join(", ");
         const otherCount = subtasks.length - failedIds.length;
-        targetSection = [`**대상 서브태스크**: ${targetNames}`,
-          otherCount > 0 ? `**나머지 ${otherCount}개 태스크**: 이미 완료됨 — 수정하지 마세요.` : "", ``].filter(Boolean).join("\n");
+        targetSection = [
+          t("progress.rework_prompt.target_header", { names: targetNames }),
+          otherCount > 0 ? t("progress.rework_prompt.target_other_note", { count: otherCount }) : "",
+          ``,
+        ].filter(Boolean).join("\n");
       }
 
+      const scopeRestrictionSuffix = failedIds.length > 0
+        ? t("progress.rework_prompt.scope_restriction_suffix")
+        : "";
       const reworkPrompt = [
-        `### 🔄 Rework`, ``, historySection, targetSection,
-        `**수정 항목** (${findingItems.length}건):`,
+        t("progress.rework_prompt.heading"), ``, historySection, targetSection,
+        t("progress.rework_prompt.items_header", { count: findingItems.length }),
         ...findingItems.map((f) => `- ${f}`),
         ...(recItems.length > 0 ? [``, `**Recommendations**:`, ...recItems.map((r) => `- ${r}`)] : []),
-        ``, `> 완료 조건: 위 항목 모두 해결 후 완료를 알려주세요.${failedIds.length > 0 ? " 다른 태스크의 코드를 변경하지 마세요." : ""}`,
+        ``, t("progress.rework_prompt.completion_condition") + scopeRestrictionSuffix,
         pressureWarning,
       ].filter(Boolean).join("\n");
       const shadowConvId = `branch:${plan.implementationBranchId}`;

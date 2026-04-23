@@ -149,6 +149,38 @@
       "re_review_start": "Re-review 시작",
       "review_rt_start": "Review RT 시작",
       "re_review_rt_start": "Re-review RT 시작"
+    },
+    "rerun_prompt": "Subtask {{num}} \"{{title}}\"을(를) 다시 구현해주세요.\n\n상세 설계:\n{{details}}",
+    "rerun_details_empty": "(없음)",
+    "review_prompt": {
+      "prev_findings_header": "**이전 Review Findings (중점 확인 대상)**:",
+      "prev_findings_footer": "> 위 사항이 해결되었는지 확인하세요.",
+      "scope_note": "**리뷰 범위**: Task {{ids}}번만 검토하세요. 나머지 subtask는 이전 리뷰에서 pass되었습니다.",
+      "body": "### 🔍 {{roundLabel}} 요청\n\n**Plan**: \"{{title}}\"\n\n**검증 문서**:\n- Plan: `docs/plans/{{slug}}.md`\n- 결과: `docs/plans/{{slug}}-result.md`\n{{taskScope}}{{scopeNote}}{{prevFindings}}\n\n각 task 파일의 **변경 내용**과 **검증 조건**을 기준으로 구현 결과를 검증하세요.\nPlan에 명시되지 않은 코드 스타일이나 범위 밖 파일의 기존 문제는 fail 사유가 아닙니다.\n\n> 완료 후 리뷰 verdict를 제출하세요."
+    },
+    "sub_plan_prompt": {
+      "header": "[Sub-plan 요청] Plan \"{{plan}}\" → Subtask {{num}} \"{{title}}\"",
+      "body": "이 subtask의 구현이 복잡하여 별도 Plan이 필요합니다.",
+      "existing_design_block": "\n### 기존 상세 설계\n{{details}}",
+      "instruction": "이 subtask를 위한 별도 Plan을 `<!-- tunaflow:plan-proposal -->` 형식으로 제안하세요.",
+      "parent_label": "부모 Plan: {{plan}}"
+    },
+    "rework_prompt": {
+      "heading": "### 🔄 Rework",
+      "finding_with_file": "□ {{n}}. {{summary}}\n  파일: {{file}}",
+      "finding_without_file": "□ {{n}}. {{summary}}",
+      "pressure": "\n> ⚠️ 이전 {{count}}회 Review 실패. {{hint}}",
+      "pressure_final": "이번이 마지막 기회입니다.",
+      "pressure_next": "다음 실패 시 설계 재검토로 에스컬레이션됩니다.",
+      "history_entry": "- {{n}}차: {{findings}} → ❌",
+      "history_entry_parse_error": "- {{n}}차: (파싱 불가) → ❌",
+      "history_empty": "상세 없음",
+      "history_header": "**이전 시도 이력** ({{count}}회 실패):",
+      "target_header": "**대상 서브태스크**: {{names}}",
+      "target_other_note": "**나머지 {{count}}개 태스크**: 이미 완료됨 — 수정하지 마세요.",
+      "items_header": "**수정 항목** ({{count}}건):",
+      "completion_condition": "> 완료 조건: 위 항목 모두 해결 후 완료를 알려주세요.",
+      "scope_restriction_suffix": " 다른 태스크의 코드를 변경하지 마세요."
     }
   },
   "proposal": {
@@ -193,7 +225,13 @@
       "promote_branch_error": "Plan 등록 실패: 부모 대화를 선택한 뒤 다시 시도해주세요.",
       "disposition_summary": "파일 처리 방침: {{summary}}",
       "disposition_revert_warning": "파일 처리 방침: {{summary}}\n\nRevert 대상 (수동 처리 필요):\n{{items}}{{more}}"
-    }
+    },
+    "doc_prompt": {
+      "body": "### 📋 문서 작성 요청\n\n**Plan**: \"{{title}}\"\n\n**작성할 문서**:\n- `docs/plans/{{slug}}.md` — 전체 계획서\n{{taskFiles}}\n\n**각 작업 지시서 포함 내용**:\n- **Changed files** — 대상 파일 경로 (가능하면 줄번호까지)\n- **Change description** — 구현 접근법 (단계별)\n- **Dependencies** — 의존성 (패키지, 다른 subtask)\n- **Verification** — 완료를 증명하는 **실행 가능한 셸 명령** (예: `cargo test`, `npx tsc --noEmit`)\n- **Risks** — 리스크 및 주의사항\n- **Scope boundary** — 수정 금지 파일 목록 (다른 task 영역 침범 방지)\n\n> 완료 조건: 모든 문서 작성 후 알려주세요",
+      "task_line": "- `docs/plans/{{slug}}-task-{{num}}.md` — {{title}}"
+    },
+    "revision_feedback_prompt": "[Plan 수정 요청: {{title}}]\n\n{{feedback}}\n\n위 피드백을 반영하여 Plan을 수정하고 `<!-- tunaflow:plan-proposal -->` 형식으로 다시 제안하세요.",
+    "example_subtasks_markdown": "### Subtasks        ← 삼중 # 필수\n1. 첫 번째 작업 — 설명\n2. 두 번째 작업 — 설명"
   },
   "review": {
     "verdict": {

@@ -310,27 +310,17 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
       ).join("\n");
 
       const taskFiles = proposal.subtasks.map((s, i) =>
-        `- \`docs/plans/${slug}-task-${String(i + 1).padStart(2, "0")}.md\` — ${s.title}`
-      );
-      const docPrompt = [
-        `### 📋 문서 작성 요청`,
-        ``,
-        `**Plan**: "${proposal.title}"`,
-        ``,
-        `**작성할 문서**:`,
-        `- \`docs/plans/${slug}.md\` — 전체 계획서`,
-        ...taskFiles,
-        ``,
-        `**각 작업 지시서 포함 내용**:`,
-        `- **Changed files** — 대상 파일 경로 (가능하면 줄번호까지)`,
-        `- **Change description** — 구현 접근법 (단계별)`,
-        `- **Dependencies** — 의존성 (패키지, 다른 subtask)`,
-        `- **Verification** — 완료를 증명하는 **실행 가능한 셸 명령** (예: \`cargo test\`, \`npx tsc --noEmit\`)`,
-        `- **Risks** — 리스크 및 주의사항`,
-        `- **Scope boundary** — 수정 금지 파일 목록 (다른 task 영역 침범 방지)`,
-        ``,
-        `> 완료 조건: 모든 문서 작성 후 알려주세요`,
-      ].join("\n");
+        t("proposal.doc_prompt.task_line", {
+          slug,
+          num: String(i + 1).padStart(2, "0"),
+          title: s.title,
+        })
+      ).join("\n");
+      const docPrompt = t("proposal.doc_prompt.body", {
+        title: proposal.title,
+        slug,
+        taskFiles,
+      });
 
       await sendWithEngine(
         useChatStore.getState().getConversationEngine(conversationId)?.engine ?? "claude",
@@ -406,9 +396,7 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
         <p className="text-amber-400 font-medium">{t("proposal.warn_empty.title")}</p>
         <p className="text-muted-foreground text-[11px]">{t("proposal.warn_empty.body")}</p>
         <pre className="text-[10px] text-muted-foreground/70 bg-black/20 rounded px-2 py-1.5 font-mono leading-relaxed">
-{`### Subtasks        ← 삼중 # 필수
-1. 첫 번째 작업 — 설명
-2. 두 번째 작업 — 설명`}
+          {t("proposal.example_subtasks_markdown")}
         </pre>
         <p className="text-muted-foreground/60 text-[10px]">
           {t("proposal.warn_empty.counter_example_double_hash")} &nbsp;·&nbsp;
@@ -532,7 +520,10 @@ export function PlanProposalCard({ proposal, conversationId }: PlanProposalCardP
             <button
               onClick={async () => {
                 if (!revisionInput.trim()) return;
-                const feedback = `[Plan 수정 요청: ${proposal.title}]\n\n${revisionInput.trim()}\n\n위 피드백을 반영하여 Plan을 수정하고 \`<!-- tunaflow:plan-proposal -->\` 형식으로 다시 제안하세요.`;
+                const feedback = t("proposal.revision_feedback_prompt", {
+                  title: proposal.title,
+                  feedback: revisionInput.trim(),
+                });
                 setStatus("idle");
                 setRevisionInput("");
                 await sendWithEngine("claude", feedback);

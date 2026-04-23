@@ -149,6 +149,38 @@
       "re_review_start": "Start Re-review",
       "review_rt_start": "Start Review RT",
       "re_review_rt_start": "Start Re-review RT"
+    },
+    "rerun_prompt": "Please re-implement Subtask {{num}} \"{{title}}\".\n\nDetailed design:\n{{details}}",
+    "rerun_details_empty": "(none)",
+    "review_prompt": {
+      "prev_findings_header": "**Previous Review Findings (focus area)**:",
+      "prev_findings_footer": "> Verify whether the items above were resolved.",
+      "scope_note": "**Review scope**: review only Task {{ids}}. The other subtasks passed in the previous review.",
+      "body": "### 🔍 {{roundLabel}} request\n\n**Plan**: \"{{title}}\"\n\n**Verification documents**:\n- Plan: `docs/plans/{{slug}}.md`\n- Result: `docs/plans/{{slug}}-result.md`\n{{taskScope}}{{scopeNote}}{{prevFindings}}\n\nValidate the implementation against each task file's **Change description** and **Verification**.\nCode style not specified in the Plan, or existing issues in files outside scope, are not fail reasons.\n\n> Submit the review verdict when done."
+    },
+    "sub_plan_prompt": {
+      "header": "[Sub-plan request] Plan \"{{plan}}\" → Subtask {{num}} \"{{title}}\"",
+      "body": "This subtask is complex enough to require its own Plan.",
+      "existing_design_block": "\n### Existing detailed design\n{{details}}",
+      "instruction": "Propose a separate Plan for this subtask in `<!-- tunaflow:plan-proposal -->` format.",
+      "parent_label": "Parent Plan: {{plan}}"
+    },
+    "rework_prompt": {
+      "heading": "### 🔄 Rework",
+      "finding_with_file": "□ {{n}}. {{summary}}\n  file: {{file}}",
+      "finding_without_file": "□ {{n}}. {{summary}}",
+      "pressure": "\n> ⚠️ {{count}} previous Review failures. {{hint}}",
+      "pressure_final": "This is the last chance.",
+      "pressure_next": "Another failure will escalate to design review.",
+      "history_entry": "- Attempt {{n}}: {{findings}} → ❌",
+      "history_entry_parse_error": "- Attempt {{n}}: (parse failed) → ❌",
+      "history_empty": "no details",
+      "history_header": "**Previous attempts** ({{count}} failures):",
+      "target_header": "**Target subtasks**: {{names}}",
+      "target_other_note": "**Other {{count}} tasks**: already done — do not modify.",
+      "items_header": "**Items to fix** ({{count}}):",
+      "completion_condition": "> Completion: resolve all items above and notify.",
+      "scope_restriction_suffix": " Do not modify code in other tasks."
     }
   },
   "proposal": {
@@ -193,7 +225,13 @@
       "promote_branch_error": "Plan registration failed: select the parent conversation and try again.",
       "disposition_summary": "File disposition: {{summary}}",
       "disposition_revert_warning": "File disposition: {{summary}}\n\nRevert targets (manual):\n{{items}}{{more}}"
-    }
+    },
+    "doc_prompt": {
+      "body": "### 📋 Document writing request\n\n**Plan**: \"{{title}}\"\n\n**Documents to write**:\n- `docs/plans/{{slug}}.md` — full plan\n{{taskFiles}}\n\n**Contents for each task spec**:\n- **Changed files** — target file paths (with line numbers if possible)\n- **Change description** — implementation approach (step by step)\n- **Dependencies** — dependencies (packages, other subtasks)\n- **Verification** — **executable shell commands** that prove completion (e.g. `cargo test`, `npx tsc --noEmit`)\n- **Risks** — risks and caveats\n- **Scope boundary** — list of files NOT to modify (prevents invading other tasks)\n\n> Completion: notify when all documents are written",
+      "task_line": "- `docs/plans/{{slug}}-task-{{num}}.md` — {{title}}"
+    },
+    "revision_feedback_prompt": "[Plan revision request: {{title}}]\n\n{{feedback}}\n\nRevise the Plan incorporating the feedback above and propose it again in `<!-- tunaflow:plan-proposal -->` format.",
+    "example_subtasks_markdown": "### Subtasks        ← triple # required\n1. First task — description\n2. Second task — description"
   },
   "review": {
     "verdict": {
