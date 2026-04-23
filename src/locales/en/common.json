@@ -50,5 +50,50 @@
     "label": "Language",
     "ko": "한국어",
     "en": "English"
+  },
+  "app": {
+    "main_aria": "Main conversation area",
+    "back_to_chat_tooltip": "Go to recent chat conversation",
+    "main_chat": "Main chat",
+    "terminal_drag_resize": "Drag to resize",
+    "memos_empty_hint": "Right-click a message → Save as memo to add one"
+  },
+  "terminal": {
+    "no_project": "Select a project to use the terminal",
+    "restart_title": "Restart Claude",
+    "restart_button": "Restart",
+    "context_main_chat": "Main chat",
+    "context_branch": "Branch",
+    "context_rt_labeled": "Roundtable · {{label}}",
+    "context_branch_labeled": "Branch · {{label}}",
+    "dock_to_bottom": "Dock to bottom panel",
+    "close": "Close",
+    "clear_screen": "Clear screen"
+  },
+  "context_menu": {
+    "copy": "Copy",
+    "edit_resend": "Edit (resend)",
+    "branch": "Branch",
+    "branch_rt": "RT branch",
+    "save_memo": "Save as memo",
+    "save_artifact": "Save as artifact",
+    "forward": "Forward",
+    "delete": "Delete",
+    "new_conversation": "New conversation",
+    "paste": "Paste",
+    "rename": "Rename",
+    "create_branch": "Create branch"
+  },
+  "notification_bell": {
+    "just_now": "just now",
+    "minutes_ago": "{{count}}m ago",
+    "hours_ago": "{{count}}h ago",
+    "days_ago": "{{count}}d ago",
+    "sound_off": "Mute notifications",
+    "sound_on": "Unmute notifications"
+  },
+  "context_badges": {
+    "active_skills": "Active skills ({{count}})",
+    "show_all": "Show all skills"
   }
 }

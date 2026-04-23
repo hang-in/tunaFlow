@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
 import { cn } from "@/lib/utils";
@@ -36,16 +37,20 @@ type XTerminal = import("@xterm/xterm").Terminal;
 type XFitAddon = import("@xterm/addon-fit").FitAddon;
 
 function useContextLabel() {
+  const { t } = useTranslation("common");
   const threadBranchId = useChatStore((s) => s.threadBranchId);
   const branches = useChatStore((s) => s.branches);
-  if (!threadBranchId) return "메인챗";
+  if (!threadBranchId) return t("terminal.context_main_chat");
   const branch = branches.find((b) => b.id === threadBranchId);
-  if (!branch) return "브랜치";
+  if (!branch) return t("terminal.context_branch");
   const label = branch.customLabel || branch.label;
-  return branch.mode === "roundtable" ? `라운드테이블 · ${label}` : `브랜치 · ${label}`;
+  return branch.mode === "roundtable"
+    ? t("terminal.context_rt_labeled", { label })
+    : t("terminal.context_branch_labeled", { label });
 }
 
 export function TerminalFloatingPanel() {
+  const { t } = useTranslation("common");
   const setTerminalMode = usePtyStore((s) => s.setTerminalMode);
   const toggleTerminal = usePtyStore((s) => s.toggleTerminal);
   const claudeSession = usePtyStore((s) => s.sessions.get("claude"));
@@ -260,7 +265,7 @@ export function TerminalFloatingPanel() {
         <button
           onClick={() => setTerminalMode("docked")}
           className="flex items-center justify-center w-5 h-5 rounded text-prose-faint hover:text-foreground hover:bg-muted/30 transition-colors"
-          title="하단 패널로 전환"
+          title={t("terminal.dock_to_bottom")}
         >
           <PanelBottomOpen className="w-3 h-3" />
         </button>
@@ -269,7 +274,7 @@ export function TerminalFloatingPanel() {
         <button
           onClick={toggleTerminal}
           className="flex items-center justify-center w-5 h-5 rounded text-prose-faint hover:text-foreground hover:bg-muted/30 transition-colors"
-          title="닫기"
+          title={t("terminal.close")}
         >
           <X className="w-3 h-3" />
         </button>
@@ -305,6 +310,7 @@ export function TerminalFloatingPanel() {
 }
 
 function TerminalContextMenu({ x, y, onClear, onClose }: { x: number; y: number; onClear: () => void; onClose: () => void }) {
+  const { t } = useTranslation("common");
   useEffect(() => {
     const handler = () => onClose();
     window.addEventListener("mousedown", handler);
@@ -321,7 +327,7 @@ function TerminalContextMenu({ x, y, onClear, onClose }: { x: number; y: number;
         onClick={onClear}
         className="w-full text-left px-3 py-1.5 hover:bg-accent text-foreground transition-colors"
       >
-        화면 지우기
+        {t("terminal.clear_screen")}
       </button>
     </div>
   );

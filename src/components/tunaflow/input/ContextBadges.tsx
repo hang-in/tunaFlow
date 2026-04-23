@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Zap, Link2, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 interface ContextBadgesProps {
@@ -14,6 +15,7 @@ function shortName(name: string): string {
 }
 
 function SkillsModal({ skills, onClose }: { skills: string[]; onClose: () => void }) {
+  const { t } = useTranslation("common");
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-end justify-center pb-24 px-4"
@@ -26,7 +28,7 @@ function SkillsModal({ skills, onClose }: { skills: string[]; onClose: () => voi
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] font-medium text-foreground/70 flex items-center gap-1">
             <Zap className="w-2.5 h-2.5 text-status-draft/60" />
-            활성 스킬 ({skills.length})
+            {t("context_badges.active_skills", { count: skills.length })}
           </span>
           <button onClick={onClose} className="text-muted-foreground/40 hover:text-foreground">
             <X className="w-3 h-3" />
@@ -46,6 +48,7 @@ function SkillsModal({ skills, onClose }: { skills: string[]; onClose: () => voi
 }
 
 export function ContextBadges({ activeSkills, crossSessionIds }: ContextBadgesProps) {
+  const { t } = useTranslation("common");
   const containerRef = useRef<HTMLDivElement>(null);
   const [isOverflow, setIsOverflow] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -85,7 +88,7 @@ export function ContextBadges({ activeSkills, crossSessionIds }: ContextBadgesPr
               className={cn(
                 "shrink-0 text-[9px] font-mono text-status-draft/40 hover:text-status-draft/70 px-0.5 transition-colors",
               )}
-              title="전체 스킬 보기"
+              title={t("context_badges.show_all")}
             >
               …
             </button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
 import { RotateCcw } from "lucide-react";
@@ -27,6 +28,7 @@ type XFitAddon = import("@xterm/addon-fit").FitAddon;
  * sessions are managed at project level by projectSlice.
  */
 export function TerminalPanel() {
+  const { t } = useTranslation("common");
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const fitRef = useRef<XFitAddon | null>(null);
@@ -179,7 +181,7 @@ export function TerminalPanel() {
   if (!selectedProjectKey || !projectPath) {
     return (
       <div className="flex items-center justify-center h-full text-prose-faint text-tf-sm">
-        Terminal을 사용하려면 프로젝트를 선택하세요
+        {t("terminal.no_project")}
       </div>
     );
   }
@@ -191,10 +193,10 @@ export function TerminalPanel() {
         <button
           onClick={handleRestart}
           className="flex items-center gap-1 text-tf-micro px-1.5 py-0.5 rounded text-prose-faint hover:text-foreground hover:bg-muted/30 transition-colors"
-          title="Claude 재시작"
+          title={t("terminal.restart_title")}
         >
           <RotateCcw className="w-3 h-3" />
-          재시작
+          {t("terminal.restart_button")}
         </button>
       </div>
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}

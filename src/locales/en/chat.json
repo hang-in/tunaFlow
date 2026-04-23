@@ -12,7 +12,22 @@
     "attach_no_project": "No project selected — cannot attach",
     "attach_too_large": "{{name}}: exceeds 20MB — skipped",
     "attach_failed": "Attach failed: {{error}}",
-    "scroll_to_latest": "Scroll to latest message"
+    "scroll_to_latest": "Scroll to latest message",
+    "agent_running_title": "Agent running",
+    "agent_running_fallback": "Running",
+    "pty_loading": "PTY loading",
+    "pty_connected": "PTY connected",
+    "pty_disconnected": "PTY disconnected",
+    "attach_tooltip": "Attach file (up to 20MB)",
+    "attach_label": "Attach file",
+    "attach_remove_label": "Remove attachment",
+    "attach_preview_label": "Preview {{name}}",
+    "close_preview_label": "Close",
+    "pty_clear_success": "PTY session reset",
+    "pty_clear_failed": "Session reset failed",
+    "models_catalog_empty": "(Catalog is empty)",
+    "no_previous_response": "⚠️ **No previous response to forward.**\n\nAsk the agent first, then use handoff after receiving a response.\n\nInput: `{{prompt}}` → {{engine}}",
+    "rt_config_missing": "⚠️ **Failed to load RT config.** Running with default participants.\n\nCreate a new RT or reconfigure from the sidebar [+]."
   },
   "message": {
     "role_user": "You",

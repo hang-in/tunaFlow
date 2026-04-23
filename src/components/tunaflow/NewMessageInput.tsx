@@ -407,10 +407,10 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
             <>
               {/* Profile selector or running state */}
               {isCurrentThreadRunning ? (
-                <div className="flex items-center gap-1.5 shrink-0" title="에이전트 실행 중">
+                <div className="flex items-center gap-1.5 shrink-0" title={t("input.agent_running_title")}>
                   <Loader2 className="w-3 h-3 animate-spin text-primary/70" />
                   <span className="text-[11px] text-foreground/60 font-medium">
-                    {profiles.find((p) => p.id === selectedProfileId)?.label || engine || "실행 중"}
+                    {profiles.find((p) => p.id === selectedProfileId)?.label || engine || t("input.agent_running_fallback")}
                   </span>
                 </div>
               ) : profiles.length > 0 && (
@@ -438,7 +438,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                   }} />
                   {ptyRespawning && isPtyEngine(engine) && (
                     <span className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
-                      <Loader2 className="w-3 h-3 animate-spin" />PTY 로딩 중
+                      <Loader2 className="w-3 h-3 animate-spin" />{t("input.pty_loading")}
                     </span>
                   )}
                   <ModelSelector
@@ -478,7 +478,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                     "text-[9px] font-mono font-semibold px-1 rounded",
                     ptySessionId !== null ? "text-status-approved/70 bg-status-approved/8" : "text-muted-foreground/20",
                   )}
-                  title={ptySessionId !== null ? "PTY 연결됨" : "PTY 연결 없음"}
+                  title={ptySessionId !== null ? t("input.pty_connected") : t("input.pty_disconnected")}
                 >
                   P
                 </span>
@@ -544,7 +544,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                     type="button"
                     onClick={() => setPreviewAttachment(att)}
                     className="shrink-0 rounded-sm hover:ring-1 hover:ring-primary/40 transition-all"
-                    aria-label={`${att.name} 미리보기`}
+                    aria-label={t("input.attach_preview_label", { name: att.name })}
                   >
                     <img src={att.previewUrl} alt={att.name} className="w-4 h-4 object-cover rounded-sm" />
                   </button>
@@ -555,7 +555,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                 <button
                   onClick={() => handleRemoveAttachment(att.id)}
                   className="p-0.5 rounded hover:bg-destructive/20 text-muted-foreground/50 hover:text-destructive transition-colors shrink-0"
-                  aria-label="첨부 제거"
+                  aria-label={t("input.attach_remove_label")}
                 >
                   <X className="w-2.5 h-2.5" />
                 </button>
@@ -570,8 +570,8 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
             onClick={handleAttachClick}
             disabled={!selectedConversationId || attachBusy}
             className="p-1 rounded text-muted-foreground/50 hover:text-foreground hover:bg-accent/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="파일 첨부 (최대 20MB)"
-            aria-label="파일 첨부"
+            title={t("input.attach_tooltip")}
+            aria-label={t("input.attach_label")}
           >
             {attachBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Paperclip className="w-3.5 h-3.5" />}
           </button>
@@ -624,6 +624,7 @@ function AttachmentPreview({
   attachment: Attachment;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("chat");
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -652,7 +653,7 @@ function AttachmentPreview({
         <button
           onClick={onClose}
           className="absolute top-2 right-2 p-1.5 rounded-full bg-background/80 hover:bg-background text-foreground/60 hover:text-foreground transition-colors"
-          aria-label="닫기"
+          aria-label={t("input.close_preview_label")}
         >
           <X className="w-4 h-4" />
         </button>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Bot, X, Pin, PinOff, Send, Loader2, Inbox, Trash2, ChevronRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { getOrCreateMetaConversation } from "@/lib/metaConversation";
@@ -43,6 +44,7 @@ function loadPos(): { x: number; y: number } {
 }
 
 export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
+  const { t } = useTranslation("dialog");
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [metaConvId, setMetaConvId] = useState<string | null>(null);
@@ -103,7 +105,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
       const notif: MetaNotification = ce.detail ?? {
         id: crypto.randomUUID(),
         kind: "generic",
-        title: "새 알림",
+        title: t("meta_chat.new_notification_title"),
         createdAt: Date.now(),
         read: false,
         dismissed: false,
@@ -180,10 +182,10 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
     invoke("mark_meta_notification_read", { id: notif.id }).catch(() => {});
     // 메타 채팅 탭으로 전환 + 컨텍스트 질문 prompt 주입
     const prompt = [
-      `알림: **${notif.title}**`,
-      notif.summary ? `요약: ${notif.summary}` : "",
+      t("meta_chat.ask_about_header", { title: notif.title }),
+      notif.summary ? t("meta_chat.ask_about_summary", { summary: notif.summary }) : "",
       "",
-      `위 이벤트에 대해 분석해주시고, 다음 권장 액션을 제안해주세요.`,
+      t("meta_chat.ask_about_instruction"),
     ].filter(Boolean).join("\n");
     setInput(prompt);
     setActiveTab("chat");
@@ -416,7 +418,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
               : "bg-background border-border/30 text-muted-foreground/60 hover:text-primary hover:border-primary/30 hover:shadow-primary/10",
             !isOpen && unreadCount > 0 && "animate-pulse border-amber-400/60 text-amber-400",
           )}
-          title="Meta Agent (드래그로 이동, 길게 눌러 알림함)"
+          title={t("meta_chat.trigger_tooltip")}
         >
           <Bot className="w-4 h-4" />
         </button>
@@ -425,7 +427,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
         {unreadCount > 0 && !isOpen && (
           <div
             className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-[9px] font-bold text-black flex items-center justify-center pointer-events-none"
-            aria-label={`미읽 알림 ${unreadCount}개`}
+            aria-label={t("meta_chat.unread_badge_label", { count: unreadCount })}
           >
             {unreadCount > 9 ? "9+" : unreadCount}
           </div>
@@ -436,7 +438,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
       {isOpen && (
         <div
           role="dialog"
-          aria-label="메타 에이전트 창"
+          aria-label={t("meta_chat.dialog_label")}
           aria-modal="false"
           className="absolute w-[360px] flex flex-col bg-background border border-border/40 rounded-xl shadow-2xl overflow-hidden"
           style={{
@@ -454,14 +456,14 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 shrink-0 bg-card/50">
             <Bot className="w-4 h-4 text-primary/70 shrink-0" />
             <span className="flex-1 text-[12px] font-semibold text-foreground">Meta</span>
-            <span className="text-[10px] text-muted-foreground/40 mr-1">프로세스 관리자</span>
+            <span className="text-[10px] text-muted-foreground/40 mr-1">{t("meta_chat.process_manager")}</span>
             <button
               onClick={() => setPinned((v) => !v)}
               className={cn(
                 "p-1 rounded hover:bg-accent/50 transition-colors",
                 pinned ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground"
               )}
-              title={pinned ? "핀 해제" : "고정"}
+              title={pinned ? t("meta_chat.unpin") : t("meta_chat.pin")}
             >
               {pinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
             </button>
@@ -487,7 +489,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
               )}
             >
               <Inbox className="w-3 h-3" />
-              알림함
+              {t("meta_chat.tab_inbox")}
               {unreadCount > 0 && (
                 <span className="ml-0.5 px-1 rounded-full bg-amber-400 text-black text-[9px] font-bold">
                   {unreadCount > 9 ? "9+" : unreadCount}
@@ -507,7 +509,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
               )}
             >
               <Send className="w-3 h-3" />
-              대화
+              {t("meta_chat.tab_chat")}
             </button>
           </div>
 
@@ -517,12 +519,12 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
               {notifs.filter((n) => !n.dismissed).length > 0 && (
                 <div className="flex items-center gap-2 px-3 h-8 border-b border-border/20 bg-muted/10">
                   <span className="text-[10px] text-muted-foreground flex-1">
-                    {notifs.filter((n) => !n.dismissed).length}개
+                    {t("meta_chat.inbox_count", { count: notifs.filter((n) => !n.dismissed).length })}
                   </span>
                   {unreadCount > 0 && (
-                    <button onClick={markAllRead} className="text-[10px] text-muted-foreground hover:text-foreground">모두 읽음</button>
+                    <button onClick={markAllRead} className="text-[10px] text-muted-foreground hover:text-foreground">{t("meta_chat.inbox_mark_all_read")}</button>
                   )}
-                  <button onClick={clearAllNotifs} className="text-muted-foreground/50 hover:text-destructive p-1" title="전체 삭제">
+                  <button onClick={clearAllNotifs} className="text-muted-foreground/50 hover:text-destructive p-1" title={t("meta_chat.inbox_clear_all")}>
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
@@ -531,7 +533,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
                 {notifs.filter((n) => !n.dismissed).length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
                     <Inbox className="w-7 h-7 text-muted-foreground/20" />
-                    <p className="text-[11px] text-muted-foreground/50">알림 없음</p>
+                    <p className="text-[11px] text-muted-foreground/50">{t("meta_chat.inbox_empty")}</p>
                   </div>
                 ) : (
                   <ul className="divide-y divide-border/20">
@@ -547,15 +549,15 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
                             </p>
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => askMetaAbout(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title="메타에게 물어보기">
+                            <button onClick={() => askMetaAbout(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title={t("meta_chat.action_ask_meta")}>
                               <Bot className="w-3 h-3" />
                             </button>
                             {n.route && (
-                              <button onClick={() => routeTo(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title="관련 위치로 이동">
+                              <button onClick={() => routeTo(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title={t("meta_chat.action_navigate")}>
                                 <ChevronRight className="w-3 h-3" />
                               </button>
                             )}
-                            <button onClick={() => dismissNotif(n.id)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title="닫기">
+                            <button onClick={() => dismissNotif(n.id)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive" title={t("meta_chat.action_dismiss")}>
                               <X className="w-3 h-3" />
                             </button>
                           </div>
@@ -574,10 +576,10 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
                   <div className="flex flex-col items-center justify-center h-full gap-2 text-center px-4">
                     <Bot className="w-8 h-8 text-muted-foreground/20" />
                     <p className="text-[12px] text-muted-foreground/40">
-                      프로젝트 상태 분석, 이슈 감지, 우선순위 제안을 도와드립니다.
+                      {t("meta_chat.empty_state_primary")}
                     </p>
                     <p className="text-[11px] text-muted-foreground/25">
-                      "프로젝트 상태 확인해줘" 로 시작해보세요
+                      {t("meta_chat.empty_state_secondary")}
                     </p>
                   </div>
                 )}
@@ -599,7 +601,7 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Meta에게 물어보기..."
+                    placeholder={t("meta_chat.input_placeholder")}
                     rows={1}
                     className="flex-1 resize-none bg-transparent text-[12px] text-foreground placeholder:text-muted-foreground/30 outline-none border border-border/20 rounded-lg px-3 py-2 min-h-[36px] max-h-[80px] overflow-y-auto"
                     style={{ height: "auto" }}

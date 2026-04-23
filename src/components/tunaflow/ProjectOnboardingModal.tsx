@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Circle, Loader2, AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { MetaAgentSelector } from "./MetaAgentSelector";
@@ -41,14 +42,15 @@ interface AgentConfig { engine: string; model: string; endpoint?: string; }
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function ProjectOnboardingModal() {
+  const { t } = useTranslation("dialog");
   const onboardingProject = useChatStore((s) => s.onboardingProject);
   const clearOnboardingProject = useChatStore((s) => s.clearOnboardingProject);
 
   const [modalState, setModalState] = useState<ModalState>("agent_select");
   const [steps, setSteps] = useState<Step[]>([
-    { label: "프로젝트 스캔 중...", done: false, active: true },
-    { label: "기존 문서 분석 중...", done: false, active: false },
-    { label: "AI가 정리 중...", done: false, active: false },
+    { label: t("onboarding.step_scan"), done: false, active: true },
+    { label: t("onboarding.step_analyze"), done: false, active: false },
+    { label: t("onboarding.step_summarize"), done: false, active: false },
   ]);
   const [preview, setPreview] = useState<PreviewPayload | null>(null);
   const [activeTab, setActiveTab] = useState<PreviewTab>("claude_md");
@@ -92,9 +94,9 @@ export function ProjectOnboardingModal() {
     if (!onboardingProject) return;
     setModalState("agent_select");
     setSteps([
-      { label: "프로젝트 스캔 중...", done: false, active: true },
-      { label: "기존 문서 분석 중...", done: false, active: false },
-      { label: "AI가 정리 중...", done: false, active: false },
+      { label: t("onboarding.step_scan"), done: false, active: true },
+      { label: t("onboarding.step_analyze"), done: false, active: false },
+      { label: t("onboarding.step_summarize"), done: false, active: false },
     ]);
     setPreview(null);
     setError(null);
@@ -216,7 +218,7 @@ export function ProjectOnboardingModal() {
         {(modalState === "loading" || modalState === "cancel_confirm") && (
           <>
             <div className="px-6 pt-5 pb-4 border-b border-border">
-              <h2 className="text-sm font-semibold text-foreground">프로젝트 분석 중</h2>
+              <h2 className="text-sm font-semibold text-foreground">{t("onboarding.analyzing_title")}</h2>
               <p className="text-[11px] text-muted-foreground mt-0.5">{onboardingProject.name}</p>
             </div>
 
@@ -243,16 +245,16 @@ export function ProjectOnboardingModal() {
                 <div className="flex items-start gap-2 mt-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
                   <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-[11px] font-medium text-destructive">분석 실패</p>
+                    <p className="text-[11px] font-medium text-destructive">{t("onboarding.analysis_failed_title")}</p>
                     <p className="text-[10px] text-destructive/70 mt-0.5">{error}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">건너뛰기를 눌러 빈 템플릿으로 시작할 수 있습니다.</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{t("onboarding.analysis_failed_hint")}</p>
                   </div>
                 </div>
               )}
 
               {!error && (
                 <p className="text-[10px] text-muted-foreground/50 pt-1">
-                  잠시 후 결과를 보여드립니다
+                  {t("onboarding.wait_hint")}
                 </p>
               )}
             </div>
@@ -264,13 +266,13 @@ export function ProjectOnboardingModal() {
                     onClick={() => setModalState("skip_confirm")}
                     className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    건너뛰기
+                    {t("onboarding.skip_button")}
                   </button>
                   <button
                     onClick={handleCancel}
                     className="px-3 py-1.5 text-[11px] font-medium text-destructive/80 hover:text-destructive transition-colors"
                   >
-                    닫기
+                    {t("onboarding.close_button")}
                   </button>
                 </>
               ) : (
@@ -278,7 +280,7 @@ export function ProjectOnboardingModal() {
                   onClick={() => setModalState("cancel_confirm")}
                   className="ml-auto text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  취소
+                  {t("onboarding.cancel_button")}
                 </button>
               )}
             </div>
@@ -297,9 +299,9 @@ export function ProjectOnboardingModal() {
         {(modalState === "preview" || modalState === "skip_confirm") && preview && (
           <>
             <div className="px-6 pt-5 pb-3 border-b border-border">
-              <h2 className="text-sm font-semibold text-foreground">분석 완료</h2>
+              <h2 className="text-sm font-semibold text-foreground">{t("onboarding.analysis_done_title")}</h2>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                이렇게 정리하시겠습니까? 내용을 확인 후 적용하세요.
+                {t("onboarding.analysis_done_desc")}
               </p>
             </div>
 
@@ -329,7 +331,7 @@ export function ProjectOnboardingModal() {
                       : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  초기 구성
+                  {t("onboarding.tab_initial_setup")}
                 </button>
               )}
             </div>
@@ -364,17 +366,17 @@ export function ProjectOnboardingModal() {
                     onClick={() => setModalState("skip_confirm")}
                     className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    건너뛰기
+                    {t("onboarding.skip_button")}
                   </button>
                   <p className="text-[9px] text-muted-foreground/40 mt-0.5">
-                    빈 템플릿 파일만 생성됩니다
+                    {t("onboarding.empty_template_hint")}
                   </p>
                 </div>
                 <button
                   onClick={handleApply}
                   className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90 transition-colors"
                 >
-                  적용하기
+                  {t("onboarding.apply_button")}
                 </button>
               </div>
             </div>
@@ -396,30 +398,31 @@ export function ProjectOnboardingModal() {
 // ─── Sub-dialogs ─────────────────────────────────────────────────────────────
 
 function CancelConfirmOverlay({ onBack, onConfirm }: { onBack: () => void; onConfirm: () => void }) {
+  const { t } = useTranslation("dialog");
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl">
       <div className="w-[360px] bg-background border border-border rounded-lg shadow-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">분석을 취소하시겠습니까?</h3>
+        <h3 className="text-sm font-semibold text-foreground">{t("onboarding.cancel_confirm_title")}</h3>
 
         <div className="space-y-2 text-[11px]">
-          <p className="text-muted-foreground font-medium">취소하면 다음 상태로 남습니다:</p>
+          <p className="text-muted-foreground font-medium">{t("onboarding.cancel_confirm_lead")}</p>
           <ul className="space-y-1.5 pl-1">
             <li className="flex items-start gap-2 text-foreground/60">
               <span className="text-green-500 mt-0.5">✓</span>
-              프로젝트 폴더 구조는 이미 생성됨
-              <span className="text-[9px] text-muted-foreground/50">(docs/plans/, docs/reference/ 등)</span>
+              {t("onboarding.cancel_confirm_folder_created")}
+              <span className="text-[9px] text-muted-foreground/50">{t("onboarding.cancel_confirm_folder_detail")}</span>
             </li>
             <li className="flex items-start gap-2 text-amber-500/80">
               <span className="mt-0.5">⚠</span>
-              <span>CLAUDE.md는 빈 템플릿으로 남음 — 에이전트가 프로젝트 맥락 없이 시작</span>
+              <span>{t("onboarding.cancel_confirm_claude_md_empty")}</span>
             </li>
             <li className="flex items-start gap-2 text-amber-500/80">
               <span className="mt-0.5">⚠</span>
-              <span>기존 문서 인덱스가 만들어지지 않음</span>
+              <span>{t("onboarding.cancel_confirm_no_index")}</span>
             </li>
           </ul>
           <p className="text-[10px] text-muted-foreground/50 pt-1">
-            💡 설정 &gt; 프로젝트에서 나중에 다시 분석을 실행할 수 있습니다
+            {t("onboarding.cancel_confirm_later_tip")}
           </p>
         </div>
 
@@ -428,13 +431,13 @@ function CancelConfirmOverlay({ onBack, onConfirm }: { onBack: () => void; onCon
             onClick={onBack}
             className="px-3 py-1.5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
-            돌아가기
+            {t("onboarding.back_button")}
           </button>
           <button
             onClick={onConfirm}
             className="px-3 py-1.5 rounded text-[11px] font-medium text-destructive hover:bg-destructive/10 transition-colors"
           >
-            그래도 취소
+            {t("onboarding.cancel_anyway")}
           </button>
         </div>
       </div>
@@ -461,6 +464,7 @@ function InitialSetupPanel({
   applyWorkflow: boolean;
   setApplyWorkflow: (v: boolean) => void;
 }) {
+  const { t } = useTranslation("dialog");
   const toggleProfile = (i: number) => {
     const next = new Set(profileSelection);
     if (next.has(i)) next.delete(i);
@@ -478,7 +482,7 @@ function InitialSetupPanel({
     <div className="px-6 py-4 space-y-4 text-[12px]">
       {payload.rationale && (
         <div className="rounded-md border border-border/60 bg-accent/30 p-2.5 text-[11px] text-muted-foreground leading-relaxed">
-          <span className="font-medium text-foreground">추천 근거: </span>
+          <span className="font-medium text-foreground">{t("onboarding.initial_setup_rationale")} </span>
           {payload.rationale}
         </div>
       )}
@@ -553,13 +557,13 @@ function InitialSetupPanel({
             />
             <div className="space-y-0.5 text-[11px]">
               {payload.workflow.review_track && (
-                <div><span className="text-muted-foreground">Review track:</span> <span className="text-foreground">{payload.workflow.review_track}</span></div>
+                <div><span className="text-muted-foreground">{t("onboarding.initial_setup_workflow_review_track")}</span> <span className="text-foreground">{payload.workflow.review_track}</span></div>
               )}
               {payload.workflow.context_mode && (
-                <div><span className="text-muted-foreground">ContextPack:</span> <span className="text-foreground">{payload.workflow.context_mode}</span></div>
+                <div><span className="text-muted-foreground">{t("onboarding.initial_setup_workflow_context")}</span> <span className="text-foreground">{payload.workflow.context_mode}</span></div>
               )}
               {payload.workflow.rt_participants && payload.workflow.rt_participants.length > 0 && (
-                <div><span className="text-muted-foreground">RT 참가자:</span> <span className="text-foreground">{payload.workflow.rt_participants.join(", ")}</span></div>
+                <div><span className="text-muted-foreground">{t("onboarding.initial_setup_workflow_rt")}</span> <span className="text-foreground">{payload.workflow.rt_participants.join(", ")}</span></div>
               )}
             </div>
           </label>
@@ -570,22 +574,23 @@ function InitialSetupPanel({
 }
 
 function SkipConfirmOverlay({ onBack, onConfirm }: { onBack: () => void; onConfirm: () => void }) {
+  const { t } = useTranslation("dialog");
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl">
       <div className="w-[380px] bg-background border border-border rounded-lg shadow-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">AI 분석 결과를 건너뛰시겠습니까?</h3>
+        <h3 className="text-sm font-semibold text-foreground">{t("onboarding.skip_confirm_title")}</h3>
 
         <div className="space-y-2 text-[11px] text-muted-foreground">
-          <p>대신 아래 파일이 빈 양식으로 생성됩니다:</p>
+          <p>{t("onboarding.skip_confirm_lead")}</p>
           <ul className="space-y-1 pl-2 font-mono text-foreground/60">
-            <li>· CLAUDE.md (섹션 구조만 있음)</li>
-            <li>· docs/reference/index.md (빈 목록)</li>
+            <li>{t("onboarding.skip_confirm_claude_md")}</li>
+            <li>{t("onboarding.skip_confirm_ref_index")}</li>
           </ul>
           <p className="pt-1">
-            에이전트는 프로젝트를 처음 실행할 때 직접 코드를 탐색해 맥락을 파악합니다.
+            {t("onboarding.skip_confirm_agent_note")}
           </p>
           <p className="text-[10px] text-muted-foreground/50">
-            rawq 인덱싱은 백그라운드에서 계속 진행됩니다
+            {t("onboarding.skip_confirm_rawq_note")}
           </p>
         </div>
 
@@ -594,13 +599,13 @@ function SkipConfirmOverlay({ onBack, onConfirm }: { onBack: () => void; onConfi
             onClick={onBack}
             className="px-3 py-1.5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
-            돌아가기
+            {t("onboarding.back_button")}
           </button>
           <button
             onClick={onConfirm}
             className="px-3 py-1.5 rounded text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
-            건너뛰기
+            {t("onboarding.skip_button")}
           </button>
         </div>
       </div>

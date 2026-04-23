@@ -1,3 +1,4 @@
+import i18n from "@/locales";
 import { useChatStore } from "@/stores/chatStore";
 import { ROUNDTABLE_PARTICIPANTS } from "@/lib/constants";
 import type { RtMode, RoundtableParticipant } from "@/types";
@@ -199,7 +200,7 @@ export function useSendActions({
         }
         lines.push(`- ${m.recommended ? "★ " : "  "}${m.id} — ${m.label} [${m.source}]`);
       }
-      if (lines.length === 2) lines.push("(카탈로그가 비어 있습니다)");
+      if (lines.length === 2) lines.push(i18n.t("chat:input.models_catalog_empty"));
       // 로컬 표시 — 임시 메시지로 추가
       const now = Date.now();
       useChatStore.setState((state) => ({
@@ -246,11 +247,11 @@ export function useSendActions({
             }
           }
         }
-        toast.success("PTY 세션 초기화 완료");
+        toast.success(i18n.t("chat:input.pty_clear_success"));
       } catch (e) {
         console.error("[/clear]", e);
         const { toast } = await import("sonner");
-        toast.error("세션 초기화 실패");
+        toast.error(i18n.t("chat:input.pty_clear_failed"));
       }
       setText("");
       return;
@@ -276,7 +277,7 @@ export function useSendActions({
             id: `local-guide-${now}`,
             conversationId: effectiveConvId!,
             role: "assistant" as const,
-            content: `⚠️ **넘길 이전 응답이 없습니다.**\n\n먼저 에이전트에게 질문하고, 응답을 받은 후 handoff를 사용하세요.\n\n입력: \`${prompt}\` → ${handoff.engine}`,
+            content: i18n.t("chat:input.no_previous_response", { prompt, engine: handoff.engine }),
             timestamp: now,
             status: "done",
             engine: "system",
@@ -318,7 +319,7 @@ export function useSendActions({
             id: `local-rt-warn-${now}`,
             conversationId: effectiveConvId!,
             role: "assistant" as const,
-            content: "⚠️ **RT 설정을 불러오지 못했습니다.** 기본 참가자로 실행합니다.\n\n새 RT를 만들거나 사이드바에서 [+]로 다시 설정하세요.",
+            content: i18n.t("chat:input.rt_config_missing"),
             timestamp: now,
             status: "done",
             engine: "system",
