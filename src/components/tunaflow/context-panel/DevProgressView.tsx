@@ -542,7 +542,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                     <option key={p.id} value={p.id}>{p.label} ({p.engine}{p.model ? `/${p.model.slice(0, 24)}` : ""})</option>
                   ))}
                 </select>
-                <button onClick={handleStartReview} disabled={busy || !selectedReviewerId}
+                <button onClick={handleStartReview} disabled={busy || !selectedReviewerId || branchRunning}
                   className={cn("flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium disabled:opacity-50 transition-colors",
                     reviewVerdict ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20",
                   )}>

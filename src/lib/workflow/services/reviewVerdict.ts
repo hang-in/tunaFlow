@@ -30,6 +30,9 @@ export function extractLatestReviewVerdict(
   let latest: ParsedReviewVerdict | null = null;
   for (const msg of messages) {
     if (msg.role !== "assistant") continue;
+    // Streaming 중인 reviewer 의 자유 서술에 "verdict: ..." 가 우연히 포함될 수 있어
+    // `status === "done"` 이 된 최종 메시지만 verdict 추출 대상으로 한다.
+    if (msg.status !== "done") continue;
     if (sinceTs !== undefined && msg.timestamp < sinceTs) continue;
     if (hasReviewVerdict(msg.content)) {
       const v = extractReviewVerdict(msg.content);
@@ -70,7 +73,9 @@ export function collectAndAggregateVerdicts(
   messages: Message[],
   sinceTs?: number,
 ): EffectiveVerdict | null {
-  const all = scanAllReviewerVerdicts(messages, sinceTs);
+  // Streaming-중 메시지는 verdict 대상에서 제외 (자유 서술 오매칭 방지).
+  const doneMessages = messages.filter((m) => m.status === "done");
+  const all = scanAllReviewerVerdicts(doneMessages, sinceTs);
   if (all.length >= 2) {
     const agg = aggregateReviewVerdicts(all);
     if (!agg) return null;
