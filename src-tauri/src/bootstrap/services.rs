@@ -65,5 +65,16 @@ pub fn start_background_services(
         app.state::<DbState>().inner().clone(),
     );
 
+    // 7. metaAgent Phase 4 — background insight worker loop. 30s tick,
+    //    concurrency=1. foreground busy 시 자연 양보 (INV-6). Settings 토글
+    //    (`background_insight_enabled`, INV-3) 로 OFF 가능.
+    {
+        let db_arc = Arc::new(app.state::<DbState>().inner().clone());
+        crate::commands::meta_agent::background_worker::spawn_background_worker(
+            app.handle().clone(),
+            db_arc,
+        );
+    }
+
     Ok(())
 }

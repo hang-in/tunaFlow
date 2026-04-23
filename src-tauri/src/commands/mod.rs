@@ -41,3 +41,4 @@ pub mod pty;
 pub mod secrets;
 pub mod attachments;
 pub mod worldview;
+pub mod meta_agent;

@@ -285,6 +285,12 @@ pub fn run() {
             commands::worldview::set_worldview,
             commands::worldview::get_worldview_enabled,
             commands::worldview::set_worldview_enabled,
+            // metaAgent Phase 4 — background job control
+            commands::meta_agent::background_jobs::enqueue_background_job_cmd,
+            commands::meta_agent::background_jobs::cancel_background_job,
+            commands::meta_agent::background_jobs::count_background_jobs,
+            commands::meta_agent::background_jobs::get_background_insight_enabled,
+            commands::meta_agent::background_jobs::set_background_insight_enabled,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

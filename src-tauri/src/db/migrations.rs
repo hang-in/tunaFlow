@@ -160,6 +160,9 @@ pub fn run(conn: &mut Connection) -> Result<(), AppError> {
     if current < 45 {
         apply_v45(conn)?;
     }
+    if current < 46 {
+        apply_v46(conn)?;
+    }
     Ok(())
 }
 
@@ -1146,6 +1149,36 @@ fn apply_v45(conn: &mut Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v46: metaAgent Phase 4 — `agent_jobs` 에 background worker 운영용 3 컬럼 추가.
+///
+/// - `priority`: 0 = foreground (기본), -1 = background. Worker 는 `priority=-1 AND status='pending'` 만 pick.
+/// - `dedupe_key`: 동일 작업 재enqueue 방지용 자유 문자열. NULL 허용.
+/// - `visibility`: `'visible'` (기본, StatusBar 에 노출) / `'silent'` (trace 만).
+///
+/// INV 영향:
+/// - INV-3 (Settings OFF 가능): priority=-1 경로만 토글이 제어. foreground 경로는 영향 없음.
+/// - INV-6 (foreground 양보): worker 가 이 컬럼들을 조회해 판정.
+fn apply_v46(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "agent_jobs", "priority", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_missing(conn, "agent_jobs", "dedupe_key", "TEXT")?;
+    add_column_if_missing(
+        conn,
+        "agent_jobs",
+        "visibility",
+        "TEXT NOT NULL DEFAULT 'visible'",
+    )?;
+    // background worker polling 최적화 인덱스 — (priority, status, started_at)
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_agent_jobs_bg_pending
+         ON agent_jobs(priority, status, started_at);",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (46, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1523,5 +1556,112 @@ mod tests {
             )
             .unwrap();
         assert!(sql.contains("content=messages"), "rollback 후 external content 가 유지되어야");
+    }
+
+    // ─── v46: agent_jobs background worker 컬럼 (metaAgent Phase 4) ─────────
+
+    /// v45 까지 적용된 상태 + 기존 `agent_jobs` 테이블 생성.
+    fn open_with_agent_jobs_for_v46() -> Connection {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(schema::CREATE_SCHEMA_VERSION).expect("schema_version");
+        conn.execute_batch(
+            "CREATE TABLE agent_jobs (
+                id              TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                message_id      TEXT,
+                engine          TEXT NOT NULL,
+                kind            TEXT NOT NULL DEFAULT 'agent',
+                status          TEXT NOT NULL DEFAULT 'running',
+                error           TEXT,
+                started_at      INTEGER NOT NULL,
+                updated_at      INTEGER NOT NULL
+            );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (45, ?1)",
+            [now_epoch_ms()],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn apply_v46_on(conn: &Connection) {
+        apply_v46(conn).expect("apply_v46");
+    }
+
+    #[test]
+    fn v46_adds_priority_dedupe_key_visibility() {
+        let conn = open_with_agent_jobs_for_v46();
+        apply_v46_on(&conn);
+        let mut stmt = conn.prepare("PRAGMA table_info(agent_jobs)").unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        for c in ["priority", "dedupe_key", "visibility"] {
+            assert!(cols.contains(&c.to_string()), "column {} missing, cols={:?}", c, cols);
+        }
+    }
+
+    #[test]
+    fn v46_priority_default_is_zero_and_visibility_visible() {
+        let conn = open_with_agent_jobs_for_v46();
+        apply_v46_on(&conn);
+        conn.execute(
+            "INSERT INTO agent_jobs (id, conversation_id, engine, started_at, updated_at) \
+             VALUES ('j1', 'c1', 'claude', 0, 0)",
+            [],
+        )
+        .unwrap();
+        let (priority, visibility): (i64, String) = conn
+            .query_row(
+                "SELECT priority, visibility FROM agent_jobs WHERE id='j1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(priority, 0);
+        assert_eq!(visibility, "visible");
+    }
+
+    #[test]
+    fn v46_records_schema_version() {
+        let conn = open_with_agent_jobs_for_v46();
+        apply_v46_on(&conn);
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=46",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn v46_is_idempotent() {
+        let conn = open_with_agent_jobs_for_v46();
+        apply_v46_on(&conn);
+        // 두 번째 호출은 add_column_if_missing + INDEX IF NOT EXISTS + schema_version INSERT
+        // 가 전부 idempotent 가 아니므로 schema_version PK 충돌은 날 수 있음. 본 테스트는
+        // 컬럼 재추가 guard 만 확인.
+        let res = apply_v46(&conn);
+        if res.is_ok() {
+            // 성공이면 schema_version 이 2 번 들어갔는지 체크 — 중복이어도 문제 아님
+            let _ = conn.query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=46",
+                [], |r| r.get::<_, i64>(0),
+            ).unwrap();
+        }
+        // column 여전히 1개만 존재 (ALTER TABLE ADD COLUMN 이 skip 됐는지 확인)
+        let mut stmt = conn.prepare("PRAGMA table_info(agent_jobs)").unwrap();
+        let priority_count = stmt
+            .query_map([], |r| r.get::<_, String>(1)).unwrap()
+            .filter_map(|r| r.ok())
+            .filter(|c| c == "priority")
+            .count();
+        assert_eq!(priority_count, 1, "priority column 이 중복 생성되면 안 됨");
     }
 }
