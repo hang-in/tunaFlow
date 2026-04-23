@@ -6,15 +6,6 @@ import { Globe, FileText } from "lucide-react";
 
 const WORLDVIEW_MAX_TOKENS = 500;
 
-const DEFAULT_WORLDVIEW_TEMPLATE = `# User Worldview
-
-## Ontology
-(기본 세계관 — 직접 작성)
-
-## Engagement preference
-(agent 와의 협업 방식 선호 — 직접 작성)
-`;
-
 // guardrail::estimate_tokens 와 동일한 휴리스틱 (ascii/4 + cjk*2/3).
 function estimateTokens(text: string): number {
   let ascii = 0;
@@ -79,7 +70,7 @@ export function WorldviewSettings() {
   };
 
   const handleLoadDefault = () => {
-    setContent(DEFAULT_WORLDVIEW_TEMPLATE);
+    setContent(t("worldview.default_template"));
     setSaved(false);
   };
 

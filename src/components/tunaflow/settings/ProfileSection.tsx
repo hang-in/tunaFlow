@@ -82,6 +82,7 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
 }
 
 export function ProfileSection() {
+  const { t } = useTranslation("settings");
   const [profile, setProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [saved, setSaved] = useState(false);
 
@@ -112,15 +113,15 @@ export function ProfileSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-[14px] font-[550] text-foreground mb-1">Profile</h2>
-        <p className="text-[12px] text-muted-foreground">에이전트 컨텍스트와 개발자 정보를 설정합니다.</p>
+        <h2 className="text-[14px] font-[550] text-foreground mb-1">{t("profile.heading")}</h2>
+        <p className="text-[12px] text-muted-foreground">{t("profile.description")}</p>
       </div>
 
       <LanguageSelector />
 
       {/* ── Basic ─────────────────────────────────────────────── */}
       <div className="space-y-3">
-        <SectionHeader icon={<User className="w-3.5 h-3.5" />} label="기본 정보" />
+        <SectionHeader icon={<User className="w-3.5 h-3.5" />} label={t("profile.group.basic")} />
         <div className="flex items-start gap-4">
           {/* Avatar */}
           <div className="shrink-0">
@@ -138,13 +139,13 @@ export function ProfileSection() {
             )}
           </div>
           <div className="flex-1 grid grid-cols-2 gap-3">
-            <FieldRow label="이름">
+            <FieldRow label={t("profile.field.name")}>
               <Input value={profile.name} onChange={(v) => update({ name: v })} placeholder="Hong Gildong" />
             </FieldRow>
-            <FieldRow label="직함">
+            <FieldRow label={t("profile.field.title")}>
               <Input value={profile.title} onChange={(v) => update({ title: v })} placeholder="Software Engineer" />
             </FieldRow>
-            <FieldRow label="GitHub Username" hint="프로필 사진 자동 로드에 사용됩니다.">
+            <FieldRow label={t("profile.field.github_username")} hint={t("profile.hint.github_username")}>
               <Input value={profile.githubUsername} onChange={(v) => update({ githubUsername: v })} placeholder="octocat" />
             </FieldRow>
           </div>
@@ -153,32 +154,32 @@ export function ProfileSection() {
 
       {/* ── Agent context ──────────────────────────────────────── */}
       <div className="space-y-3">
-        <SectionHeader icon={<Code2 className="w-3.5 h-3.5" />} label="에이전트 컨텍스트" />
-        <FieldRow label="소개 메모" hint="에이전트가 사용자 배경을 이해하는 데 활용됩니다.">
+        <SectionHeader icon={<Code2 className="w-3.5 h-3.5" />} label={t("profile.group.agent_context")} />
+        <FieldRow label={t("profile.field.bio")} hint={t("profile.hint.bio")}>
           <textarea
             value={profile.bio}
             onChange={(e) => update({ bio: e.target.value })}
-            placeholder="백엔드 API 개발 주력, Rust/TypeScript 사용, 스타트업 CTO..."
+            placeholder={t("profile.placeholder.bio")}
             rows={3}
             className="w-full bg-background border border-border/40 rounded-md px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-ring/50 transition-colors resize-none"
           />
         </FieldRow>
-        <FieldRow label="선호 언어" hint="쉼표로 구분합니다.">
-          <Input value={profile.preferredLanguages} onChange={(v) => update({ preferredLanguages: v })} placeholder="TypeScript, Rust, Python" />
+        <FieldRow label={t("profile.field.preferred_languages")} hint={t("profile.hint.preferred_languages")}>
+          <Input value={profile.preferredLanguages} onChange={(v) => update({ preferredLanguages: v })} placeholder={t("profile.placeholder.preferred_languages")} />
         </FieldRow>
       </div>
 
       {/* ── Dev info ───────────────────────────────────────────── */}
       <div className="space-y-3">
-        <SectionHeader icon={<GitBranch className="w-3.5 h-3.5" />} label="개발자 정보" />
+        <SectionHeader icon={<GitBranch className="w-3.5 h-3.5" />} label={t("profile.group.dev_info")} />
         <div className="grid grid-cols-2 gap-3">
-          <FieldRow label="Git 이름">
+          <FieldRow label={t("profile.field.git_name")}>
             <Input value={profile.gitName} onChange={(v) => update({ gitName: v })} placeholder="Hong Gildong" />
           </FieldRow>
-          <FieldRow label="Git 이메일">
+          <FieldRow label={t("profile.field.git_email")}>
             <Input value={profile.gitEmail} onChange={(v) => update({ gitEmail: v })} placeholder="user@example.com" />
           </FieldRow>
-          <FieldRow label="GitHub 기본 Org">
+          <FieldRow label={t("profile.field.github_org")}>
             <Input value={profile.githubOrg} onChange={(v) => update({ githubOrg: v })} placeholder="my-org" />
           </FieldRow>
         </div>
@@ -186,17 +187,17 @@ export function ProfileSection() {
 
       {/* ── Timezone (auto) ────────────────────────────────────── */}
       <div className="space-y-3">
-        <SectionHeader icon={<Clock className="w-3.5 h-3.5" />} label="시간대" />
+        <SectionHeader icon={<Clock className="w-3.5 h-3.5" />} label={t("profile.group.timezone")} />
         <div className="flex items-center gap-2 px-3 py-2 bg-accent/20 rounded-md border border-border/20">
           <span className="text-[13px] text-foreground/60">{timezone}</span>
-          <span className="text-[11px] text-muted-foreground/40 ml-1">자동 감지</span>
+          <span className="text-[11px] text-muted-foreground/40 ml-1">{t("profile.hint.timezone_auto")}</span>
         </div>
       </div>
 
       {/* ── Advanced (GitHub Token) ────────────────────────────── */}
       <div className="space-y-3">
-        <SectionHeader icon={<KeyRound className="w-3.5 h-3.5" />} label="고급" />
-        <FieldRow label="GitHub Personal Access Token" hint="레포 클론, API 접근 시 사용됩니다. 로컬에만 저장됩니다.">
+        <SectionHeader icon={<KeyRound className="w-3.5 h-3.5" />} label={t("profile.group.advanced")} />
+        <FieldRow label={t("profile.field.github_token")} hint={t("profile.hint.github_token")}>
           <Input
             type="password"
             value={profile.githubToken}
@@ -212,10 +213,10 @@ export function ProfileSection() {
           onClick={handleSave}
           className="px-4 py-1.5 bg-primary text-primary-foreground text-[13px] font-medium rounded-md hover:bg-primary/90 transition-colors"
         >
-          저장
+          {t("profile.button.save")}
         </button>
         {saved && (
-          <span className="text-[12px] text-status-approved">저장됐습니다</span>
+          <span className="text-[12px] text-status-approved">{t("profile.saved_msg")}</span>
         )}
       </div>
     </div>
