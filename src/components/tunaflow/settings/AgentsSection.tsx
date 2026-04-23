@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2, CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
@@ -26,6 +27,7 @@ const ENGINE_LABELS: Record<(typeof ENGINES)[number], string> = {
 };
 
 export function AgentsSection() {
+  const { t } = useTranslation("settings");
   const profiles = useChatStore((s) => s.agentProfiles);
   const saveProfiles = useChatStore((s) => s.saveProfiles);
   const [selectedId, setSelectedId] = useState<string | null>(profiles[0]?.id ?? null);
@@ -74,8 +76,8 @@ export function AgentsSection() {
 
   return (
     <div>
-      <h2 className="text-tf-base font-[550] text-foreground mb-1">Agent Profiles</h2>
-      <p className="text-tf-caption text-muted-foreground mb-4">에이전트 프로필을 관리합니다. 각 프로필은 엔진, 모델, 기본 스킬을 하나의 실행 단위로 묶습니다.</p>
+      <h2 className="text-tf-base font-[550] text-foreground mb-1">{t("agents.heading")}</h2>
+      <p className="text-tf-caption text-muted-foreground mb-4">{t("agents.description")}</p>
 
       <RoleCoveragePanel profiles={profiles} />
       <MetaAnalysisPanel />
@@ -186,6 +188,7 @@ export function AgentsSection() {
 /** 4개 핵심 역할(Architect/Developer/Reviewers/Synthesizer) 에 대한 프로필 배정 상태.
  *  Review RT / Plan 승인 / RT 합성 직전에 이 값이 assertRoleReady() 로 검증된다. */
 function RoleCoveragePanel({ profiles }: { profiles: AgentProfile[] }) {
+  const { t } = useTranslation("settings");
   const [assignments, setAssignments] = useState<RoleAssignments>({ reviewers: [] });
   const [loaded, setLoaded] = useState(false);
 
@@ -231,14 +234,16 @@ function RoleCoveragePanel({ profiles }: { profiles: AgentProfile[] }) {
       allReady ? "border-status-approved/40 bg-status-approved/5" : "border-amber-500/40 bg-amber-500/5")}>
       <div className="flex items-center gap-2">
         {allReady ? <CheckCircle2 className="w-4 h-4 text-status-approved" /> : <AlertTriangle className="w-4 h-4 text-amber-500" />}
-        <h3 className="text-tf-sm font-medium text-foreground flex-1">역할 커버리지</h3>
+        <h3 className="text-tf-sm font-medium text-foreground flex-1">{t("agents.role_coverage.title")}</h3>
         <span className="text-tf-sm text-muted-foreground">
-          {coverage.filter((c) => c.status === "ready").length}/{coverage.length} ready
+          {t("agents.role_coverage.ready_count", {
+            ready: coverage.filter((c) => c.status === "ready").length,
+            total: coverage.length,
+          })}
         </span>
       </div>
       <p className="text-[10px] text-muted-foreground">
-        Architect(설계), Developer(구현), Reviewer(검토 ≥2), Synthesizer(RT 합성) 역할에 프로필을 배정하면
-        Review RT / Plan 승인 / RT 합성 시 설정 그대로 실행됩니다.
+        {t("agents.role_coverage.hint")}
       </p>
       <div className="space-y-1.5">
         <RoleRow label="Architect" coverage={coverage[0]!} profiles={profiles}
@@ -267,6 +272,7 @@ function RoleRow({ label, coverage, profiles, selectedId, onChange }: {
   selectedId: string;
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation("settings");
   return (
     <div className="flex items-center gap-2">
       <div className="w-[90px] flex items-center gap-1.5 shrink-0">
@@ -275,7 +281,7 @@ function RoleRow({ label, coverage, profiles, selectedId, onChange }: {
       </div>
       <select value={selectedId} onChange={(e) => onChange(e.target.value)}
         className="flex-1 bg-background rounded px-2 py-1 text-tf-sm outline-none border border-border/30 focus:border-ring/40">
-        <option value="">— 선택 안 됨 —</option>
+        <option value="">{t("agents.role_coverage.unselected")}</option>
         {profiles.map((p) => (
           <option key={p.id} value={p.id}>{p.label} ({p.engine}{p.model ? `/${p.model}` : ""})</option>
         ))}
@@ -290,6 +296,7 @@ function ReviewersRow({ coverage, profiles, selectedIds, onToggle }: {
   selectedIds: string[];
   onToggle: (id: string) => void;
 }) {
+  const { t } = useTranslation("settings");
   return (
     <div className="flex items-start gap-2">
       <div className="w-[90px] flex items-center gap-1.5 shrink-0 pt-1">
@@ -307,7 +314,7 @@ function ReviewersRow({ coverage, profiles, selectedIds, onToggle }: {
             </button>
           );
         })}
-        {profiles.length === 0 && <span className="text-[10px] text-muted-foreground">프로필이 없습니다</span>}
+        {profiles.length === 0 && <span className="text-[10px] text-muted-foreground">{t("agents.role_coverage.no_profiles")}</span>}
       </div>
     </div>
   );
@@ -315,14 +322,14 @@ function ReviewersRow({ coverage, profiles, selectedIds, onToggle }: {
 
 // ─── Meta Analysis (Tier 2) Panel ───────────────────────────────────────────
 
-const ENGINE_OPTIONS: { value: MetaAnalysisEngine; label: string; hint: string }[] = [
-  { value: "off",           label: "끔",                  hint: "메타 자동 분석 비활성화" },
-  { value: "auto",          label: "자동",                hint: "프로젝트 스택 기반 자동 선택" },
-  { value: "claude-haiku",  label: "Claude Haiku",        hint: "JSON/한국어 요약 안정적, 저렴" },
-  { value: "gemini-flash",  label: "Gemini Flash 2.5",    hint: "대용량 input 저렴, 빠름" },
-];
-
 function MetaAnalysisPanel() {
+  const { t } = useTranslation("settings");
+  const engineOptions: { value: MetaAnalysisEngine; label: string; hint: string }[] = [
+    { value: "off",           label: t("agents.meta.engine_option.off_label"),    hint: t("agents.meta.engine_option.off_hint") },
+    { value: "auto",          label: t("agents.meta.engine_option.auto_label"),   hint: t("agents.meta.engine_option.auto_hint") },
+    { value: "claude-haiku",  label: "Claude Haiku",                                hint: t("agents.meta.engine_option.claude_haiku_hint") },
+    { value: "gemini-flash",  label: "Gemini Flash 2.5",                            hint: t("agents.meta.engine_option.gemini_flash_hint") },
+  ];
   const [cfg, setCfg] = useState<MetaAnalysisConfig>(DEFAULT_CONFIG);
   const [loaded, setLoaded] = useState(false);
 
@@ -345,21 +352,20 @@ function MetaAnalysisPanel() {
   return (
     <div className="mb-4 rounded-lg border border-border/30 bg-background/50 p-3 space-y-2.5">
       <div>
-        <h3 className="text-tf-sm font-medium text-foreground">메타 에이전트 자동 분석 (Tier 2)</h3>
+        <h3 className="text-tf-sm font-medium text-foreground">{t("agents.meta.heading")}</h3>
         <p className="text-[10px] text-muted-foreground mt-0.5">
-          주간 요약, 실패 패턴 분석, artifacts 요약 등을 저비용 엔진으로 자동 생성합니다.
-          읽기 전용 — 제안만 하며 실행은 사용자 승인 필요.
+          {t("agents.meta.description")}
         </p>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-muted-foreground w-[60px] shrink-0">엔진</span>
+        <span className="text-[11px] text-muted-foreground w-[60px] shrink-0">{t("agents.meta.engine_label")}</span>
         <select
           value={cfg.engine}
           onChange={(e) => updateAndSave({ engine: e.target.value as MetaAnalysisEngine })}
           className="flex-1 bg-background rounded px-2 py-1 text-[11px] outline-none border border-border/30 focus:border-ring/40"
         >
-          {ENGINE_OPTIONS.map((opt) => (
+          {engineOptions.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label} — {opt.hint}</option>
           ))}
         </select>
@@ -372,14 +378,14 @@ function MetaAnalysisPanel() {
           onChange={(e) => updateAndSave({ autoTrigger: e.target.checked })}
           className="rounded border-border/40"
         />
-        <span className="text-[11px] text-foreground">자동 트리거</span>
-        <span className="text-[10px] text-muted-foreground">— 임계값 도달 시 분석 자동 실행</span>
+        <span className="text-[11px] text-foreground">{t("agents.meta.auto_trigger")}</span>
+        <span className="text-[10px] text-muted-foreground">{t("agents.meta.auto_trigger_hint")}</span>
       </label>
 
       {!disabled && cfg.autoTrigger && (
         <div className="pl-4 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
           <label className="flex items-center gap-1.5">
-            <span className="text-muted-foreground w-[90px] truncate">주간 요약 (pass 누적)</span>
+            <span className="text-muted-foreground w-[90px] truncate">{t("agents.meta.threshold.weekly_pass")}</span>
             <input
               type="number" min={1} max={100}
               value={cfg.thresholds.reviewPassedCount}
@@ -390,7 +396,7 @@ function MetaAnalysisPanel() {
             />
           </label>
           <label className="flex items-center gap-1.5">
-            <span className="text-muted-foreground w-[90px] truncate">실패 패턴 (fail 누적)</span>
+            <span className="text-muted-foreground w-[90px] truncate">{t("agents.meta.threshold.fail_pattern")}</span>
             <input
               type="number" min={1} max={50}
               value={cfg.thresholds.reviewFailedCount}
@@ -401,7 +407,7 @@ function MetaAnalysisPanel() {
             />
           </label>
           <label className="flex items-center gap-1.5">
-            <span className="text-muted-foreground w-[90px] truncate">artifact 요약 (누적)</span>
+            <span className="text-muted-foreground w-[90px] truncate">{t("agents.meta.threshold.artifact_count")}</span>
             <input
               type="number" min={1} max={100}
               value={cfg.thresholds.artifactCount}
@@ -412,7 +418,7 @@ function MetaAnalysisPanel() {
             />
           </label>
           <label className="flex items-center gap-1.5">
-            <span className="text-muted-foreground w-[90px] truncate">idle 일수</span>
+            <span className="text-muted-foreground w-[90px] truncate">{t("agents.meta.threshold.idle_days")}</span>
             <input
               type="number" min={1} max={90}
               value={cfg.thresholds.idleDays}
