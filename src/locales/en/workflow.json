@@ -36,5 +36,35 @@
     "busy": "Merging...",
     "button": "Merge into Plan",
     "error": "Plan merge failed: {{error}}"
+  },
+  "review": {
+    "verdict": {
+      "verdict_fail_label": "Fail",
+      "verdict_conditional_label": "Conditional",
+      "edit_label": "Edit:",
+      "code_rewrite_button": "Rewrite code",
+      "code_rewrite_tooltip": "Send findings to DEV and switch straight to implementation",
+      "redesign_button": "Redesign from scratch",
+      "redesign_tooltip": "Return to Plan phase — Architect redesigns from the start",
+      "done_button": "Complete → Done",
+      "approve_anyway_button": "Complete anyway",
+      "back_button": "Back",
+      "done_confirm_prefix": "Reviewer verdict is ",
+      "done_confirm_suffix": ". Completing as-is may not produce expected behavior.",
+      "auto_completed": "Auto-completed",
+      "approve_error": "Failed to mark done: {{error}}",
+      "rework_error": "Rework failed: {{error}}",
+      "dev_delivery_success": "Sent conditional findings to DEV",
+      "dev_delivery_error": "Failed to deliver to DEV: {{error}}",
+      "redesign_success": "Original plan abandoned. Architect is starting a redesign.",
+      "redesign_error": "Redesign transition failed: {{error}}",
+      "redesign_event_reason": "Review failed — original abandoned, redesign requested",
+      "findings_empty_conditional": " (No detailed findings — check the Review Branch directly)",
+      "findings_empty_redesign": "- (No detailed findings — refer to the Review Branch)",
+      "conditional_prompt": "[Conditional Review] The reviewer requested partial revisions.\n\n**Findings (must fix):{{findings}}\n{{recsBlock}}\n\nAfter fixing, emit the impl-complete marker.",
+      "conditional_recs_block": "**Recommendations:{{recs}}",
+      "redesign_prompt": "[Plan revision request] \"{{title}}\" (rev.{{revision}}) was abandoned after review failure.\n\n**Reviewer verdict**: {{verdict}}\n\n**Findings (failure causes)**:\n{{findings}}\n{{recsBlock}}\n\nAnalyze the findings above and propose a revised rev.{{nextRevision}} Plan that fixes the failed subtasks, in `<!-- tunaflow:plan-proposal -->` format.\nKeep successful subtasks as-is; only revise the parts that caused the failure.",
+      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}"
+    }
   }
 }

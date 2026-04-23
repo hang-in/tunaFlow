@@ -36,5 +36,35 @@
     "busy": "병합 중...",
     "button": "Plan에 병합",
     "error": "Plan 병합 실패: {{error}}"
+  },
+  "review": {
+    "verdict": {
+      "verdict_fail_label": "실패",
+      "verdict_conditional_label": "조건부",
+      "edit_label": "수정:",
+      "code_rewrite_button": "코드 재작성",
+      "code_rewrite_tooltip": "Findings를 DEV에 전달하고 바로 구현 단계로 전환",
+      "redesign_button": "처음부터 재설계",
+      "redesign_tooltip": "Plan 단계로 복귀 — Architect가 처음부터 재설계",
+      "done_button": "완료-> Done",
+      "approve_anyway_button": "그래도 완료",
+      "back_button": "돌아가기",
+      "done_confirm_prefix": "리뷰어 판정이 ",
+      "done_confirm_suffix": "입니다. 이대로 완료 시 기대 동작을 하지 않을 수 있습니다.",
+      "auto_completed": "자동 처리 완료",
+      "approve_error": "완료 처리 실패: {{error}}",
+      "rework_error": "Rework 처리 실패: {{error}}",
+      "dev_delivery_success": "DEV에게 conditional findings를 전달했습니다",
+      "dev_delivery_error": "DEV 전달 실패: {{error}}",
+      "redesign_success": "원안이 폐기되었습니다. Architect가 재설계를 시작합니다.",
+      "redesign_error": "재설계 전환 실패: {{error}}",
+      "redesign_event_reason": "리뷰 실패 — 원안 폐기, 재설계 요청",
+      "findings_empty_conditional": " (세부 findings 없음 — Review Branch를 직접 확인하세요)",
+      "findings_empty_redesign": "- (세부 findings 없음 — Review Branch를 참고하세요)",
+      "conditional_prompt": "[Conditional Review] 리뷰어가 일부 수정을 요청했습니다.\n\n**Findings (수정 필요):{{findings}}\n{{recsBlock}}\n\n수정 후 impl-complete 마커를 출력해 주세요.",
+      "conditional_recs_block": "**Recommendations:{{recs}}",
+      "redesign_prompt": "[Plan 개정 요청] \"{{title}}\" (rev.{{revision}})이 리뷰 실패로 폐기되었습니다.\n\n**리뷰어 판정**: {{verdict}}\n\n**Findings (실패 원인)**:\n{{findings}}\n{{recsBlock}}\n\n위 findings를 분석하여 실패한 서브태스크를 수정한 rev.{{nextRevision}} Plan을 `<!-- tunaflow:plan-proposal -->` 형식으로 제안해 주세요.\n성공한 서브태스크는 유지하고, 실패 원인이 된 부분만 수정하세요.",
+      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}"
+    }
   }
 }
