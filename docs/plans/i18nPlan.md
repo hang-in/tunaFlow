@@ -378,10 +378,37 @@ Phase 4B (반나절):  insightOrchestration 영어 전환 + A/B 검증          
 
 ---
 
-## 9. 참고
+## 11. 참고
 
 - react-i18next 공식 문서: https://react.i18next.com/
 - 현재 프론트 문자열 조사: 88파일, ~1,300+ 문자열
 - ContextPack user_profile: `preferredLanguages` 필드 — prompt_assembly.rs:153,180에서 이미 per-request로 읽는 중
 - 프로젝트 규칙: projects.rs:481-512에서 "사용자 언어에 맞춰 응답" 이미 명시
 - 디자인 시스템: 텍스트 길이 변화에 따른 레이아웃 대응 필요 (EN이 KR보다 보통 20-30% 김)
+
+---
+
+## 12. Developer 핸드오프 — PR B (베타 공개 이후)
+
+> 베타 공개 후 안정기에 처리. PR A 머지 + 실사용 검증 완료 후 착수.
+
+```
+[작업] i18n PR B — insightOrchestration.ts 영어 전환 + A/B 검증
+
+[전제]
+- PR A 머지 완료 상태.
+- tunaInsight (또는 동급 테스트 프로젝트) 에서 Insight 분석 실행 가능 환경.
+
+[범위]
+- Phase 4B-1: src/lib/insightOrchestration.ts 시스템 프롬프트 / 카테고리 라벨 / severity 기준 / evidence 설명 / JSON 예시 모두 영어 재작성.
+- Phase 4B-2: 동일 프로젝트에서 한국어 프롬프트 버전 vs 영어 프롬프트 버전 각 1회 분석 → finding 수 / severity 분포 / JSON 파싱 성공률 / finding 설명 구체성 비교.
+- Phase 4B-3: ContextPack 응답 언어 지시 (user_profile.preferredLanguages → assemble_prompt()) 실제 동작 확인, 미동작 시 "Respond in {lang}." 한 줄 추가.
+
+[INV]
+- [INV-3] A/B 검증 통과 후에만 merge. 영어 버전이 한국어 버전 대비 동등 이상일 때 확정.
+- 품질 하락 시 한국어 유지 (기능 > 일관성). 롤백은 git revert 로 단일 커밋.
+
+[PR 설명 필수 항목]
+- A/B 비교 수치 표 (finding 수 / severity / JSON 파싱률 / 대표 finding 예시 2~3건).
+- 결정: 영어 전환 확정 / 한국어 유지 중 어느 쪽인지 명시.
+```
