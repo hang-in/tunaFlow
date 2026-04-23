@@ -167,6 +167,14 @@ pub fn assemble_prompt(
         included_sections.push("worldview".into());
     }
 
+    // Project identity summary — 최근 분석 결과 (projectIdentityAnalysisPlan subtask-03).
+    // worldview 뒤, identity 앞에 삽입. context_loading 에서 pre-load 해 둔 fragment
+    // 만 참조하므로 여기서 DB 접근 없음. frontmatter 는 이미 strip 된 상태.
+    if let Some(identity_text) = &data.identity_summary_fragment {
+        sections.push(format!("## Project Identity\n\n{}", identity_text));
+        included_sections.push("project-identity".into());
+    }
+
     // Identity + Persona section
     {
         let (identity_block, persona_block) = parse_identity_and_persona(identity_fragment);
@@ -704,6 +712,7 @@ mod tests {
             user_profile: None,
             conventions_synced: false,
             is_session_continuation: false,
+            identity_summary_fragment: None,
         }
     }
 
@@ -737,6 +746,38 @@ mod tests {
         if let Some(p) = idx_platform {
             assert!(p < idx_worldview.unwrap(), "platform 은 worldview 앞");
         }
+    }
+
+    #[test]
+    fn identity_summary_injected_between_worldview_and_identity() {
+        // subtask-03 INV: project_identity 는 worldview 뒤, identity 앞.
+        let tmp = TempDir::new().unwrap();
+        let project_dir = tmp.path().to_path_buf();
+        let wv_path = project_dir.join(".tunaflow").join("user_worldview.md");
+        fs::create_dir_all(wv_path.parent().unwrap()).unwrap();
+        fs::write(&wv_path, "# worldview body").unwrap();
+
+        let mut data = empty_context_data(Some(project_dir.to_string_lossy().to_string()));
+        data.identity_summary_fragment = Some("### Project identity\nsummary body".into());
+
+        let (_a, _s, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+        let idx_wv = meta.sections.iter().position(|s| s == "worldview").unwrap();
+        let idx_id = meta.sections.iter().position(|s| s == "identity").unwrap();
+        let idx_pi = meta
+            .sections
+            .iter()
+            .position(|s| s == "project-identity")
+            .expect("project-identity 섹션이 존재해야");
+        assert!(idx_wv < idx_pi, "project-identity 는 worldview 뒤");
+        assert!(idx_pi < idx_id, "project-identity 는 identity 앞");
+    }
+
+    #[test]
+    fn identity_summary_absent_when_fragment_is_none() {
+        let tmp = TempDir::new().unwrap();
+        let data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        let (_a, _s, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+        assert!(!meta.sections.iter().any(|s| s == "project-identity"));
     }
 
     #[test]

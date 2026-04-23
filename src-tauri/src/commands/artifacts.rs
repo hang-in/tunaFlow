@@ -179,6 +179,48 @@ pub fn delete_artifact(id: String, state: State<DbState>) -> Result<(), AppError
     Ok(())
 }
 
+// ─── Identity summary (subtask-03, analyzer 전용 경로) ────────────────────
+
+/// 분석 output artifact 를 저장하는 analyzer 전용 헬퍼. `create_identity_input_artifact`
+/// 의 INV-1 enforcement (IdentitySummary kind 거부) 를 우회한다.
+/// 호출 site 는 `agents::identity_analyzer` 모듈에 한정 (crate-private).
+pub(crate) fn create_identity_summary(
+    conn: &Connection,
+    project_key: &str,
+    title: &str,
+    content: &str,
+) -> Result<String, AppError> {
+    let id = format!("identity-{}-{}", project_key, now_epoch_ms());
+    let now = now_epoch_ms();
+    conn.execute(
+        "INSERT INTO artifacts (id, conversation_id, branch_id, subtask_id, plan_id, type, title, content, status, created_at, updated_at) \
+         VALUES (?1, NULL, NULL, NULL, NULL, 'identity_summary', ?2, ?3, 'final', ?4, ?4)",
+        params![id, title, content, now],
+    )?;
+    Ok(id)
+}
+
+/// ContextPack 주입 용 — project 별 최신 `identity_summary` artifact 를 가져온다.
+/// frontmatter 의 `project_key: <key>` 를 LIKE 매칭. subtask 당 월 수개 수준이라
+/// 풀스캔 허용.
+pub(crate) fn fetch_latest_identity_summary(
+    conn: &Connection,
+    project_key: &str,
+) -> Result<Option<Artifact>, AppError> {
+    let pattern = format!("%project_key: {}\n%", project_key);
+    let row = conn
+        .query_row(
+            "SELECT id, conversation_id, branch_id, subtask_id, plan_id, type, title, content, status, created_at, updated_at \
+             FROM artifacts \
+             WHERE type = 'identity_summary' AND content LIKE ?1 \
+             ORDER BY created_at DESC LIMIT 1",
+            [&pattern],
+            map_row,
+        )
+        .ok();
+    Ok(row)
+}
+
 // ─── Identity input artifacts (projectIdentityAnalysisPlan subtask-01) ───────
 
 /// Dedup window (ms) — 같은 `(conversation_id, type, content-hash)` 튜플이 이 이내
@@ -401,6 +443,62 @@ mod tests {
         )
         .unwrap();
         assert!(second.is_some(), "content 가 다르면 새 row 생성되어야");
+    }
+
+    #[test]
+    fn create_identity_summary_persists_with_final_status() {
+        let conn = test_conn();
+        let id = create_identity_summary(
+            &conn,
+            "proj-x",
+            "Identity — proj-x",
+            "---\nproject_key: proj-x\n---\n\n### Project identity\nbody",
+        )
+        .unwrap();
+        assert!(id.starts_with("identity-proj-x-"));
+        let (typ, status): (String, String) = conn
+            .query_row(
+                "SELECT type, status FROM artifacts WHERE id = ?1",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(typ, "identity_summary");
+        assert_eq!(status, "final");
+    }
+
+    #[test]
+    fn fetch_latest_identity_summary_returns_most_recent_for_project() {
+        let conn = test_conn();
+        // 두 project 혼재
+        create_identity_summary(
+            &conn, "proj-a", "a1",
+            "---\nproject_key: proj-a\n---\n\n### Project identity\nv1",
+        )
+        .unwrap();
+        // 살짝 시간차
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let id2 = create_identity_summary(
+            &conn, "proj-a", "a2",
+            "---\nproject_key: proj-a\n---\n\n### Project identity\nv2",
+        )
+        .unwrap();
+        create_identity_summary(
+            &conn, "proj-b", "b1",
+            "---\nproject_key: proj-b\n---\n\n### Project identity\nother",
+        )
+        .unwrap();
+
+        let found = fetch_latest_identity_summary(&conn, "proj-a").unwrap().unwrap();
+        assert_eq!(found.id, id2, "proj-a 의 가장 최근 summary");
+        assert!(found.content.contains("v2"));
+    }
+
+    #[test]
+    fn fetch_latest_identity_summary_returns_none_when_absent() {
+        let conn = test_conn();
+        let found = fetch_latest_identity_summary(&conn, "missing-proj").unwrap();
+        assert!(found.is_none());
     }
 
     #[test]

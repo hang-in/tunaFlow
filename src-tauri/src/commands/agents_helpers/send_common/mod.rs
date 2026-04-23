@@ -51,6 +51,7 @@ mod tests {
             user_profile: None,
             conventions_synced: false,
             is_session_continuation: false,
+            identity_summary_fragment: None,
         }
     }
 

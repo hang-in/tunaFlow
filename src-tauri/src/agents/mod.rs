@@ -8,6 +8,7 @@ pub mod crg;
 pub mod embedder;
 pub mod gemini;
 pub mod gemini_sdk;
+pub mod identity_analyzer;
 pub mod loader;
 pub mod openai_compat;
 pub mod openai_sdk;

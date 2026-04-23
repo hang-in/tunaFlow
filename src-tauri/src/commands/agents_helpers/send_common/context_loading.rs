@@ -103,6 +103,11 @@ pub struct ContextData {
     /// 가지고 있어 tunaFlow prepend 가 오염원이 되기 때문. 에이전트는 필요 시
     /// `tool-request:recent_turns:N` 으로 명시 조회. False 면 정상 Full + anchor.
     pub is_session_continuation: bool,
+
+    /// projectIdentityAnalysisPlan subtask-03: project 별 최신 `identity_summary`
+    /// artifact 의 body (frontmatter strip 후). ContextPack 주입 시 worldview 뒤 /
+    /// identity 앞 위치. 없으면 None.
+    pub identity_summary_fragment: Option<String>,
 }
 
 /// Phase A: Load all data needed for ContextPack assembly from DB.
@@ -493,6 +498,17 @@ pub fn load_context_data(
         .map(|pk| crate::commands::conventions_sync::is_conventions_sync_enabled(conn, pk))
         .unwrap_or(false);
 
+    // projectIdentityAnalysisPlan subtask-03: 최신 identity_summary 를 pre-load 해
+    // ContextPack 주입에 사용. frontmatter 는 strip 후 저장.
+    let identity_summary_fragment: Option<String> = project_key
+        .as_deref()
+        .and_then(|pk| {
+            crate::commands::artifacts::fetch_latest_identity_summary(conn, pk)
+                .ok()
+                .flatten()
+        })
+        .map(|a| crate::agents::identity_analyzer::strip_frontmatter(&a.content).to_string());
+
     ContextData {
         conversation_id: conversation_id.to_string(),
         project_path: project_path.map(|s| s.to_string()),
@@ -521,6 +537,7 @@ pub fn load_context_data(
         user_profile: user_profile_json.map(|s| s.to_string()),
         conventions_synced,
         is_session_continuation: false, // persistence.rs 에서 필요시 true 로 override
+        identity_summary_fragment,
     }
 }
 
