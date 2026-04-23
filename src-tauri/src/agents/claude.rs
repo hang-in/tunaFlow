@@ -34,7 +34,21 @@ struct StreamLine {
     total_cost_usd: Option<f64>,
     total_input_tokens: Option<i64>,
     total_output_tokens: Option<i64>,
+    /// claude CLI 최신 스키마 — usage 가 nested. top-level total_*_tokens 는 일부
+    /// 버전에서 부재하므로 `.or_else()` fallback 으로 양쪽 모두 지원.
+    /// insightStabilityPlan Subtask 03 (INV-3).
+    usage: Option<StreamUsage>,
     session_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StreamUsage {
+    input_tokens: Option<i64>,
+    output_tokens: Option<i64>,
+    #[allow(dead_code)]
+    cache_creation_input_tokens: Option<i64>,
+    #[allow(dead_code)]
+    cache_read_input_tokens: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -88,7 +102,19 @@ pub struct ClaudeJsonOutput {
     pub cost_usd: Option<f64>,
     pub total_input_tokens: Option<i64>,
     pub total_output_tokens: Option<i64>,
+    /// 최신 스키마 — usage nested. StreamLine 와 동일 fallback (INV-3).
+    pub usage: Option<ClaudeUsage>,
     pub session_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClaudeUsage {
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    #[allow(dead_code)]
+    pub cache_creation_input_tokens: Option<i64>,
+    #[allow(dead_code)]
+    pub cache_read_input_tokens: Option<i64>,
 }
 
 pub struct RunInput {
@@ -185,20 +211,33 @@ where
     let mut final_output: Option<RunOutput> = None;
     let mut unparsed_lines: Vec<String> = Vec::new();
 
-    // Idle timeout: kill process if no output for 10 minutes
+    // Idle timeout: kill process if no output for 10 minutes.
+    // insightStabilityPlan Subtask 04 (INV-4): watchdog 가 `timed_out` 플래그를 set
+    // 하면 reader 루프 exit 후 distinct 에러 반환 → 상위 (run_insight_analysis) 가
+    // insight_sessions.status = 'failed' 로 전이할 때 원인 구분 가능.
     let idle_timeout = std::time::Duration::from_secs(600);
     let last_activity = std::sync::Arc::new(parking_lot::Mutex::new(std::time::Instant::now()));
+    let timed_out = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let child_id = child.id();
     {
         let last_act = std::sync::Arc::clone(&last_activity);
+        let timed_out_flag = std::sync::Arc::clone(&timed_out);
         thread::spawn(move || {
             loop {
                 thread::sleep(std::time::Duration::from_secs(30));
                 let elapsed = last_act.lock().elapsed();
                 if elapsed > idle_timeout {
-                    eprintln!("[agent-timeout] No output for {}s, killing pid {}", elapsed.as_secs(), child_id);
+                    eprintln!(
+                        "[agent-timeout] No output for {}s, killing pid {}",
+                        elapsed.as_secs(),
+                        child_id
+                    );
+                    timed_out_flag.store(true, std::sync::atomic::Ordering::SeqCst);
                     // Best-effort kill via system command
-                    let _ = std::process::Command::new("kill").arg("-9").arg(child_id.to_string()).output();
+                    let _ = std::process::Command::new("kill")
+                        .arg("-9")
+                        .arg(child_id.to_string())
+                        .output();
                     break;
                 }
             }
@@ -287,8 +326,16 @@ where
                 final_output = Some(RunOutput {
                     content: parsed.result.unwrap_or_default(),
                     cost_usd: parsed.total_cost_usd.or(parsed.cost_usd).unwrap_or(0.0),
-                    input_tokens: parsed.total_input_tokens.unwrap_or(0),
-                    output_tokens: parsed.total_output_tokens.unwrap_or(0),
+                    // INV-3: top-level total_*_tokens 우선, 최신 스키마의 nested
+                    // usage.*_tokens 로 fallback. 양쪽 None 이면 0.
+                    input_tokens: parsed
+                        .total_input_tokens
+                        .or_else(|| parsed.usage.as_ref().and_then(|u| u.input_tokens))
+                        .unwrap_or(0),
+                    output_tokens: parsed
+                        .total_output_tokens
+                        .or_else(|| parsed.usage.as_ref().and_then(|u| u.output_tokens))
+                        .unwrap_or(0),
                     session_id: parsed.session_id,
                 });
             }
@@ -298,6 +345,14 @@ where
 
     child.wait()?;
     let stderr_content = stderr_handle.join().unwrap_or_default();
+
+    // Watchdog 가 kill 했으면 원인 구분된 에러로 반환 (INV-4).
+    if timed_out.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(AppError::Agent(format!(
+            "agent timeout after {}s: claude subprocess killed by watchdog (no output within idle window)",
+            idle_timeout.as_secs()
+        )));
+    }
 
     final_output.ok_or_else(|| {
         // Build a diagnostic message using stderr, then unparsed stdout lines as fallback
@@ -378,8 +433,119 @@ pub fn run(input: RunInput) -> Result<RunOutput, AppError> {
     Ok(RunOutput {
         content: parsed.result.unwrap_or_default(),
         cost_usd: parsed.cost_usd.unwrap_or(0.0),
-        input_tokens: parsed.total_input_tokens.unwrap_or(0),
-        output_tokens: parsed.total_output_tokens.unwrap_or(0),
+        // INV-3: nested usage.*_tokens fallback (최신 schema 지원)
+        input_tokens: parsed
+            .total_input_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.input_tokens))
+            .unwrap_or(0),
+        output_tokens: parsed
+            .total_output_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.output_tokens))
+            .unwrap_or(0),
         session_id: parsed.session_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// insightStabilityPlan Subtask 03 — INV-3 검증.
+    /// old schema (top-level total_*_tokens) 와 new schema (nested usage.*_tokens)
+    /// 양쪽 모두 parse 하여 non-zero tokens 반환.
+    #[test]
+    fn claude_json_output_parses_top_level_tokens_old_schema() {
+        let json = r#"{
+            "type": "result",
+            "result": "hi",
+            "is_error": false,
+            "cost_usd": 0.01,
+            "total_input_tokens": 100,
+            "total_output_tokens": 50,
+            "session_id": "s1"
+        }"#;
+        let parsed: ClaudeJsonOutput = serde_json::from_str(json).unwrap();
+        let input = parsed
+            .total_input_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.input_tokens))
+            .unwrap_or(0);
+        let output = parsed
+            .total_output_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.output_tokens))
+            .unwrap_or(0);
+        assert_eq!(input, 100);
+        assert_eq!(output, 50);
+    }
+
+    #[test]
+    fn claude_json_output_parses_nested_usage_new_schema() {
+        // 실제 claude CLI 2.1.x `result` 이벤트 구조 재현
+        let json = r#"{
+            "type": "result",
+            "result": "hi",
+            "is_error": false,
+            "total_cost_usd": 0.132644,
+            "usage": {
+                "input_tokens": 6,
+                "output_tokens": 12,
+                "cache_creation_input_tokens": 19878,
+                "cache_read_input_tokens": 16153
+            },
+            "session_id": "s1"
+        }"#;
+        let parsed: ClaudeJsonOutput = serde_json::from_str(json).unwrap();
+        // top-level 없음
+        assert!(parsed.total_input_tokens.is_none());
+        assert!(parsed.total_output_tokens.is_none());
+        // fallback 체인이 usage 에서 찾음
+        let input = parsed
+            .total_input_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.input_tokens))
+            .unwrap_or(0);
+        let output = parsed
+            .total_output_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.output_tokens))
+            .unwrap_or(0);
+        assert_eq!(input, 6);
+        assert_eq!(output, 12);
+    }
+
+    #[test]
+    fn stream_line_parses_nested_usage_new_schema() {
+        let json = r#"{
+            "type": "result",
+            "result": "hi",
+            "is_error": false,
+            "total_cost_usd": 0.13,
+            "usage": {
+                "input_tokens": 6,
+                "output_tokens": 12,
+                "cache_creation_input_tokens": 100,
+                "cache_read_input_tokens": 50
+            },
+            "session_id": "s1"
+        }"#;
+        let parsed: StreamLine = serde_json::from_str(json).unwrap();
+        let input = parsed
+            .total_input_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.input_tokens))
+            .unwrap_or(0);
+        let output = parsed
+            .total_output_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.output_tokens))
+            .unwrap_or(0);
+        assert_eq!(input, 6);
+        assert_eq!(output, 12);
+    }
+
+    #[test]
+    fn both_schemas_absent_returns_zero() {
+        let json = r#"{"type":"result","result":"hi","is_error":false,"cost_usd":0.01,"session_id":"s1"}"#;
+        let parsed: ClaudeJsonOutput = serde_json::from_str(json).unwrap();
+        let input = parsed
+            .total_input_tokens
+            .or_else(|| parsed.usage.as_ref().and_then(|u| u.input_tokens))
+            .unwrap_or(0);
+        assert_eq!(input, 0);
+    }
 }

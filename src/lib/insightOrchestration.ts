@@ -216,10 +216,16 @@ export async function runInsightAnalysis(
     for (const catExtraction of extraction.categories) {
       const cat = catExtraction.category as InsightCategory;
       const catLabel = CATEGORY_LABELS[cat] || cat;
-      const hasData = catExtraction.snippets.length > 0 || catExtraction.extraContext.length > 0;
+      // insightStabilityPlan Subtask 02 (INV-2): 증거 기반 분석 원칙 — snippets 가
+      // 없으면 extraContext 만으로는 LLM 이 "아래 스니펫에서 확인할 수 있는 문제만
+      // 보고" 시스템 규칙과 모순되어 extended thinking 폭주 + hallucination 위험.
+      // OR 였던 기존 조건을 AND-equivalent (스니펫 필수) 로 강화.
+      const hasData = catExtraction.snippets.length > 0;
 
       if (!hasData) {
-        onProgress?.(`${catLabel}: 사전 추출 데이터 없음, 건너뜀`);
+        onProgress?.(
+          `${catLabel}: 스니펫 없음, 건너뜀 (extraContext=${catExtraction.extraContext.length})`,
+        );
         continue;
       }
 
