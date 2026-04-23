@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Message, Branch } from "@/types";
 import { useChatStore } from "@/stores/chatStore";
@@ -11,6 +12,7 @@ import { CreateRoundtableDialog } from "./CreateRoundtableDialog";
 import { SaveArtifactDialog } from "./SaveArtifactDialog";
 
 export function ChatPanel() {
+  const { t: chatT } = useTranslation("chat");
   // Selective subscriptions — only re-render when these specific fields change
   const messages = useChatStore((s) => s.messages);
   const branches = useChatStore((s) => s.branches);
@@ -291,7 +293,7 @@ export function ChatPanel() {
               <button
                 onClick={scrollToBottom}
                 className="pointer-events-auto w-8 h-8 rounded-full bg-background/90 hover:bg-accent border border-border text-muted-foreground hover:text-foreground flex items-center justify-center shadow-lg backdrop-blur-sm transition-all"
-                aria-label="최신 메시지로"
+                aria-label={chatT("input.scroll_to_latest")}
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="6 9 12 15 18 9" />

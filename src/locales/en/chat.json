@@ -2,9 +2,17 @@
   "input": {
     "placeholder": "Type a message... (Shift+Enter for newline)",
     "placeholder_empty_project": "Select a project first",
+    "placeholder_no_conversation": "Select a conversation first",
+    "placeholder_rt_empty": "Start roundtable…  ↵ send · ⇧↵ newline",
+    "placeholder_rt_follow": "/follow codex,claude <prompt> or type…  ↵ send · ⇧↵ newline",
+    "placeholder_chat": "Ask anything…  ↵ send · ⇧↵ newline · drag/paste images/files",
     "send_button": "Send",
     "stop_button": "Stop",
-    "attach_button": "Attach file"
+    "attach_button": "Attach file",
+    "attach_no_project": "No project selected — cannot attach",
+    "attach_too_large": "{{name}}: exceeds 20MB — skipped",
+    "attach_failed": "Attach failed: {{error}}",
+    "scroll_to_latest": "Scroll to latest message"
   },
   "message": {
     "role_user": "You",

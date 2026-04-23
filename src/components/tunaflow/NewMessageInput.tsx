@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { getSetting, setSetting } from "@/lib/appStore";
@@ -26,6 +27,7 @@ interface NewMessageInputProps {
 }
 
 export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageInputProps) {
+  const { t } = useTranslation("chat");
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const conversations = useChatStore((s) => s.conversations);
   const activeBranchId = useChatStore((s) => s.activeBranchId);
@@ -236,7 +238,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     const projectPath = await resolveProjectPath();
     if (!projectPath) {
       const { toast } = await import("sonner");
-      toast.error("프로젝트가 선택되지 않아 첨부할 수 없습니다");
+      toast.error(t("input.attach_no_project"));
       return;
     }
     setAttachBusy(true);
@@ -246,7 +248,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
           const bytes = await readFsFile(path);
           if (bytes.byteLength > MAX_ATTACHMENT_SIZE) {
             const { toast } = await import("sonner");
-            toast.error(`${path.split("/").pop()}: 20MB 초과 — 건너뜀`);
+            toast.error(t("input.attach_too_large", { name: path.split("/").pop() ?? "" }));
             continue;
           }
           const name = path.split("/").pop() ?? "file";
@@ -256,7 +258,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         } catch (e) {
           console.warn("[attach]", path, e);
           const { toast } = await import("sonner");
-          toast.error(`첨부 실패: ${formatError(e)}`);
+          toast.error(t("input.attach_failed", { error: formatError(e) }));
         }
       }
     } finally {
@@ -268,7 +270,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
     const projectPath = await resolveProjectPath();
     if (!projectPath) {
       const { toast } = await import("sonner");
-      toast.error("프로젝트가 선택되지 않아 첨부할 수 없습니다");
+      toast.error(t("input.attach_no_project"));
       return;
     }
     setAttachBusy(true);
@@ -276,7 +278,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
       for (const f of Array.from(files)) {
         if (f.size > MAX_ATTACHMENT_SIZE) {
           const { toast } = await import("sonner");
-          toast.error(`${f.name}: 20MB 초과 — 건너뜀`);
+          toast.error(t("input.attach_too_large", { name: f.name }));
           continue;
         }
         try {
@@ -286,7 +288,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         } catch (e) {
           console.warn("[attach]", f.name, e);
           const { toast } = await import("sonner");
-          toast.error(`첨부 실패: ${formatError(e)}`);
+          toast.error(t("input.attach_failed", { error: formatError(e) }));
         }
       }
     } finally {
@@ -508,12 +510,12 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
           onDrop={handleDrop}
           placeholder={
             !selectedConversationId
-              ? "Select a conversation first"
+              ? t("input.placeholder_no_conversation")
               : isRoundtable
               ? hasRtMessages
-                ? "/follow codex,claude <prompt> or type…  ↵ send · ⇧↵ newline"
-                : "Start roundtable…  ↵ send · ⇧↵ newline"
-              : "Ask anything…  ↵ send · ⇧↵ newline · 이미지/파일 드래그·붙여넣기 가능"
+                ? t("input.placeholder_rt_follow")
+                : t("input.placeholder_rt_empty")
+              : t("input.placeholder_chat")
           }
           disabled={!selectedConversationId}
           rows={1}
