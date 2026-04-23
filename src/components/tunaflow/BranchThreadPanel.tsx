@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Check, GitBranch, Users, Trash2, ChevronsLeft, ChevronsRight, ChevronRight, AlertTriangle, Pin, PinOff } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -16,6 +17,7 @@ import * as planApi from "@/lib/api/plans";
 import { useNavigationChain } from "./useNavigationChain";
 
 export function BranchThreadPanel() {
+  const { t } = useTranslation("branch");
   const {
     threadBranchId,
     threadBranchConvId,
@@ -120,7 +122,7 @@ export function BranchThreadPanel() {
   return (
     <div
       role="complementary"
-      aria-label="브랜치/라운드테이블 패널"
+      aria-label={t("panel.aria_label")}
       className="flex flex-col w-full h-full bg-background"
     >
       {/* Header — navigator + actions */}
@@ -216,9 +218,9 @@ export function BranchThreadPanel() {
                 closeThread();
               }}
               className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-status-approved/70 hover:bg-status-approved/8 transition-colors"
-              title="대화 완료 → Branch 아카이브"
+              title={t("action.complete_tooltip")}
             >
-              <Check className="w-2.5 h-2.5" />완료
+              <Check className="w-2.5 h-2.5" />{t("action.complete_button")}
             </button>
           )}
           {!isReadOnly && threadBranch?.checkpointId && (
@@ -238,9 +240,9 @@ export function BranchThreadPanel() {
               }
               const hasAdopted = branches.some((b) => descendants.includes(b.id) && (b.status === "adopted" || b.status === "archived"));
               const message = hasAdopted
-                ? `"${threadBranchLabel}" 브랜치에 채택된 결과가 포함되어 있습니다.\n하위 브랜치와 이력이 모두 삭제됩니다. 계속하시겠습니까?`
-                : `"${threadBranchLabel}" 브랜치를 삭제하시겠습니까?`;
-              const yes = await ask(message, { title: "브랜치 삭제", kind: "warning" });
+                ? t("confirm.delete_with_adopted_body", { label: threadBranchLabel })
+                : t("confirm.delete_body", { label: threadBranchLabel });
+              const yes = await ask(message, { title: t("confirm.delete_title"), kind: "warning" });
               if (yes) {
                 closeThread();
                 deleteBranch(threadBranchId);
@@ -372,6 +374,7 @@ export function BranchThreadPanel() {
  * Appears after 15s of spinning with no streaming activity.
  */
 function StuckRecoveryButton({ convId }: { convId: string | null }) {
+  const { t } = useTranslation("branch");
   const [visible, setVisible] = useState(false);
   const [recovering, setRecovering] = useState(false);
 
@@ -400,9 +403,9 @@ function StuckRecoveryButton({ convId }: { convId: string | null }) {
       onClick={handleRecover}
       disabled={recovering}
       className="ml-2 text-[9px] text-muted-foreground/40 hover:text-muted-foreground transition-colors disabled:opacity-30"
-      title="PTY가 완료되었는데 스피너가 멈추지 않을 때 클릭"
+      title={t("recovery.tooltip")}
     >
-      {recovering ? "불러오는 중..." : "응답 불러오기"}
+      {recovering ? t("recovery.busy") : t("recovery.button")}
     </button>
   );
 }
@@ -412,10 +415,11 @@ function StuckRecoveryButton({ convId }: { convId: string | null }) {
 function PlanRevisionActions({ plan, threadMessages, threadBranchConvId }: {
   plan: Plan; threadMessages: Message[]; threadBranchConvId: string | null;
 }) {
+  const { t } = useTranslation("branch");
   const [mode, setMode] = useState<"idle" | "select" | "busy">("idle");
   const [engine, setEngine] = useState("claude");
 
-  if (mode === "busy") return <span className="text-[9px] text-amber-600/50">전송 중...</span>;
+  if (mode === "busy") return <span className="text-[9px] text-amber-600/50">{t("plan_revision.sending")}</span>;
 
   if (mode === "select") return (
     <div className="flex items-center gap-1">
@@ -435,18 +439,18 @@ function PlanRevisionActions({ plan, threadMessages, threadBranchConvId }: {
           setMode("idle");
         }}
         className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
-      >전송</button>
-      <button onClick={() => setMode("idle")} className="text-[9px] text-muted-foreground hover:text-foreground">취소</button>
+      >{t("plan_revision.send_button")}</button>
+      <button onClick={() => setMode("idle")} className="text-[9px] text-muted-foreground hover:text-foreground">{t("plan_revision.cancel_button")}</button>
     </div>
   );
 
   return (
     <button
       onClick={() => setMode("select")}
-      title="계획 수정 요청 — Architect에게 전달"
+      title={t("plan_revision.tooltip")}
       className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-amber-600/60 hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
     >
-      <AlertTriangle className="w-2.5 h-2.5" />계획 수정
+      <AlertTriangle className="w-2.5 h-2.5" />{t("plan_revision.button")}
     </button>
   );
 }

@@ -1,0 +1,40 @@
+{
+  "panel": {
+    "aria_label": "Branch / Roundtable panel"
+  },
+  "action": {
+    "complete_button": "Done",
+    "complete_tooltip": "Complete conversation → Archive branch"
+  },
+  "confirm": {
+    "delete_title": "Delete branch",
+    "delete_body": "Delete branch \"{{label}}\"?",
+    "delete_with_adopted_body": "Branch \"{{label}}\" contains adopted results.\nAll child branches and history will be deleted. Continue?"
+  },
+  "recovery": {
+    "tooltip": "Click when PTY finished but the spinner keeps running",
+    "busy": "Loading...",
+    "button": "Load response"
+  },
+  "plan_revision": {
+    "sending": "Sending...",
+    "send_button": "Send",
+    "cancel_button": "Cancel",
+    "button": "Revise plan",
+    "tooltip": "Request plan revision — delivered to Architect"
+  },
+  "roundtable": {
+    "labels": {
+      "parent_chat": "Parent chat"
+    },
+    "placeholder": {
+      "select_chat": "Select a chat"
+    },
+    "empty": {
+      "no_chats": "No chats yet. Create a chat first."
+    },
+    "warning": {
+      "no_models": "{{names}} — no model selected (using engine default)"
+    }
+  }
+}

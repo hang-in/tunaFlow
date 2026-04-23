@@ -13,6 +13,7 @@ import type koSidebar from "../locales/ko/sidebar.json";
 import type koChat from "../locales/ko/chat.json";
 import type koDialog from "../locales/ko/dialog.json";
 import type koWorkflow from "../locales/ko/workflow.json";
+import type koBranch from "../locales/ko/branch.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -25,6 +26,7 @@ declare module "i18next" {
       chat: typeof koChat;
       dialog: typeof koDialog;
       workflow: typeof koWorkflow;
+      branch: typeof koBranch;
     };
   }
 }

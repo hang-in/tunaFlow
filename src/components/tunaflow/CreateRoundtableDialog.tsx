@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -23,6 +24,7 @@ interface CreateRoundtableDialogProps {
 }
 
 export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRoundtableDialogProps) {
+  const { t } = useTranslation("branch");
   const { selectedConversationId, conversations, createBranch, selectConversation, engineModels } = useChatStore();
 
   // Non-shadow, non-RT conversations for parent selection
@@ -202,13 +204,13 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
           {/* Parent conversation selector — shown when creating from sidebar with multiple chats */}
           {!checkpointId && chatConvs.length > 1 && (
             <div>
-              <label className="text-[11px] text-sidebar-foreground/60 mb-1 block">상위 채팅</label>
+              <label className="text-[11px] text-sidebar-foreground/60 mb-1 block">{t("roundtable.labels.parent_chat")}</label>
               <select
                 value={effectiveParentConvId ?? ""}
                 onChange={(e) => setParentConvId(e.target.value || null)}
                 className="w-full bg-input rounded-md px-3 py-1.5 text-[12px] outline-none text-foreground border border-border/30 focus:border-ring/40 cursor-pointer"
               >
-                <option value="">채팅을 선택하세요</option>
+                <option value="">{t("roundtable.placeholder.select_chat")}</option>
                 {chatConvs.map((c) => (
                   <option key={c.id} value={c.id}>{c.customLabel ?? c.label}</option>
                 ))}
@@ -217,7 +219,7 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
           )}
           {!checkpointId && chatConvs.length === 0 && (
             <div className="text-[10px] text-destructive/70 bg-destructive/5 rounded px-2.5 py-1.5">
-              채팅이 없습니다. 먼저 채팅을 생성하세요.
+              {t("roundtable.empty.no_chats")}
             </div>
           )}
 
@@ -293,7 +295,7 @@ export function CreateRoundtableDialog({ open, onClose, checkpointId }: CreateRo
           {/* Validation warnings */}
           {noModelParticipants.length > 0 && (
             <div className="text-[10px] text-amber-500/70 bg-amber-500/5 rounded px-2.5 py-1.5">
-              {noModelParticipants.map((p) => p.name).join(", ")} — 모델 미선택 (엔진 기본값 사용)
+              {t("roundtable.warning.no_models", { names: noModelParticipants.map((p) => p.name).join(", ") })}
             </div>
           )}
 
