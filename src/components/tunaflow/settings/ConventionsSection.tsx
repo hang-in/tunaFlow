@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/stores/chatStore";
 import { Loader2, RefreshCw, Trash2, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -30,17 +31,15 @@ interface SyncReport {
   truncated: string[];
 }
 
-const LAYER_OPTIONS = [
-  { id: "platform", label: "Platform / Project meta", hint: "프로젝트 path, 빌드 명령어, 언어 등" },
-  { id: "agent_role", label: "Agent role", hint: "에이전트 역할 지침 (architect/coder/reviewer 등)" },
-  { id: "persona", label: "Persona", hint: "페르소나 행동 지침" },
-  { id: "user_profile", label: "User profile", hint: "사용자 정보, 선호" },
-  { id: "plan_doc", label: "Plan document", hint: "현재 진행 중인 plan 본문 (revision 기반)" },
-  { id: "findings", label: "Findings", hint: "이전 review verdict의 findings 본문" },
-  { id: "artifact", label: "Artifact", hint: "참고 산출물 (result.md 등)" },
-];
+const LAYER_IDS = ["platform", "agent_role", "persona", "user_profile", "plan_doc", "findings", "artifact"] as const;
 
 export function ConventionsSection() {
+  const { t } = useTranslation("settings");
+  const LAYER_OPTIONS = LAYER_IDS.map((id) => ({
+    id,
+    label: t(`conventions.layer.${id}_label`),
+    hint: t(`conventions.layer.${id}_hint`),
+  }));
   const projects = useChatStore((s) => s.projects);
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const [projectKey, setProjectKey] = useState<string>(selectedProjectKey ?? "");
@@ -137,7 +136,7 @@ export function ConventionsSection() {
 
   const handleSync = async () => {
     if (!projectKey || !project?.path) {
-      setError("project 경로가 없습니다");
+      setError(t("conventions.error_no_project_path"));
       return;
     }
     setSyncing(true);
@@ -160,10 +159,9 @@ export function ConventionsSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-[14px] font-[550] text-foreground mb-1">Conventions Context Sync</h2>
+        <h2 className="text-[14px] font-[550] text-foreground mb-1">{t("conventions.heading")}</h2>
         <p className="text-[12px] text-muted-foreground mb-2">
-          정적 ContextPack layer(platform / agent role / persona / user profile)를
-          CLAUDE.md / AGENTS.md / GEMINI.md로 sync 합니다. 편집 후 "Sync Now" 로 파일 갱신.
+          {t("conventions.description")}
         </p>
         {projectKey && (
           <label className="flex items-start gap-2 mt-2 p-2 rounded border border-border/50 bg-card/50 cursor-pointer hover:bg-card transition-colors">
@@ -176,13 +174,11 @@ export function ConventionsSection() {
             />
             <div className="flex-1">
               <div className="text-[12px] font-medium text-foreground">
-                ContextPack 에서 정적 레이어 생략
+                {t("conventions.toggle.label")}
                 {togglingSync && <Loader2 className="inline-block w-3 h-3 ml-1.5 animate-spin text-muted-foreground" />}
               </div>
               <p className="text-[10.5px] text-muted-foreground/80 mt-0.5 leading-relaxed">
-                켜면 매 turn 정적 레이어를 재송신하지 않습니다. CLI 가 CLAUDE.md/AGENTS.md 를
-                자동 prepending 하며 Anthropic API 경로에서는 prompt cache 적중으로 비용 절감.
-                먼저 아래에서 해당 프로젝트의 conventions 를 추가하고 "Sync Now" 로 파일을 만들어야 실제 효과.
+                {t("conventions.toggle.description")}
               </p>
             </div>
           </label>
@@ -196,7 +192,7 @@ export function ConventionsSection() {
           onChange={(e) => setProjectKey(e.target.value)}
           className="text-[12px] bg-input border border-border rounded px-2 py-1 outline-none"
         >
-          <option value="">— Project 선택 —</option>
+          <option value="">{t("conventions.select_project")}</option>
           {projects.map((p) => (
             <option key={p.key} value={p.key}>{p.key}</option>
           ))}
@@ -204,14 +200,14 @@ export function ConventionsSection() {
         <input
           value={personaFilter}
           onChange={(e) => setPersonaFilter(e.target.value)}
-          placeholder="Persona 필터 (비우면 공통 only)"
+          placeholder={t("conventions.persona_filter_placeholder")}
           className="flex-1 text-[12px] bg-input border border-border rounded px-2 py-1 outline-none"
         />
         <button
           onClick={reload}
           disabled={!projectKey || loading}
           className="px-2 py-1 rounded text-[11px] bg-card hover:bg-accent border border-border disabled:opacity-40"
-          title="다시 불러오기"
+          title={t("conventions.reload_title")}
         >
           {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
         </button>
@@ -220,7 +216,7 @@ export function ConventionsSection() {
           disabled={!projectKey || !project?.path || syncing}
           className="px-3 py-1 rounded text-[11px] font-medium bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-40"
         >
-          {syncing ? "Syncing…" : "Sync Now"}
+          {syncing ? t("conventions.syncing") : t("conventions.sync_now")}
         </button>
       </div>
 
@@ -232,15 +228,15 @@ export function ConventionsSection() {
 
       {report && (
         <div className="text-[11px] text-status-approved bg-status-approved/8 border border-status-approved/30 rounded px-2 py-1.5">
-          ✓ Sync 완료 — entry files: {report.entryFiles}, split files: {report.splitFiles}
-          {report.truncated.length > 0 && ` (${report.truncated.length}개 truncated)`}
+          {t("conventions.sync_report", { entry: report.entryFiles, split: report.splitFiles })}
+          {report.truncated.length > 0 && t("conventions.sync_report_truncated", { count: report.truncated.length })}
         </div>
       )}
 
       {/* Rows list */}
       <div className="space-y-2">
         {rows.length === 0 && !loading && projectKey && (
-          <p className="text-[11px] text-muted-foreground/60">아직 등록된 conventions가 없습니다. 아래에서 추가하세요.</p>
+          <p className="text-[11px] text-muted-foreground/60">{t("conventions.empty_hint")}</p>
         )}
         {rows.map((row) => (
           <div key={row.id} className="rounded border border-border/40 bg-card p-2 space-y-1">
@@ -257,7 +253,7 @@ export function ConventionsSection() {
               <button
                 onClick={() => handleDelete(row)}
                 className="p-1 text-destructive/60 hover:text-destructive hover:bg-destructive/10 rounded"
-                title="삭제"
+                title={t("conventions.delete_title")}
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -273,7 +269,7 @@ export function ConventionsSection() {
       {/* Add new */}
       {projectKey && (
         <div className="rounded border border-primary/30 bg-primary/5 p-2 space-y-2">
-          <div className="text-[11px] font-[550] text-primary">새 convention 추가</div>
+          <div className="text-[11px] font-[550] text-primary">{t("conventions.new.heading")}</div>
           <div className="flex items-center gap-2">
             <select
               value={newLayer}
@@ -287,13 +283,13 @@ export function ConventionsSection() {
             <input
               value={newPersona}
               onChange={(e) => setNewPersona(e.target.value)}
-              placeholder="Persona (비우면 공통)"
+              placeholder={t("conventions.new.persona_placeholder")}
               className="flex-1 text-[11px] bg-input border border-border rounded px-2 py-1 outline-none"
             />
             <input
               value={newSource}
               onChange={(e) => setNewSource(e.target.value)}
-              placeholder="Source ID (선택)"
+              placeholder={t("conventions.new.source_placeholder")}
               className="flex-1 text-[11px] bg-input border border-border rounded px-2 py-1 outline-none"
             />
           </div>
@@ -301,7 +297,7 @@ export function ConventionsSection() {
           <textarea
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
-            placeholder="Markdown 본문…"
+            placeholder={t("conventions.new.content_placeholder")}
             rows={5}
             className="w-full text-[11px] bg-input border border-border rounded px-2 py-1.5 outline-none font-mono leading-snug"
           />
@@ -311,7 +307,7 @@ export function ConventionsSection() {
               disabled={!newContent.trim()}
               className="flex items-center gap-1 px-3 py-1 rounded text-[11px] font-medium bg-status-approved/15 text-status-approved hover:bg-status-approved/25 disabled:opacity-40"
             >
-              <Plus className="w-3 h-3" />추가
+              <Plus className="w-3 h-3" />{t("conventions.new.add")}
             </button>
           </div>
         </div>
