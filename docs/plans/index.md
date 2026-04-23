@@ -26,6 +26,7 @@
 | [engineServerModePlan](./engineServerModePlan.md) | — |
 | [geminiSdkIntegrationPlan](./geminiSdkIntegrationPlan.md) | P1 — Google AI SDK 직접 통합 (CLI 대체, SSE/token/function calling) |
 | [i18nPlan](./i18nPlan.md) | P1 — UI 한/영 분리 (react-i18next) + 프롬프트 영어 통일 + ContextPack 응답 언어 주입 |
+| [i18nCompletionPlan_2026-04-24](./i18nCompletionPlan_2026-04-24.md) | **P1** — i18n PR A 완결: A2 잔여 60+ 파일을 A2-D/E/F/G + A3-ext 5 슬라이스로 분할, INV-6 추가, 병렬 Developer 2~3 세션 가능 |
 | [insightStabilityPlan](./insightStabilityPlan.md) | **P0 (베타 blocker)** — Insight 분석 4 버그 직렬 수정 (rawq OOB / skip 강화 / claude usage 파서 / timeout→status 전이). 4 subtask, 반나절. |
 | [liveRuntimeTraceParityValidationPlan_2026-03-30](./liveRuntimeTraceParityValidationPlan_2026-03-30.md) | P1 — 4-engine trace/meta parity 실제 확인 |
 | [metaAgentInitialSetupPlan_2026-04-16](./metaAgentInitialSetupPlan_2026-04-16.md) | — |
@@ -33,6 +34,8 @@
 | [metaAgentPlan](./metaAgentPlan.md) | **P0** — 메타에이전트. 온보딩, 이슈 감지, 우선순위 제안 + Phase 3 (identity analysis trigger) + Phase 4 (background insight worker). INV 6개. Phase 0 부분 구현 (persona_meta, metaConversation.ts, v33 migration) |
 | [projectIdentityAnalysisPlan](./projectIdentityAnalysisPlan.md) | **P1** — Artifacts 기반 "Karma" 파이프라인: 6 타입 자동 생성 + plan 3개/volume 10 trigger + identity_summary 분석 + ContextPack 주입 + Insight 정체성 뷰 (metaAgent 의존) |
 | [perProjectDatabaseSplitPlan](./perProjectDatabaseSplitPlan.md) | — |
+| [preBetaAuditPlan_2026-04-23](./preBetaAuditPlan_2026-04-23.md) | **P0 (베타 blocker)** — 6개 영역 전수감사 결과 (P0 6건 + P1 5건 + Developer 핸드오프 #4) |
+| [publicReadinessChecklistPlan](./publicReadinessChecklistPlan.md) | **P0** — OSS 공개 준비 체크리스트 (Phase 0~4 완료, Phase 5 public flip 남음) |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
 | [roleAssignmentCoverageUxPlan](./roleAssignmentCoverageUxPlan.md) | P2 — Settings 역할 커버리지 UX (inferred 저장 명시화 + stale ID 자동 정리 + assertRoleReady 원클릭 적용) |
