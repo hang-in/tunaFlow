@@ -1,0 +1,13 @@
+{
+  "pack": {
+    "title": "프로젝트 스킬팩",
+    "analyze_button": "분석",
+    "keywords_detected": "감지: {{keywords}}",
+    "local_header": "로컬 보유",
+    "registry_header": "레지스트리에서 설치 가능",
+    "installing_status": "설치 중...",
+    "apply_button": "스킬팩 적용 ({{count}})",
+    "dismiss_button": "무시",
+    "no_match": "매칭되는 스킬이 없습니다."
+  }
+}

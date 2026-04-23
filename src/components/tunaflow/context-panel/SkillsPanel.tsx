@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -42,6 +43,7 @@ interface SkillPackRec {
 }
 
 function ProjectSkillPack() {
+  const { t } = useTranslation("skills");
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const acceptRecommendedSkills = useChatStore((s) => s.acceptRecommendedSkills);
   const loadSkills = useChatStore((s) => s.loadSkills);
@@ -91,14 +93,14 @@ function ProjectSkillPack() {
     <div className="rounded-md border border-primary/25 bg-primary/5 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5">
         <Sparkles className="w-3.5 h-3.5 text-primary/70 shrink-0" />
-        <span className="text-[10px] font-semibold text-foreground/80">프로젝트 스킬팩</span>
+        <span className="text-[10px] font-semibold text-foreground/80">{t("pack.title")}</span>
         {!pack && (
           <button
             onClick={buildPack}
             disabled={loading || !selectedProjectKey}
             className="ml-auto text-[8px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-30 transition-colors"
           >
-            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "분석"}
+            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : t("pack.analyze_button")}
           </button>
         )}
       </div>
@@ -106,13 +108,13 @@ function ProjectSkillPack() {
       {pack && (
         <>
           {pack.keywords.length > 0 && (
-            <p className="text-[8px] text-muted-foreground/40">감지: {pack.keywords.slice(0, 8).join(", ")}</p>
+            <p className="text-[8px] text-muted-foreground/40">{t("pack.keywords_detected", { keywords: pack.keywords.slice(0, 8).join(", ") })}</p>
           )}
 
           {/* Local skills */}
           {pack.local.length > 0 && (
             <div className="space-y-0.5">
-              <p className="text-[8px] text-muted-foreground/50 font-medium">로컬 보유</p>
+              <p className="text-[8px] text-muted-foreground/50 font-medium">{t("pack.local_header")}</p>
               <div className="flex flex-wrap gap-1">
                 {pack.local.map((name) => {
                   const label = name.indexOf("-") > 0 ? name.slice(name.indexOf("-") + 1) : name;
@@ -133,7 +135,7 @@ function ProjectSkillPack() {
           {/* Registry skills */}
           {pack.registry.length > 0 && (
             <div className="space-y-0.5">
-              <p className="text-[8px] text-muted-foreground/50 font-medium">레지스트리에서 설치 가능</p>
+              <p className="text-[8px] text-muted-foreground/50 font-medium">{t("pack.registry_header")}</p>
               <div className="flex flex-wrap gap-1">
                 {pack.registry.map((rs) => {
                   const checked = selected.has(rs.name);
@@ -156,17 +158,17 @@ function ProjectSkillPack() {
             <div className="flex items-center gap-2 pt-1">
               <button onClick={installAndApply} disabled={selected.size === 0 || !!installing}
                 className="text-[9px] font-semibold px-2 py-0.5 rounded bg-primary/20 text-primary hover:bg-primary/30 disabled:opacity-30 transition-colors">
-                {installing ? "설치 중..." : `스킬팩 적용 (${selected.size})`}
+                {installing ? t("pack.installing_status") : t("pack.apply_button", { count: selected.size })}
               </button>
               <button onClick={() => setDismissed(true)}
                 className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors">
-                무시
+                {t("pack.dismiss_button")}
               </button>
             </div>
           )}
 
           {pack.local.length === 0 && pack.registry.length === 0 && (
-            <p className="text-[8px] text-muted-foreground/40">매칭되는 스킬이 없습니다.</p>
+            <p className="text-[8px] text-muted-foreground/40">{t("pack.no_match")}</p>
           )}
         </>
       )}

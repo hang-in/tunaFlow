@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,6 +18,7 @@ interface PlanDocumentModalProps {
 }
 
 export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
+  const { t } = useTranslation("workflow");
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
   const [events, setEvents] = useState<PlanEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +84,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
             <span className="text-[9px] font-mono text-muted-foreground/50 px-1.5 rounded bg-accent/50">v{plan.versionMajor}.{plan.versionMinor}</span>
           )}
           {planFileContent && (
-            <span className="text-[8px] text-status-approved/50">파일 기반</span>
+            <span className="text-[8px] text-status-approved/50">{t("plan_document.status_file_based")}</span>
           )}
           <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full border", phaseCfg.cls)}>
             {phaseCfg.label}
@@ -109,13 +111,13 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                 <>
                   {plan.description && (
                     <div>
-                      <h4 className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">Description</h4>
+                      <h4 className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">{t("plan_document.section_description")}</h4>
                       <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{plan.description}</p>
                     </div>
                   )}
                   {plan.expectedOutcome && (
                     <div>
-                      <h4 className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">Expected Outcome</h4>
+                      <h4 className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-1">{t("plan_document.section_expected_outcome")}</h4>
                       <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{plan.expectedOutcome}</p>
                     </div>
                   )}
@@ -125,7 +127,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
               {/* Subtasks — clickable to expand work instruction */}
               <div>
                 <h4 className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-2">
-                  Subtasks ({subtasks.length})
+                  {t("plan_document.section_subtasks", { count: subtasks.length })}
                 </h4>
                 <div className="space-y-1.5">
                   {subtasks.map((st, i) => {
@@ -161,7 +163,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                               <p className="text-[10px] text-muted-foreground/50 mt-0.5 line-clamp-1">{st.details}</p>
                             )}
                             {!isExpanded && !hasDetails && (
-                              <p className="text-[10px] text-amber-600/40 italic mt-0.5">상세 설계 미작성</p>
+                              <p className="text-[10px] text-amber-600/40 italic mt-0.5">{t("plan_document.empty_instructions")}</p>
                             )}
                           </div>
                         </button>
@@ -173,7 +175,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                             <div className="pt-2">
                               <div className="flex items-center gap-1 mb-1">
                                 <FileText className="w-3 h-3 text-primary/50" />
-                                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">작업 지시서</span>
+                                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{t("plan_document.section_task_instructions")}</span>
                               </div>
                               {taskFileContents[i + 1] ? (
                                 <div className="rounded bg-card/80 border border-border/30 px-3 py-2 prose prose-invert max-w-none text-[11px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_h1]:text-[13px] [&_h2]:text-[12px] [&_h3]:text-[11px] [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-1.5 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5 [&_code]:text-[10px]">
@@ -186,7 +188,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                                   <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">{st.details}</p>
                                 </div>
                               ) : (
-                                <p className="text-[10px] text-amber-600/50 italic">미작성 — Subtask 검토 단계에서 Architect에게 요청하세요.</p>
+                                <p className="text-[10px] text-amber-600/50 italic">{t("plan_document.empty_task_instructions")}</p>
                               )}
                             </div>
 
@@ -198,7 +200,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                                 </span>
                               )}
                               {st.lastUpdatedBy && (
-                                <span>last updated by: {st.lastUpdatedBy}</span>
+                                <span>{t("plan_document.last_updated_by", { actor: st.lastUpdatedBy })}</span>
                               )}
                             </div>
 
@@ -207,7 +209,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                               <div>
                                 <div className="flex items-center gap-1 mb-1">
                                   <Clock className="w-2.5 h-2.5 text-muted-foreground/30" />
-                                  <span className="text-[8px] text-muted-foreground/40 uppercase tracking-wide">이력</span>
+                                  <span className="text-[8px] text-muted-foreground/40 uppercase tracking-wide">{t("plan_document.section_history")}</span>
                                 </div>
                                 <div className="space-y-0.5 border-l border-border/20 pl-2">
                                   {stEvents.map((ev) => {
@@ -236,7 +238,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
               {events.length > 0 && (
                 <div>
                   <h4 className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-2 flex items-center gap-1">
-                    <Clock className="w-3 h-3" />Revision History
+                    <Clock className="w-3 h-3" />{t("plan_document.section_revision_history")}
                   </h4>
                   <div className="space-y-1 border-l-2 border-border/30 pl-3">
                     {events.map((ev) => {

@@ -32,6 +32,73 @@
     "empty_details_row": "No detailed design",
     "follow_up_suffix": "\nPlease proceed with the task above."
   },
+  "plans_panel": {
+    "empty_plan_check": "No plans under review. Chat with Architect to propose a Plan.",
+    "empty_dev": "No plans currently being implemented.",
+    "empty_review": "No plans in review.",
+    "empty_done": "No completed plans.",
+    "empty_default": "No plans yet.",
+    "section_drafting": "Drafting",
+    "section_pending_review": "Pending review",
+    "section_escalated": "⚠️ Design review needed"
+  },
+  "plan_document": {
+    "status_file_based": "File-based",
+    "empty_instructions": "No detailed design",
+    "section_description": "Description",
+    "section_expected_outcome": "Expected Outcome",
+    "section_task_instructions": "Task instructions",
+    "section_history": "History",
+    "section_subtasks": "Subtasks ({{count}})",
+    "section_revision_history": "Revision History",
+    "empty_task_instructions": "Not yet written — request it from Architect during the Subtask Review step.",
+    "last_updated_by": "last updated by: {{actor}}"
+  },
+  "subtask_review": {
+    "header": {
+      "view_doc_button": "View document",
+      "goal_prefix": "Goal: {{outcome}}"
+    },
+    "doom_loop": {
+      "title_one_fail": "⚠️ Review failed once — prior cycle had design review history",
+      "title_many_fails": "⚠️ Review failed {{count}} times in a row — entering design review",
+      "body_one_fail": "If the same pattern repeats, design review may be needed again. Check the history below.",
+      "body_many_fails": "Repeating issues that Rework cannot resolve. Use the history below to revise the subtask design.",
+      "history_summary": "Failure history ({{count}} times)",
+      "round_fail": "Round {{round}} fail"
+    },
+    "actions": {
+      "redesign_button": "Request redesign from Architect",
+      "approve_doom_loop": "Approve as-is (not recommended)",
+      "approve_normal": "Approve → Approved",
+      "badge_locked": "🔒 Writing",
+      "badge_missing_details": "⚠ {{count}} instructions missing",
+      "sync_doc_tooltip_busy": "Architect is busy in the main chat. Available once complete.",
+      "sync_doc_tooltip_normal": "Reflect into Plan doc — if you edited task-NN.md files directly, back-propagate them into the main plan.md. Usually not needed in the normal flow.",
+      "sync_doc_aria": "Reflect into Plan doc",
+      "debug_all_tasks_button": "All task instructions (debug)",
+      "debug_all_tasks_tooltip": "Debug — request all subtask instructions in one batch",
+      "approve_tooltip_doom": "We recommend approving after the Architect redesign",
+      "approve_tooltip_busy": "Architect is working in the main chat. Enabled once complete.",
+      "approve_tooltip_missing": "{{count}} task instructions missing — finish all instructions first.",
+      "read_only_hint": "Read-only — current phase: {{phase}}"
+    },
+    "card": {
+      "status_file_missing": "File missing",
+      "status_file_exists": "File",
+      "instructions_label": "Task instructions",
+      "instructions_summary_label": "Task instructions (summary)",
+      "empty_instructions": "Task instructions have not been written yet.",
+      "write_button": "Request write",
+      "write_busy": "Requesting...",
+      "owner_label": "Owner: {{owner}}",
+      "discuss_button": "Discuss",
+      "revise_button": "Request revision",
+      "opinion_placeholder": "Write your review feedback (why revision is needed)...",
+      "send_revise": "Send revision request",
+      "cancel_button": "Cancel"
+    }
+  },
   "merge": {
     "busy": "Merging...",
     "button": "Merge into Plan",

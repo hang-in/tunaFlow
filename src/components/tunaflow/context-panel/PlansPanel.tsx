@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
 import { ClipboardList } from "lucide-react";
@@ -13,12 +14,13 @@ import { PlanCard } from "./plans/PlanCard";
 
 /** Phase filter mapping for stage IDs.
  *  `plan-check` = drafting + subtask_review 통합 (s37) — "사용자가 plan 을
- *  검토·확정하는" 동일 맥락의 두 phase 를 하나의 stage 로. */
-const STAGE_PHASE_MAP: Record<string, { phases: PlanPhase[]; includeAbandoned?: boolean; empty: string }> = {
-  "plan-check": { phases: ["drafting", "subtask_review"],          empty: "검토 중인 Plan이 없습니다. Chat에서 Architect와 대화해 Plan을 제안받으세요." },
-  dev:          { phases: ["approval", "implementation", "rework"], empty: "구현 중인 Plan이 없습니다." },
-  review:       { phases: ["review"],                               empty: "리뷰 중인 Plan이 없습니다." },
-  done:         { phases: ["done"], includeAbandoned: true,         empty: "완료된 Plan이 없습니다." },
+ *  검토·확정하는" 동일 맥락의 두 phase 를 하나의 stage 로.
+ *  emptyKey 는 workflow.plans_panel.* 의 key suffix (t() 로 해석). */
+const STAGE_PHASE_MAP: Record<string, { phases: PlanPhase[]; includeAbandoned?: boolean; emptyKey: string }> = {
+  "plan-check": { phases: ["drafting", "subtask_review"],          emptyKey: "empty_plan_check" },
+  dev:          { phases: ["approval", "implementation", "rework"], emptyKey: "empty_dev" },
+  review:       { phases: ["review"],                               emptyKey: "empty_review" },
+  done:         { phases: ["done"], includeAbandoned: true,         emptyKey: "empty_done" },
 };
 
 interface PlansPanelProps {
@@ -33,6 +35,7 @@ interface PlansPanelProps {
 }
 
 export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwitchToChat }: PlansPanelProps) {
+  const { t } = useTranslation("workflow");
   const { selectedConversationId, activeBranchId, parentConversationId } = useChatStore();
   const [plans, setPlans] = useState<Plan[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -140,7 +143,9 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
           return stageCfg.phases.includes(p.phase);
         })
       : plans.filter((p) => p.status !== "abandoned");
-  const emptyMessage = stageCfg?.empty ?? "No plans yet.";
+  const emptyMessage = stageCfg
+    ? t(`plans_panel.${stageCfg.emptyKey}` as "plans_panel.empty_plan_check")
+    : t("plans_panel.empty_default");
 
   return (
     <div ref={containerRef} className="space-y-2">
@@ -164,7 +169,7 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
             {draftingPlans.length > 0 && (
               <div className="space-y-2">
                 {(normalPlans.length > 0 || escalatedPlans.length > 0) && (
-                  <p className="text-[9px] font-medium text-muted-foreground/40 uppercase tracking-wider px-1">작성 중</p>
+                  <p className="text-[9px] font-medium text-muted-foreground/40 uppercase tracking-wider px-1">{t("plans_panel.section_drafting")}</p>
                 )}
                 {draftingPlans.map((plan) => (
                   <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
@@ -181,7 +186,7 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
             {normalPlans.length > 0 && (
               <div className={cn("space-y-2", draftingPlans.length > 0 && "mt-4")}>
                 {(draftingPlans.length > 0 || escalatedPlans.length > 0) && (
-                  <p className="text-[9px] font-medium text-muted-foreground/40 uppercase tracking-wider px-1">검토 대기</p>
+                  <p className="text-[9px] font-medium text-muted-foreground/40 uppercase tracking-wider px-1">{t("plans_panel.section_pending_review")}</p>
                 )}
                 {normalPlans.map((plan) => (
                   <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
@@ -192,7 +197,7 @@ export function PlansPanel({ activeStage, onPhaseChanged, onStatusChanged, onSwi
             )}
             {escalatedPlans.length > 0 && (
               <div className="space-y-2 mt-4">
-                <p className="text-[9px] font-medium text-amber-600/60 uppercase tracking-wider px-1">⚠️ 설계 재검토 필요</p>
+                <p className="text-[9px] font-medium text-amber-600/60 uppercase tracking-wider px-1">{t("plans_panel.section_escalated")}</p>
                 {escalatedPlans.map((plan) => (
                   <div key={plan.id} data-plan-id={plan.id} className="rounded-lg transition-all">
                     <SubtaskReviewView plan={plan} onPlanUpdate={handlePlanUpdated} onSwitchToChat={onSwitchToChat} />

@@ -1,0 +1,13 @@
+{
+  "pack": {
+    "title": "Project skill pack",
+    "analyze_button": "Analyze",
+    "keywords_detected": "Detected: {{keywords}}",
+    "local_header": "Already local",
+    "registry_header": "Installable from registry",
+    "installing_status": "Installing...",
+    "apply_button": "Apply skill pack ({{count}})",
+    "dismiss_button": "Dismiss",
+    "no_match": "No matching skills."
+  }
+}

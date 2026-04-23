@@ -18,6 +18,7 @@
  *    적중률. 지금은 placeholder — 실측 값 파이프라인 후속 PR.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "@/stores/chatStore";
 import { cn } from "@/lib/utils";
@@ -125,6 +126,7 @@ function StatCard({ label, value, hint, tone }: { label: string; value: string; 
 }
 
 export function QualityDashboard() {
+  const { t } = useTranslation("quality");
   const selectedConversationId = useChatStore((s) => s.selectedConversationId);
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const [spans, setSpans] = useState<TraceSpan[]>([]);
@@ -281,8 +283,7 @@ export function QualityDashboard() {
             <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[10px] flex items-start gap-1.5">
               <AlertTriangle className="w-3 h-3 text-destructive shrink-0 mt-0.5" />
               <span className="text-destructive/80">
-                Truncation rate 30% 초과 — ContextPack 의 budget cap 조정 또는
-                섹션별 max_chars 재조정 검토.
+                {t("warning.truncation_high")}
               </span>
             </div>
           )}

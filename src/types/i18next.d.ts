@@ -15,6 +15,9 @@ import type koDialog from "../locales/ko/dialog.json";
 import type koWorkflow from "../locales/ko/workflow.json";
 import type koBranch from "../locales/ko/branch.json";
 import type koInsight from "../locales/ko/insight.json";
+import type koQuality from "../locales/ko/quality.json";
+import type koSkills from "../locales/ko/skills.json";
+import type koHarness from "../locales/ko/harness.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -29,6 +32,9 @@ declare module "i18next" {
       workflow: typeof koWorkflow;
       branch: typeof koBranch;
       insight: typeof koInsight;
+      quality: typeof koQuality;
+      skills: typeof koSkills;
+      harness: typeof koHarness;
     };
   }
 }

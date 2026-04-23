@@ -32,6 +32,73 @@
     "empty_details_row": "상세 설계 없음",
     "follow_up_suffix": "\n위 작업을 진행해주세요."
   },
+  "plans_panel": {
+    "empty_plan_check": "검토 중인 Plan이 없습니다. Chat에서 Architect와 대화해 Plan을 제안받으세요.",
+    "empty_dev": "구현 중인 Plan이 없습니다.",
+    "empty_review": "리뷰 중인 Plan이 없습니다.",
+    "empty_done": "완료된 Plan이 없습니다.",
+    "empty_default": "Plan이 없습니다.",
+    "section_drafting": "작성 중",
+    "section_pending_review": "검토 대기",
+    "section_escalated": "⚠️ 설계 재검토 필요"
+  },
+  "plan_document": {
+    "status_file_based": "파일 기반",
+    "empty_instructions": "상세 설계 미작성",
+    "section_description": "Description",
+    "section_expected_outcome": "Expected Outcome",
+    "section_task_instructions": "작업 지시서",
+    "section_history": "이력",
+    "section_subtasks": "Subtasks ({{count}})",
+    "section_revision_history": "Revision History",
+    "empty_task_instructions": "미작성 — Subtask 검토 단계에서 Architect에게 요청하세요.",
+    "last_updated_by": "last updated by: {{actor}}"
+  },
+  "subtask_review": {
+    "header": {
+      "view_doc_button": "문서 보기",
+      "goal_prefix": "Goal: {{outcome}}"
+    },
+    "doom_loop": {
+      "title_one_fail": "⚠️ Review 1회 실패 — 이전 싸이클 설계 재검토 이력 있음",
+      "title_many_fails": "⚠️ Review {{count}}회 연속 실패로 설계 재검토 진입",
+      "body_one_fail": "동일 패턴 반복 시 설계 재검토가 또 필요할 수 있습니다. 아래 이력을 참고하세요.",
+      "body_many_fails": "Rework으로 해결되지 않는 반복 문제입니다. 아래 이력을 참고하여 subtask 설계를 수정하세요.",
+      "history_summary": "실패 이력 ({{count}}회)",
+      "round_fail": "{{round}}차 fail"
+    },
+    "actions": {
+      "redesign_button": "Architect에게 재설계 요청",
+      "approve_doom_loop": "그대로 승인 (비권장)",
+      "approve_normal": "승인 → Approved",
+      "badge_locked": "🔒 작성 중",
+      "badge_missing_details": "⚠ 지시서 {{count}}건 미완",
+      "sync_doc_tooltip_busy": "메인 chat 에서 Architect 가 작업 중입니다. 완료 후 사용 가능.",
+      "sync_doc_tooltip_normal": "Plan 문서 반영 — task 지시서(task-NN.md) 를 직접 편집한 경우 메인 plan.md 에 역반영합니다. 일반 flow 에서는 불필요.",
+      "sync_doc_aria": "Plan 문서 반영",
+      "debug_all_tasks_button": "전체 작업지시서 (debug)",
+      "debug_all_tasks_tooltip": "디버깅용 — 모든 subtask의 작업지시서를 일괄 요청",
+      "approve_tooltip_doom": "Architect 재설계 후 승인을 권장합니다",
+      "approve_tooltip_busy": "메인 chat 에서 Architect 가 작업 중입니다. 완료 후 활성화됩니다.",
+      "approve_tooltip_missing": "미완성 task 지시서 {{count}}건 — 전체 지시서 작성을 먼저 완료하세요.",
+      "read_only_hint": "읽기 전용 — 현재 phase: {{phase}}"
+    },
+    "card": {
+      "status_file_missing": "파일 미생성",
+      "status_file_exists": "파일",
+      "instructions_label": "작업 지시서",
+      "instructions_summary_label": "작업 지시서 (요약)",
+      "empty_instructions": "작업 지시서가 아직 작성되지 않았습니다.",
+      "write_button": "작성 요청",
+      "write_busy": "요청 중...",
+      "owner_label": "Owner: {{owner}}",
+      "discuss_button": "대화하기",
+      "revise_button": "수정 요청",
+      "opinion_placeholder": "검토 의견을 작성하세요 (왜 수정이 필요한지)...",
+      "send_revise": "수정 요청 전송",
+      "cancel_button": "취소"
+    }
+  },
   "merge": {
     "busy": "병합 중...",
     "button": "Plan에 병합",

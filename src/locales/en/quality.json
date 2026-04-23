@@ -1,0 +1,33 @@
+{
+  "header": {
+    "title": "Quality",
+    "span_count": "{{count}} spans",
+    "empty_state": "No trace data yet.",
+    "loading_state": "Loading..."
+  },
+  "stat": {
+    "truncation_label": "Truncation",
+    "truncation_hint": "{{done}} / {{total}} hit budget cap",
+    "retrieval_label": "Retrieval hit",
+    "retrieval_hint": "queries returning ≥1 chunk",
+    "context_label": "Avg ContextPack",
+    "context_hint": "chars per send",
+    "cache_label": "Cache read",
+    "cache_hint_cached": "{{count}} tokens cached",
+    "cache_hint_pending": "needs provider population"
+  },
+  "mode": {
+    "header": "ContextPack mode"
+  },
+  "section": {
+    "header": "Section avg size (per send)"
+  },
+  "warning": {
+    "truncation_high": "Truncation rate exceeds 30% — consider raising ContextPack budget cap or adjusting per-section max_chars."
+  },
+  "scope": {
+    "conversation": "Conversation",
+    "project": "Project",
+    "project_disabled": "Project scope — per-project trace aggregation lands in a follow-up"
+  }
+}

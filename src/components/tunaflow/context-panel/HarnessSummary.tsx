@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { ClipboardList } from "lucide-react";
@@ -54,6 +55,7 @@ interface HarnessSummaryProps {
 }
 
 export function HarnessSummary({ conversationId, activeStage, onStageClick, refreshKey }: HarnessSummaryProps) {
+  const { t } = useTranslation("harness");
   const { branches, artifacts } = useChatStore();
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
   const [allPlans, setAllPlans] = useState<Plan[]>([]);
@@ -171,7 +173,7 @@ export function HarnessSummary({ conversationId, activeStage, onStageClick, refr
         const doneCount = subtasks.filter((s) => s.status === "done").length;
         return doneCount > 0 ? (
           <p className="text-[9px] text-muted-foreground/40 px-1">
-            {activePlan.title}: {doneCount}/{subtasks.length} subtask 완료
+            {t("summary.subtask_complete", { title: activePlan.title, done: doneCount, total: subtasks.length })}
           </p>
         ) : null;
       })()}

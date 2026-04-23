@@ -1,0 +1,5 @@
+{
+  "summary": {
+    "subtask_complete": "{{title}}: {{done}}/{{total}} subtask 완료"
+  }
+}

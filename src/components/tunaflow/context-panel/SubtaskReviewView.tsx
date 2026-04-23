@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -25,6 +26,7 @@ interface SubtaskReviewViewProps {
 }
 
 export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: SubtaskReviewViewProps) {
+  const { t } = useTranslation("workflow");
   const { sendWithEngine, selectedConversationId, getConversationEngine,
     createBranch, openThread, sendThreadMessage, saveConversationEngine, loadBranches } = useChatStore();
   const [subtasks, setSubtasks] = useState<PlanSubtask[]>([]);
@@ -92,9 +94,9 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
   const approveDisabledReason: string | null = busy
     ? null  // 로컬 busy 는 disable 이지만 별도 안내 불필요
     : mainConvBusy
-      ? "메인 chat 에서 Architect 가 작업 중입니다. 완료 후 활성화됩니다."
+      ? t("subtask_review.actions.approve_tooltip_busy")
       : missingDetailsCount > 0
-        ? `미완성 task 지시서 ${missingDetailsCount}건 — 전체 지시서 작성을 먼저 완료하세요.`
+        ? t("subtask_review.actions.approve_tooltip_missing", { count: missingDetailsCount })
         : null;
   const approveBlocked = busy || mainConvBusy || missingDetailsCount > 0;
   const syncBlocked = busy || mainConvBusy;
@@ -290,14 +292,14 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
             <span className="text-[8px] font-mono text-muted-foreground/50 px-1 rounded bg-accent/50">v{plan.versionMajor}.{plan.versionMinor}</span>
           )}
           <button onClick={() => setShowDoc(true)} className="flex items-center gap-1 text-[9px] text-primary/60 hover:text-primary transition-colors">
-            <FileText className="w-3 h-3" />문서 보기
+            <FileText className="w-3 h-3" />{t("subtask_review.header.view_doc_button")}
           </button>
         </div>
         {plan.description && (
           <p className="text-[11px] text-muted-foreground leading-snug mb-1">{plan.description}</p>
         )}
         {plan.expectedOutcome && (
-          <p className="text-[10px] text-muted-foreground/60 italic">Goal: {plan.expectedOutcome}</p>
+          <p className="text-[10px] text-muted-foreground/60 italic">{t("subtask_review.header.goal_prefix", { outcome: plan.expectedOutcome })}</p>
         )}
       </div>
 
@@ -306,22 +308,22 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
           <p className="text-[11px] font-semibold text-amber-600">
             {reviewHistory.length === 1
-              ? `⚠️ Review 1회 실패 — 이전 싸이클 설계 재검토 이력 있음`
-              : `⚠️ Review ${reviewHistory.length}회 연속 실패로 설계 재검토 진입`}
+              ? t("subtask_review.doom_loop.title_one_fail")
+              : t("subtask_review.doom_loop.title_many_fails", { count: reviewHistory.length })}
           </p>
           <p className="text-[10px] text-foreground/60">
             {reviewHistory.length === 1
-              ? "동일 패턴 반복 시 설계 재검토가 또 필요할 수 있습니다. 아래 이력을 참고하세요."
-              : "Rework으로 해결되지 않는 반복 문제입니다. 아래 이력을 참고하여 subtask 설계를 수정하세요."}
+              ? t("subtask_review.doom_loop.body_one_fail")
+              : t("subtask_review.doom_loop.body_many_fails")}
           </p>
           <details className="text-[9px]">
             <summary className="cursor-pointer text-muted-foreground/60 hover:text-foreground">
-              실패 이력 ({reviewHistory.length}회)
+              {t("subtask_review.doom_loop.history_summary", { count: reviewHistory.length })}
             </summary>
             <div className="mt-1.5 space-y-1.5 pl-2">
               {reviewHistory.map((h) => (
                 <div key={h.round} className="border-l-2 border-amber-500/20 pl-2">
-                  <span className="font-medium text-foreground/50">{h.round}차 fail</span>
+                  <span className="font-medium text-foreground/50">{t("subtask_review.doom_loop.round_fail", { round: h.round })}</span>
                   {h.failedIds.length > 0 && (
                     <span className="text-muted-foreground/40 ml-1">
                       (Task {h.failedIds.join(", ")})
@@ -417,7 +419,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
               disabled={busy}
               className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-500/15 text-amber-600 hover:bg-amber-500/25 disabled:opacity-50 transition-colors"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />Architect에게 재설계 요청
+              <ArrowLeft className="w-3.5 h-3.5" />{t("subtask_review.actions.redesign_button")}
             </button>
           )}
           <button onClick={handleApprove} disabled={approveBlocked}
@@ -428,18 +430,18 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
                 : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20"
             )}
             title={
-              isDoomLoop ? "Architect 재설계 후 승인을 권장합니다"
+              isDoomLoop ? t("subtask_review.actions.approve_tooltip_doom")
               : approveDisabledReason ?? undefined
             }
           >
             <Check className="w-3.5 h-3.5" />
-            {isDoomLoop ? "그대로 승인 (비권장)" : "승인 → Approved"}
+            {isDoomLoop ? t("subtask_review.actions.approve_doom_loop") : t("subtask_review.actions.approve_normal")}
             {/* 상태 뱃지 — 왜 비활성인지 한 눈에 보이도록 */}
             {mainConvBusy && (
-              <span className="ml-1 text-[9px] px-1 rounded bg-amber-500/15 text-amber-600">🔒 작성 중</span>
+              <span className="ml-1 text-[9px] px-1 rounded bg-amber-500/15 text-amber-600">{t("subtask_review.actions.badge_locked")}</span>
             )}
             {!mainConvBusy && missingDetailsCount > 0 && (
-              <span className="ml-1 text-[9px] px-1 rounded bg-muted text-muted-foreground/70">⚠ 지시서 {missingDetailsCount}건 미완</span>
+              <span className="ml-1 text-[9px] px-1 rounded bg-muted text-muted-foreground/70">{t("subtask_review.actions.badge_missing_details", { count: missingDetailsCount })}</span>
             )}
           </button>
           {!isDoomLoop && (
@@ -451,10 +453,10 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
               className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-accent disabled:opacity-40 transition-colors"
               title={
                 mainConvBusy
-                  ? "메인 chat 에서 Architect 가 작업 중입니다. 완료 후 사용 가능."
-                  : "Plan 문서 반영 — task 지시서(task-NN.md) 를 직접 편집한 경우 메인 plan.md 에 역반영합니다. 일반 flow 에서는 불필요."
+                  ? t("subtask_review.actions.sync_doc_tooltip_busy")
+                  : t("subtask_review.actions.sync_doc_tooltip_normal")
               }
-              aria-label="Plan 문서 반영"
+              aria-label={t("subtask_review.actions.sync_doc_aria")}
             >
               <FileText className="w-3.5 h-3.5" />
             </button>
@@ -490,9 +492,9 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
               }}
               disabled={busy}
               className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-muted text-muted-foreground/60 hover:text-muted-foreground border border-dashed border-border/40 disabled:opacity-40 transition-colors"
-              title="디버깅용 — 모든 subtask의 작업지시서를 일괄 요청"
+              title={t("subtask_review.actions.debug_all_tasks_tooltip")}
             >
-              <PenLine className="w-3 h-3" />전체 작업지시서 (debug)
+              <PenLine className="w-3 h-3" />{t("subtask_review.actions.debug_all_tasks_button")}
             </button>
           )}
         </div>
@@ -500,7 +502,7 @@ export function SubtaskReviewView({ plan, onPlanUpdate, onSwitchToChat }: Subtas
 
       {!isActionable && (
         <p className="text-[10px] text-muted-foreground/40 italic pt-2 border-t border-border/30">
-          읽기 전용 — 현재 phase: {plan.phase}
+          {t("subtask_review.actions.read_only_hint", { phase: plan.phase })}
         </p>
       )}
 
@@ -530,6 +532,7 @@ function SubtaskReviewCard({
   busy: boolean;
   actionable: boolean;
 }) {
+  const { t } = useTranslation("workflow");
   const [expanded, setExpanded] = useState(false);
   const [opinionMode, setOpinionMode] = useState(false);
   const [opinion, setOpinion] = useState("");
@@ -567,10 +570,10 @@ function SubtaskReviewCard({
               {statusCfg.label}
             </span>
             {!taskFileContent && !hasDetails && (
-              <span className="text-[8px] text-amber-600/50 shrink-0">파일 미생성</span>
+              <span className="text-[8px] text-amber-600/50 shrink-0">{t("subtask_review.card.status_file_missing")}</span>
             )}
             {taskFileContent && (
-              <span className="text-[8px] text-status-approved/40 shrink-0">파일</span>
+              <span className="text-[8px] text-status-approved/40 shrink-0">{t("subtask_review.card.status_file_exists")}</span>
             )}
           </div>
           {!expanded && taskFileContent && (
@@ -592,8 +595,8 @@ function SubtaskReviewCard({
             <div>
               <div className="flex items-center gap-1 mb-1">
                 <FileText className="w-3 h-3 text-primary/50" />
-                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">작업 지시서</span>
-                <span className="text-[8px] text-status-approved/50">파일</span>
+                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{t("subtask_review.card.instructions_label")}</span>
+                <span className="text-[8px] text-status-approved/50">{t("subtask_review.card.status_file_exists")}</span>
               </div>
               <div className="rounded bg-card/80 border border-border/30 px-3 py-2 prose prose-invert max-w-none text-[11px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_h1]:text-[13px] [&_h2]:text-[12px] [&_h3]:text-[11px] [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-1.5 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5 [&_code]:text-[10px]">
                 <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
@@ -605,7 +608,7 @@ function SubtaskReviewCard({
             <div>
               <div className="flex items-center gap-1 mb-1">
                 <FileText className="w-3 h-3 text-primary/50" />
-                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">작업 지시서 (요약)</span>
+                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">{t("subtask_review.card.instructions_summary_label")}</span>
               </div>
               <div className="rounded bg-card/80 border border-border/30 px-3 py-2">
                 <p className="text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap">{subtask.details}</p>
@@ -613,11 +616,11 @@ function SubtaskReviewCard({
             </div>
           ) : (
             <div className="rounded bg-amber-500/5 border border-amber-500/15 px-3 py-2">
-              <p className="text-[10px] text-amber-600/60 mb-1.5">작업 지시서가 아직 작성되지 않았습니다.</p>
+              <p className="text-[10px] text-amber-600/60 mb-1.5">{t("subtask_review.card.empty_instructions")}</p>
               {actionable && (
                 <button onClick={(e) => { e.stopPropagation(); onDetailRequest(); }} disabled={busy}
                   className="flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-40 transition-colors">
-                  <PenLine className="w-2.5 h-2.5" />{busy ? "요청 중..." : "작성 요청"}
+                  <PenLine className="w-2.5 h-2.5" />{busy ? t("subtask_review.card.write_busy") : t("subtask_review.card.write_button")}
                 </button>
               )}
             </div>
@@ -625,7 +628,7 @@ function SubtaskReviewCard({
 
           {/* Metadata */}
           {subtask.ownerAgent && (
-            <p className="text-[9px] text-muted-foreground/40">Owner: {subtask.ownerAgent}</p>
+            <p className="text-[9px] text-muted-foreground/40">{t("subtask_review.card.owner_label", { owner: subtask.ownerAgent })}</p>
           )}
 
           {/* Actions: discuss + revision request */}
@@ -633,12 +636,12 @@ function SubtaskReviewCard({
             <div className="flex items-center gap-2 pt-1">
               <button onClick={(e) => { e.stopPropagation(); onDiscuss(); }} disabled={busy}
                 className="flex items-center gap-0.5 text-[9px] text-primary/60 hover:text-primary disabled:opacity-40 transition-colors">
-                <ChevronRight className="w-2.5 h-2.5" />대화하기
+                <ChevronRight className="w-2.5 h-2.5" />{t("subtask_review.card.discuss_button")}
               </button>
               {hasDetails && (
                 <button onClick={(e) => { e.stopPropagation(); setOpinionMode(true); }} disabled={busy}
                   className="flex items-center gap-0.5 text-[9px] text-amber-600/60 hover:text-amber-600 disabled:opacity-40 transition-colors">
-                  <RotateCcw className="w-2.5 h-2.5" />수정 요청
+                  <RotateCcw className="w-2.5 h-2.5" />{t("subtask_review.card.revise_button")}
                 </button>
               )}
             </div>
@@ -649,7 +652,7 @@ function SubtaskReviewCard({
               <textarea
                 value={opinion}
                 onChange={(e) => setOpinion(e.target.value)}
-                placeholder="검토 의견을 작성하세요 (왜 수정이 필요한지)..."
+                placeholder={t("subtask_review.card.opinion_placeholder")}
                 rows={2}
                 className="w-full bg-input rounded-md px-2 py-1.5 text-[10px] outline-none text-foreground placeholder:text-muted-foreground border border-border focus:border-ring/50 resize-none"
                 autoFocus
@@ -658,11 +661,11 @@ function SubtaskReviewCard({
               <div className="flex gap-1.5">
                 <button onClick={(e) => { e.stopPropagation(); handleSubmitOpinion(); }} disabled={!opinion.trim() || busy}
                   className="px-2 py-0.5 rounded text-[9px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 disabled:opacity-40 transition-colors">
-                  수정 요청 전송
+                  {t("subtask_review.card.send_revise")}
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); setOpinionMode(false); setOpinion(""); }}
                   className="px-2 py-0.5 rounded text-[9px] text-muted-foreground hover:text-foreground transition-colors">
-                  취소
+                  {t("subtask_review.card.cancel_button")}
                 </button>
               </div>
             </div>
