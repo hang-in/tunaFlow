@@ -40,3 +40,32 @@ export function getIdentityTriggerStatus(
 ): Promise<IdentityTriggerDecision> {
   return invoke("get_identity_trigger_status", { projectKey });
 }
+
+export function getIdentityAnalysisThreshold(): Promise<number> {
+  return invoke("get_identity_analysis_threshold");
+}
+
+export function setIdentityAnalysisThreshold(threshold: number): Promise<void> {
+  return invoke("set_identity_analysis_threshold", { input: { threshold } });
+}
+
+export function getBackgroundInsightEnabled(): Promise<boolean> {
+  return invoke("get_background_insight_enabled");
+}
+
+export function setBackgroundInsightEnabled(enabled: boolean): Promise<void> {
+  return invoke("set_background_insight_enabled", { input: { enabled } });
+}
+
+export type BackgroundJobCounts = {
+  pending: number;
+  running: number;
+};
+
+export function countBackgroundJobs(): Promise<BackgroundJobCounts> {
+  return invoke("count_background_jobs");
+}
+
+export function cancelBackgroundJob(id: string): Promise<void> {
+  return invoke("cancel_background_job", { id });
+}

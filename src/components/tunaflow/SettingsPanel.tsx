@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User, HelpCircle, Globe } from "lucide-react";
+import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User, HelpCircle, Globe, Brain } from "lucide-react";
 import { SkillsPanel } from "./context-panel/SkillsPanel";
 import { AgentsSection } from "./settings/AgentsSection";
 import { PersonasSection } from "./settings/PersonasSection";
@@ -10,12 +10,14 @@ import { MobileSection } from "./settings/MobileSection";
 import { ProfileSection } from "./settings/ProfileSection";
 import { HelpSection } from "./settings/HelpSection";
 import { WorldviewSettings } from "./settings/WorldviewSettings";
+import { IdentityAnalysisSettings } from "./settings/IdentityAnalysisSettings";
 
-type SettingsSection = "profile" | "worldview" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile" | "help";
+type SettingsSection = "profile" | "worldview" | "identity" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile" | "help";
 
 const SECTIONS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
   { id: "profile", label: "Profile", icon: <User className="w-4 h-4" /> },
   { id: "worldview", label: "Worldview", icon: <Globe className="w-4 h-4" /> },
+  { id: "identity", label: "Identity", icon: <Brain className="w-4 h-4" /> },
   { id: "agents", label: "Agents", icon: <Bot className="w-4 h-4" /> },
   { id: "personas", label: "Personas", icon: <UserCircle className="w-4 h-4" /> },
   { id: "skills", label: "Skills", icon: <Zap className="w-4 h-4" /> },
@@ -31,7 +33,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
-  const valid: SettingsSection[] = ["profile", "worldview", "agents", "personas", "skills", "runtime", "terminal", "mobile", "help"];
+  const valid: SettingsSection[] = ["profile", "worldview", "identity", "agents", "personas", "skills", "runtime", "terminal", "mobile", "help"];
   const initial = (initialSection && valid.includes(initialSection as SettingsSection))
     ? (initialSection as SettingsSection)
     : "profile";
@@ -72,6 +74,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
             <div className="p-5">
               {activeSection === "profile" && <ProfileSection />}
               {activeSection === "worldview" && <WorldviewSettings />}
+              {activeSection === "identity" && <IdentityAnalysisSettings />}
               {activeSection === "agents" && <AgentsSection />}
               {activeSection === "personas" && <PersonasSection />}
               {activeSection === "skills" && (
