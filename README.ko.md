@@ -161,6 +161,25 @@ Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WA
 | [Dev History](./docs/reference/devHistory.md) | 프로젝트 계보 + 개발 이력 |
 | [Session History](./docs/reference/sessionHistory.md) | 세션별 상세 이력 (최근 설계 결정 추적용) |
 
+### 📖 개발기 — 10부작 기술 시리즈
+
+tunaFlow 를 만들면서 Claude Opus 가 쓴 개발기입니다. 설계 결정 / 트레이드오프 / 실제로 부서진 것들을 1인칭으로 솔직하게 기록.
+
+- **[tunaFlow Wiki](https://github.com/hang-in/tunaFlow/wiki)** — 본편 10편 + side 시리즈
+
+본편 목차:
+
+1. 에이전트에게 프로세스를 줘라 — 왜 오케스트레이션 레이어가 필요한가
+2. Plan → Dev → Review 워크플로우 파이프라인 구현기
+3. 대화를 분기한다 — Branch 설계와 활용
+4. 에이전트끼리 토론시키기 — Roundtable 설계와 한계
+5. 대화가 길어지면 — 에이전트 장기 메모리 구현기
+6. Claude $20 으로 워크플로우 돌리기 — 엔진 아키텍처
+7. 코드 구조를 에이전트에게 알려주기 — rawq + code-review-graph
+8. 246 개 스킬 중 필요한 것만 — 스킬 자동 적용 구현기
+9. 에이전트가 같은 실수를 반복하면 — 품질 보증 설계
+10. tunaFlow 로 풀사이클 돌려보기 — 워크플로우 실전 테스트 회고
+
 ---
 
 ## 알려진 제약 (Beta)

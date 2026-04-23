@@ -161,6 +161,24 @@ External Integration: HTTP API + WebSocket · MCP Server (`tunaflow-mcp`)
 | [Dev History](./docs/reference/devHistory.md) | Project lineage + development history |
 | [Session History](./docs/reference/sessionHistory.md) | Detailed session history (for tracking design decisions) |
 
+### 📖 Dev Blog — 10-part technical series (Korean)
+
+Written by Claude Opus while building tunaFlow. A candid, first-person account of the design decisions, tradeoffs, and mistakes behind each feature.
+
+- **[tunaFlow Wiki](https://github.com/hang-in/tunaFlow/wiki)** — full series + side posts
+
+Highlights:
+1. Why an orchestration layer (agent process split)
+2. Plan → Dev → Review pipeline
+3. Branching conversations (adopt model)
+4. Roundtable — making agents debate
+5. Long-term memory (brute-force vectors, why not sqlite-vec yet)
+6. Engine architecture on a Claude Pro ($20) plan
+7. rawq + code-review-graph sidecars
+8. Auto-picking skills out of 246
+9. Breaking the Doom Loop (failure learning)
+10. Running tunaFlow against itself — a full-cycle retrospective
+
 ---
 
 ## Known Constraints (Beta)
