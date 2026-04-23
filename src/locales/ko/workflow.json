@@ -37,6 +37,60 @@
     "button": "Plan에 병합",
     "error": "Plan 병합 실패: {{error}}"
   },
+  "plan": {
+    "header": {
+      "doc_tooltip": "문서 보기"
+    },
+    "context_menu": {
+      "status_active": "Active로 변경",
+      "status_done": "완료 처리",
+      "status_draft": "Draft로 되돌리기",
+      "status_abandoned": "Abandon",
+      "doc_view": "문서 보기",
+      "collapse": "접기",
+      "expand": "펼치기",
+      "phase_section_label": "Phase 전환"
+    },
+    "subtask_review": {
+      "approve_button": "검토 완료 → Dev 승인",
+      "revert_button": "수정 필요 → Drafting"
+    },
+    "branch_links": {
+      "review_open": "Review Branch 열기",
+      "impl_open": "Implementation Branch 열기"
+    },
+    "review_ready": {
+      "impl_complete_label": "구현 완료 — Review 단계로 전환 가능",
+      "review_rt_button": "Review RT 시작"
+    },
+    "review_fallback": {
+      "no_verdict_hint": "리뷰어 마커가 감지되지 않았습니다. 수동으로 판단하세요.",
+      "back_to_dev_button": "← Dev 단계로 복귀 (Review 재시도)",
+      "back_to_dev_tooltip": "Review RT 진입이 실패했을 때 Dev 완료 상태로 되돌립니다. 기존 review 브랜치는 archive.",
+      "back_to_dev_event_reason": "Review 진입 실패로 Dev 단계 복귀",
+      "mark_rework_button": "수정 필요 (Rework)",
+      "mark_done_button": "통과 처리 (Done)"
+    },
+    "rework_notice": {
+      "heading": "Rework 필요 — Review findings를 Developer에게 전달합니다.",
+      "fail_count_warning": "⚠ Review 실패 {{count}}회 — {{hint}}",
+      "fail_hint_final": "설계 재검토가 필요합니다.",
+      "fail_hint_next": "다음 실패 시 설계 재검토로 에스컬레이션됩니다.",
+      "deliver_rework_button": "Developer에게 전달 + Rework",
+      "redesign_subtask_button": "설계 변경 → Subtask",
+      "rework_prompt": "[Rework] Review에서 다음 사항이 지적되었습니다:\n{{findings}}\n\n위 사항을 수정하고 완료되면 알려주세요.{{pressure}}",
+      "rework_findings_empty": "(findings 없음)",
+      "rework_pressure": "\n> ⚠️ 이전 {{count}}회 Review 실패. {{hint}}"
+    },
+    "add_subtasks": {
+      "add_button": "서브태스크 추가",
+      "line_hint": "한 줄에 하나씩 (마크다운 리스트 형식 OK)",
+      "from_docs_button": "docs에서 가져오기",
+      "textarea_placeholder": "1. 첫 번째 작업\n2. 두 번째 작업\n3. 세 번째 작업",
+      "save_button": "저장",
+      "cancel_button": "취소"
+    }
+  },
   "review": {
     "verdict": {
       "verdict_fail_label": "실패",

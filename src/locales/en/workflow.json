@@ -37,6 +37,60 @@
     "button": "Merge into Plan",
     "error": "Plan merge failed: {{error}}"
   },
+  "plan": {
+    "header": {
+      "doc_tooltip": "View document"
+    },
+    "context_menu": {
+      "status_active": "Set to Active",
+      "status_done": "Mark as Done",
+      "status_draft": "Revert to Draft",
+      "status_abandoned": "Abandon",
+      "doc_view": "View document",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "phase_section_label": "Phase transition"
+    },
+    "subtask_review": {
+      "approve_button": "Review done → Approve Dev",
+      "revert_button": "Needs revision → Drafting"
+    },
+    "branch_links": {
+      "review_open": "Open Review Branch",
+      "impl_open": "Open Implementation Branch"
+    },
+    "review_ready": {
+      "impl_complete_label": "Implementation complete — ready for Review phase",
+      "review_rt_button": "Start Review RT"
+    },
+    "review_fallback": {
+      "no_verdict_hint": "Reviewer marker not detected. Decide manually.",
+      "back_to_dev_button": "← Back to Dev (retry Review)",
+      "back_to_dev_tooltip": "If Review RT entry failed, revert to Dev-complete state. The existing review branch is archived.",
+      "back_to_dev_event_reason": "Back to Dev — Review entry failed",
+      "mark_rework_button": "Needs revision (Rework)",
+      "mark_done_button": "Pass (Done)"
+    },
+    "rework_notice": {
+      "heading": "Rework needed — sending Review findings to Developer.",
+      "fail_count_warning": "⚠ Review failed {{count}} times — {{hint}}",
+      "fail_hint_final": "Design review is required.",
+      "fail_hint_next": "Another failure will escalate to design review.",
+      "deliver_rework_button": "Deliver to Developer + Rework",
+      "redesign_subtask_button": "Redesign → Subtask",
+      "rework_prompt": "[Rework] The Review pointed out the following:\n{{findings}}\n\nPlease fix the items above and report when complete.{{pressure}}",
+      "rework_findings_empty": "(no findings)",
+      "rework_pressure": "\n> ⚠️ {{count}} previous Review failures. {{hint}}"
+    },
+    "add_subtasks": {
+      "add_button": "Add subtasks",
+      "line_hint": "One per line (markdown list format OK)",
+      "from_docs_button": "Import from docs",
+      "textarea_placeholder": "1. First task\n2. Second task\n3. Third task",
+      "save_button": "Save",
+      "cancel_button": "Cancel"
+    }
+  },
   "review": {
     "verdict": {
       "verdict_fail_label": "Fail",
