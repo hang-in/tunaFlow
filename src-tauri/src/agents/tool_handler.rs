@@ -35,13 +35,13 @@ pub fn workflow_tools() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: "submit_plan_proposal".into(),
-            description: "구현 계획을 제안합니다. title, description, subtasks를 포함하세요.".into(),
+            description: "Propose an implementation plan. Include title, description, and subtasks.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "title": { "type": "string", "description": "Plan 제목" },
-                    "description": { "type": "string", "description": "Plan 설명" },
-                    "expected_outcome": { "type": "string", "description": "기대 결과" },
+                    "title": { "type": "string", "description": "Plan title" },
+                    "description": { "type": "string", "description": "Plan description" },
+                    "expected_outcome": { "type": "string", "description": "Expected outcome" },
                     "subtasks": {
                         "type": "array",
                         "items": {
@@ -61,61 +61,61 @@ pub fn workflow_tools() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "mark_subtask_done".into(),
-            description: "Subtask 완료를 보고합니다.".into(),
+            description: "Report subtask completion.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "subtask_number": { "type": "integer", "description": "완료된 subtask 번호 (1부터)" },
-                    "summary": { "type": "string", "description": "완료 요약" }
+                    "subtask_number": { "type": "integer", "description": "Completed subtask number (1-based)" },
+                    "summary": { "type": "string", "description": "Completion summary" }
                 },
                 "required": ["subtask_number"]
             }),
         },
         ToolDefinition {
             name: "mark_implementation_complete".into(),
-            description: "전체 구현 완료를 보고합니다.".into(),
+            description: "Report that the overall implementation is complete.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "summary": { "type": "string", "description": "구현 결과 요약" }
+                    "summary": { "type": "string", "description": "Implementation result summary" }
                 },
                 "required": ["summary"]
             }),
         },
         ToolDefinition {
             name: "submit_review_verdict".into(),
-            description: "리뷰 결과를 제출합니다. verdict, rubric 점수, findings, recommendations를 포함하세요.".into(),
+            description: "Submit review results. Include verdict, rubric scores, findings, and recommendations.".into(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "verdict": {
                         "type": "string",
                         "enum": ["pass", "fail", "conditional"],
-                        "description": "리뷰 판정"
+                        "description": "Review verdict"
                     },
                     "rubric": {
                         "type": "object",
-                        "description": "항목별 5점 척도 평가 (1=미흡, 3=보통, 5=우수)",
+                        "description": "Per-item 5-point evaluation (1=poor, 3=average, 5=excellent)",
                         "properties": {
                             "plan_coverage": {
                                 "type": "integer", "minimum": 1, "maximum": 5,
-                                "description": "Plan subtask 구현 완성도"
+                                "description": "Plan subtask implementation completeness"
                             },
                             "code_quality": {
                                 "type": "integer", "minimum": 1, "maximum": 5,
-                                "description": "코드 품질 (버그, 보안, 가독성)"
+                                "description": "Code quality (bugs, security, readability)"
                             },
                             "test_coverage": {
                                 "type": "integer", "minimum": 1, "maximum": 5,
-                                "description": "테스트 커버리지 및 검증 수준"
+                                "description": "Test coverage and verification level"
                             },
                             "doc_quality": {
                                 "type": "integer", "minimum": 1, "maximum": 5,
-                                "description": "결과 문서 품질 (깨끗함, 정확함)"
+                                "description": "Result document quality (clean, accurate)"
                             },
                             "convention": {
                                 "type": "integer", "minimum": 1, "maximum": 5,
-                                "description": "코딩 컨벤션 및 프로젝트 규칙 준수"
+                                "description": "Adherence to coding conventions and project rules"
                             }
                         },
                         "required": ["plan_coverage", "code_quality", "test_coverage", "doc_quality", "convention"]
@@ -131,12 +131,12 @@ pub fn workflow_tools() -> Vec<ToolDefinition> {
                             },
                             "required": ["description"]
                         },
-                        "description": "발견 사항"
+                        "description": "Findings"
                     },
                     "recommendations": {
                         "type": "array",
                         "items": { "type": "string" },
-                        "description": "권장 사항"
+                        "description": "Recommendations"
                     }
                 },
                 "required": ["verdict", "rubric", "findings"]
