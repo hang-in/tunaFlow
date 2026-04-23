@@ -12,13 +12,17 @@
     "mobile": "Mobile",
     "help": "Help"
   },
+  "skills_description": "Manage the skills applied to agents.",
   "profile": {
+    "heading": "Profile",
     "description": "Configure your agent context and developer information.",
     "group": {
       "basic": "Basic info",
       "agent_context": "Agent context",
       "dev_info": "Developer info",
-      "advanced": "Advanced"
+      "timezone": "Timezone",
+      "advanced": "Advanced",
+      "advanced_old": "Advanced"
     },
     "field": {
       "name": "Name",
@@ -28,12 +32,27 @@
       "preferred_languages": "Preferred languages",
       "git_name": "Git name",
       "git_email": "Git email",
-      "github_org": "GitHub org",
-      "github_token": "GitHub token"
+      "github_org": "GitHub default org",
+      "github_token": "GitHub Personal Access Token"
+    },
+    "hint": {
+      "github_username": "Used to auto-load your profile picture.",
+      "bio": "Helps the agent understand your background.",
+      "preferred_languages": "Comma-separated.",
+      "github_token": "Used for repo cloning and API access. Stored locally only.",
+      "timezone_auto": "Auto-detected"
+    },
+    "placeholder": {
+      "bio": "Backend API dev, Rust/TypeScript, startup CTO...",
+      "preferred_languages": "TypeScript, Rust, Python"
+    },
+    "button": {
+      "save": "Save"
     },
     "toast": {
       "saved": "Profile saved"
-    }
+    },
+    "saved_msg": "Saved"
   },
   "worldview": {
     "heading": "User Worldview",
@@ -52,7 +71,8 @@
       "toggle_on": "Worldview injection enabled",
       "toggle_off": "Worldview injection disabled"
     },
-    "placeholder": "(Empty — load default or write your own)"
+    "placeholder": "(Empty — load default or write your own)",
+    "default_template": "# User Worldview\n\n## Ontology\n(Default worldview — write your own)\n\n## Engagement preference\n(Preferred collaboration style with the agent — write your own)\n"
   },
   "identity": {
     "heading": "Identity Analysis",
@@ -81,6 +101,220 @@
       "enqueued": "Analysis job enqueued — worker will run within 30s",
       "skipped": "Skip — {{reason}}",
       "run_failed": "Run failed: {{error}}"
+    }
+  },
+  "help": {
+    "heading": "Help",
+    "description": "Overview of tunaFlow features, keyboard shortcuts, and troubleshooting.",
+    "crash_reports": {
+      "title": "Recent crash reports ({{count}})",
+      "location": "File location: <code>~/.tunaflow/crash-reports/</code> · please attach when reporting issues."
+    },
+    "shortcuts_title": "Keyboard shortcuts",
+    "features_title": "Features",
+    "troubleshooting_title": "Troubleshooting",
+    "external_title": "External resources",
+    "external": {
+      "github": "GitHub repository",
+      "issues": "Issues / bug reports",
+      "email": "Email: d9ng@outlook.com"
+    },
+    "shortcut_desc": {
+      "cmd_k": "Open command palette",
+      "cmd_enter": "Send current input",
+      "shift_enter": "Newline in input",
+      "esc": "Close drawer/modal",
+      "tab": "Cycle focus"
+    },
+    "features": {
+      "pdr": {
+        "title": "Plan → Develop → Review",
+        "desc": "The Architect designs a Plan, the Developer implements it, and the Reviewer verifies the result. On failure, a rev.N+1 Plan is proposed automatically based on findings."
+      },
+      "branch": {
+        "title": "Branch / Roundtable",
+        "desc": "Branch off from the middle of a conversation for an independent experiment and adopt only the summary back. RT is a Branch extension where multiple engines discuss sequentially or in parallel."
+      },
+      "contextpack": {
+        "title": "ContextPack",
+        "desc": "Assembles project docs, memory, and tool results into a shared format on every request. Auto-switches between Lite/Standard/Full to save tokens."
+      },
+      "insight": {
+        "title": "Insight",
+        "desc": "Analyzes the project across six categories: stability, tests, architecture, performance, security, and tech debt. Quick Wins can be auto-fixed by the agent."
+      },
+      "pty": {
+        "title": "PTY Terminal",
+        "desc": "Keeps an interactive session with CLI agents without the `-p` flag. Full tool usage including file edits and command execution is available."
+      }
+    },
+    "troubleshooting": {
+      "no_response": {
+        "title": "The agent is not responding",
+        "desc": "First check in Settings > Agents that the CLI is detected. Claude/Codex/Gemini each require a one-time login. If there is still no response after login, click the top RuntimeStatusBar to check process state."
+      },
+      "insight_reset": {
+        "title": "Insight analysis resets right after starting",
+        "desc": "State is preserved in Zustand even if you switch tabs while Insight runs. If resets continue, check the rawq daemon status in Settings > Runtime."
+      },
+      "cpu_high": {
+        "title": "CPU usage is high",
+        "desc": "The bge-m3 embedding indexer may be running. Switch to `incremental indexing only` mode in Settings > Runtime to avoid large re-indexing."
+      },
+      "macos_gatekeeper": {
+        "title": "The app won't open on macOS",
+        "desc": "This is an ad-hoc signed build, so Gatekeeper may block it.\nRun `xattr -cr /Applications/tunaFlow.app` in Terminal and try again."
+      }
+    }
+  },
+  "mobile": {
+    "heading": "Mobile connection",
+    "description": "Scan the QR code from the tunaFlow mobile app to connect automatically. PC and mobile must be on the same Wi-Fi network.",
+    "loading": "Checking network info…",
+    "scan_hint": "Scan from the mobile app",
+    "server_url": "Server URL",
+    "api_token": "API token",
+    "steps": {
+      "step1": "① Open the tunaFlow mobile app in your mobile browser.",
+      "step2_prefix": "② Tap ",
+      "step2_strong": "Scan QR",
+      "step2_suffix": " to scan the QR code above.",
+      "step3": "③ Connection is automatic. (Manual entry is also supported.)"
+    },
+    "refresh": "Refresh"
+  },
+  "personas": {
+    "heading": "Personas",
+    "description": "Define agent roles and behavior rules. Select a persona in an Agent Profile to apply it."
+  },
+  "agents": {
+    "heading": "Agent Profiles",
+    "description": "Manage agent profiles. Each profile bundles an engine, model, and default skills into a single execution unit.",
+    "role_coverage": {
+      "title": "Role coverage",
+      "ready_count": "{{ready}}/{{total}} ready",
+      "hint": "Assign profiles to the Architect (design), Developer (implement), Reviewer (≥2 reviewers), and Synthesizer (RT synthesis) roles to run Review RT / Plan approval / RT synthesis exactly as configured.",
+      "unselected": "— Not selected —",
+      "no_profiles": "No profiles available"
+    },
+    "meta": {
+      "heading": "Meta-agent auto analysis (Tier 2)",
+      "description": "Automatically generates weekly summaries, failure pattern analysis, and artifact summaries using low-cost engines. Read-only — proposes only; execution requires user approval.",
+      "engine_label": "Engine",
+      "auto_trigger": "Auto trigger",
+      "auto_trigger_hint": "— Runs analysis automatically when thresholds are reached",
+      "threshold": {
+        "weekly_pass": "Weekly summary (pass count)",
+        "fail_pattern": "Failure pattern (fail count)",
+        "artifact_count": "Artifact summary (count)",
+        "idle_days": "Idle days"
+      },
+      "engine_option": {
+        "off_label": "Off",
+        "off_hint": "Disable meta auto analysis",
+        "auto_label": "Auto",
+        "auto_hint": "Auto-select based on project stack",
+        "claude_haiku_hint": "Stable JSON/Korean summaries, inexpensive",
+        "gemini_flash_hint": "Cheap for large input, fast"
+      }
+    }
+  },
+  "runtime": {
+    "heading": "Runtime",
+    "description": "Inspect and manage the runtime environment.",
+    "workflow_skills": {
+      "heading": "Workflow Skills",
+      "description": "Skill sets per workflow phase. Combined with manual selection.",
+      "phase": {
+        "chat_desc": "General conversation, Architect design",
+        "implementation_desc": "Developer code implementation",
+        "review_desc": "Reviewer code review"
+      }
+    },
+    "context_budget": {
+      "modes": {
+        "auto_desc": "Auto-select based on conversation state (default)",
+        "lite_desc": "Project + conversation context only",
+        "standard_desc": "Lite + Plan, Findings, Artifacts",
+        "full_desc": "Standard + Skills, rawq, Cross-session"
+      },
+      "included_sections_auto": "Included Sections (Auto mode: maximum scope)",
+      "included_sections": "Included Sections",
+      "persona_thread_note": "Persona is always included when configured. Thread is automatically included for branches. rawq is included regardless of mode when code signals are detected."
+    },
+    "insight_agent": {
+      "description": "Agent configuration used by the Insight tab analysis.",
+      "preset_label": "Preset",
+      "engine_label": "Engine",
+      "model_label": "Model",
+      "system_prompt": "System prompt",
+      "preset": {
+        "balanced_claude_label": "Balanced (Claude)",
+        "balanced_claude_desc": "Balance of accuracy and cost. Suitable for general code quality analysis.",
+        "thorough_label": "Thorough (Claude)",
+        "thorough_desc": "In-depth analysis. More tokens, higher accuracy.",
+        "security_label": "Security Focus (Claude)",
+        "security_desc": "Security-focused analysis. Based on OWASP Top 10.",
+        "balanced_gemini_label": "Balanced (Gemini)",
+        "balanced_gemini_desc": "Uses the Gemini engine for a different perspective."
+      }
+    },
+    "pty": {
+      "hint": "When PTY is disabled, all messages are sent via -p mode. Session can be reset with /clear."
+    },
+    "attachments": {
+      "heading": "Attachments Cleanup",
+      "description": "Clean up old attachment files inside `.tunaflow/attachments/`. (.gitignore is preserved.)",
+      "older_than": "Delete files older than:",
+      "days_suffix": "days (0 = all)",
+      "run": "Run cleanup",
+      "running": "Cleaning...",
+      "result": "✅ Deleted {{count}} · Freed {{size}}",
+      "error": {
+        "no_project": "No project selected.",
+        "no_path": "Project path not found."
+      }
+    }
+  },
+  "conventions": {
+    "heading": "Conventions Context Sync",
+    "description": "Syncs static ContextPack layers (platform / agent role / persona / user profile) to CLAUDE.md / AGENTS.md / GEMINI.md. After editing, refresh files with \"Sync Now\".",
+    "toggle": {
+      "label": "Skip static layers in ContextPack",
+      "description": "When enabled, static layers are not resent every turn. CLI auto-prepends CLAUDE.md/AGENTS.md, and the Anthropic API path benefits from prompt cache hits for cost savings. First add conventions for the project below and build the files via \"Sync Now\" to see actual effect."
+    },
+    "select_project": "— Select project —",
+    "persona_filter_placeholder": "Persona filter (empty = common only)",
+    "reload_title": "Reload",
+    "syncing": "Syncing…",
+    "sync_now": "Sync Now",
+    "sync_report": "✓ Sync complete — entry files: {{entry}}, split files: {{split}}",
+    "sync_report_truncated": " ({{count}} truncated)",
+    "error_no_project_path": "Project path is missing",
+    "empty_hint": "No conventions registered yet. Add one below.",
+    "delete_title": "Delete",
+    "new": {
+      "heading": "Add new convention",
+      "persona_placeholder": "Persona (empty = common)",
+      "source_placeholder": "Source ID (optional)",
+      "content_placeholder": "Markdown body…",
+      "add": "Add"
+    },
+    "layer": {
+      "platform_label": "Platform / Project meta",
+      "platform_hint": "Project path, build commands, languages, etc.",
+      "agent_role_label": "Agent role",
+      "agent_role_hint": "Agent role guidance (architect/coder/reviewer, etc.)",
+      "persona_label": "Persona",
+      "persona_hint": "Persona behavior guidance",
+      "user_profile_label": "User profile",
+      "user_profile_hint": "User info and preferences",
+      "plan_doc_label": "Plan document",
+      "plan_doc_hint": "Current in-progress plan body (revision-based)",
+      "findings_label": "Findings",
+      "findings_hint": "Findings body from a previous review verdict",
+      "artifact_label": "Artifact",
+      "artifact_hint": "Reference artifact (e.g. result.md)"
     }
   }
 }

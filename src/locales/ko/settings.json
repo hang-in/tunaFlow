@@ -12,28 +12,47 @@
     "mobile": "Mobile",
     "help": "Help"
   },
+  "skills_description": "에이전트에게 적용할 스킬을 관리합니다.",
   "profile": {
+    "heading": "Profile",
     "description": "에이전트 컨텍스트와 개발자 정보를 설정합니다.",
     "group": {
       "basic": "기본 정보",
-      "agent_context": "에이전트 맥락",
+      "agent_context": "에이전트 컨텍스트",
       "dev_info": "개발자 정보",
-      "advanced": "고급"
+      "timezone": "시간대",
+      "advanced": "고급",
+      "advanced_old": "Advanced"
     },
     "field": {
       "name": "이름",
       "title": "직함",
-      "github_username": "GitHub 사용자명",
-      "bio": "Bio",
+      "github_username": "GitHub Username",
+      "bio": "소개 메모",
       "preferred_languages": "선호 언어",
-      "git_name": "Git 사용자명",
+      "git_name": "Git 이름",
       "git_email": "Git 이메일",
-      "github_org": "GitHub 조직",
-      "github_token": "GitHub 토큰"
+      "github_org": "GitHub 기본 Org",
+      "github_token": "GitHub Personal Access Token"
+    },
+    "hint": {
+      "github_username": "프로필 사진 자동 로드에 사용됩니다.",
+      "bio": "에이전트가 사용자 배경을 이해하는 데 활용됩니다.",
+      "preferred_languages": "쉼표로 구분합니다.",
+      "github_token": "레포 클론, API 접근 시 사용됩니다. 로컬에만 저장됩니다.",
+      "timezone_auto": "자동 감지"
+    },
+    "placeholder": {
+      "bio": "백엔드 API 개발 주력, Rust/TypeScript 사용, 스타트업 CTO...",
+      "preferred_languages": "TypeScript, Rust, Python"
+    },
+    "button": {
+      "save": "저장"
     },
     "toast": {
       "saved": "프로필 저장됨"
-    }
+    },
+    "saved_msg": "저장됐습니다"
   },
   "worldview": {
     "heading": "User Worldview",
@@ -52,7 +71,8 @@
       "toggle_on": "Worldview 주입 활성화",
       "toggle_off": "Worldview 주입 비활성화"
     },
-    "placeholder": "(비어있음 — 기본 문구 로드 또는 직접 작성)"
+    "placeholder": "(비어있음 — 기본 문구 로드 또는 직접 작성)",
+    "default_template": "# User Worldview\n\n## Ontology\n(기본 세계관 — 직접 작성)\n\n## Engagement preference\n(agent 와의 협업 방식 선호 — 직접 작성)\n"
   },
   "identity": {
     "heading": "Identity Analysis",
@@ -81,6 +101,220 @@
       "enqueued": "분석 job enqueue — 30s 내 worker 가 실행",
       "skipped": "skip — {{reason}}",
       "run_failed": "실행 실패: {{error}}"
+    }
+  },
+  "help": {
+    "heading": "Help",
+    "description": "tunaFlow 주요 기능, 키보드 단축키, 문제 해결 가이드.",
+    "crash_reports": {
+      "title": "최근 크래시 리포트 ({{count}})",
+      "location": "파일 위치: <code>~/.tunaflow/crash-reports/</code> · 이슈 신고 시 첨부해주세요."
+    },
+    "shortcuts_title": "키보드 단축키",
+    "features_title": "주요 기능",
+    "troubleshooting_title": "문제 해결",
+    "external_title": "외부 자료",
+    "external": {
+      "github": "GitHub 저장소",
+      "issues": "이슈 / 버그 신고",
+      "email": "이메일 문의: d9ng@outlook.com"
+    },
+    "shortcut_desc": {
+      "cmd_k": "명령 팔레트 열기",
+      "cmd_enter": "현재 입력 전송",
+      "shift_enter": "입력창 줄바꿈",
+      "esc": "드로어/모달 닫기",
+      "tab": "포커스 순환 이동"
+    },
+    "features": {
+      "pdr": {
+        "title": "Plan → Develop → Review",
+        "desc": "Architect 가 Plan 을 설계하면 Developer 가 구현하고 Reviewer 가 검증합니다. 실패하면 findings 를 기반으로 rev.N+1 Plan 을 자동 제안합니다."
+      },
+      "branch": {
+        "title": "Branch / Roundtable",
+        "desc": "대화 중간에서 Branch 로 분기해 독립 실험을 하고 결과만 요약 삽입(adopt)할 수 있습니다. RT 는 여러 엔진이 순차/동시로 토론하는 Branch 확장 모드입니다."
+      },
+      "contextpack": {
+        "title": "ContextPack",
+        "desc": "매 요청마다 프로젝트 문서, 기억, 도구 결과를 엔진 공통 포맷으로 조립합니다. Lite/Standard/Full 자동 전환으로 토큰을 절약합니다."
+      },
+      "insight": {
+        "title": "Insight",
+        "desc": "안정성·테스트·아키텍처·성능·보안·기술부채 6개 카테고리로 프로젝트를 분석합니다. Quick Wins 는 에이전트가 자동 수정할 수 있습니다."
+      },
+      "pty": {
+        "title": "PTY Terminal",
+        "desc": "CLI 에이전트와 `-p` 플래그 없이 인터랙티브 세션을 유지합니다. 파일 수정, 명령 실행 등 전체 도구 사용이 가능합니다."
+      }
+    },
+    "troubleshooting": {
+      "no_response": {
+        "title": "에이전트가 응답하지 않아요",
+        "desc": "Settings > Agents 에서 해당 CLI 가 감지되는지 먼저 확인하세요. Claude/Codex/Gemini 는 각자 한 번 로그인이 필요합니다. 로그인 후에도 응답이 없으면 상단 RuntimeStatusBar 를 눌러 프로세스 상태를 확인하세요."
+      },
+      "insight_reset": {
+        "title": "Insight 분석이 시작하자마자 초기화됩니다",
+        "desc": "Insight 실행 중 다른 탭으로 이동해도 상태는 Zustand 에 저장됩니다. 계속 초기화가 발생하면 Settings > Runtime 에서 rawq daemon 상태를 확인해주세요."
+      },
+      "cpu_high": {
+        "title": "CPU 사용률이 높습니다",
+        "desc": "bge-m3 임베딩 인덱싱 중일 수 있습니다. Settings > Runtime 에서 `증분 인덱싱 전용` 모드로 전환하면 대규모 재인덱싱을 피할 수 있습니다."
+      },
+      "macos_gatekeeper": {
+        "title": "macOS 에서 앱이 열리지 않습니다",
+        "desc": "ad-hoc 서명 빌드이므로 Gatekeeper 가 차단할 수 있습니다.\n터미널에서 `xattr -cr /Applications/tunaFlow.app` 실행 후 다시 열어보세요."
+      }
+    }
+  },
+  "mobile": {
+    "heading": "모바일 연결",
+    "description": "tunaFlow 모바일 앱에서 QR 코드를 스캔하면 자동으로 연결됩니다. PC와 모바일이 같은 Wi-Fi 네트워크에 있어야 합니다.",
+    "loading": "네트워크 정보 확인 중…",
+    "scan_hint": "모바일 앱에서 스캔",
+    "server_url": "서버 주소",
+    "api_token": "API 토큰",
+    "steps": {
+      "step1": "① 모바일 브라우저에서 tunaFlow 모바일 앱을 엽니다.",
+      "step2_prefix": "② ",
+      "step2_strong": "QR 코드 스캔",
+      "step2_suffix": " 버튼을 눌러 위 QR 코드를 스캔하세요.",
+      "step3": "③ 자동으로 연결됩니다. (수동 입력도 가능)"
+    },
+    "refresh": "새로고침"
+  },
+  "personas": {
+    "heading": "Personas",
+    "description": "에이전트의 역할과 행동 규칙을 정의합니다. Agent Profile에서 persona를 선택하여 사용합니다."
+  },
+  "agents": {
+    "heading": "Agent Profiles",
+    "description": "에이전트 프로필을 관리합니다. 각 프로필은 엔진, 모델, 기본 스킬을 하나의 실행 단위로 묶습니다.",
+    "role_coverage": {
+      "title": "역할 커버리지",
+      "ready_count": "{{ready}}/{{total}} ready",
+      "hint": "Architect(설계), Developer(구현), Reviewer(검토 ≥2), Synthesizer(RT 합성) 역할에 프로필을 배정하면 Review RT / Plan 승인 / RT 합성 시 설정 그대로 실행됩니다.",
+      "unselected": "— 선택 안 됨 —",
+      "no_profiles": "프로필이 없습니다"
+    },
+    "meta": {
+      "heading": "메타 에이전트 자동 분석 (Tier 2)",
+      "description": "주간 요약, 실패 패턴 분석, artifacts 요약 등을 저비용 엔진으로 자동 생성합니다. 읽기 전용 — 제안만 하며 실행은 사용자 승인 필요.",
+      "engine_label": "엔진",
+      "auto_trigger": "자동 트리거",
+      "auto_trigger_hint": "— 임계값 도달 시 분석 자동 실행",
+      "threshold": {
+        "weekly_pass": "주간 요약 (pass 누적)",
+        "fail_pattern": "실패 패턴 (fail 누적)",
+        "artifact_count": "artifact 요약 (누적)",
+        "idle_days": "idle 일수"
+      },
+      "engine_option": {
+        "off_label": "끔",
+        "off_hint": "메타 자동 분석 비활성화",
+        "auto_label": "자동",
+        "auto_hint": "프로젝트 스택 기반 자동 선택",
+        "claude_haiku_hint": "JSON/한국어 요약 안정적, 저렴",
+        "gemini_flash_hint": "대용량 input 저렴, 빠름"
+      }
+    }
+  },
+  "runtime": {
+    "heading": "Runtime",
+    "description": "런타임 환경 상태를 확인하고 관리합니다.",
+    "workflow_skills": {
+      "heading": "Workflow Skills",
+      "description": "워크플로우 단계별 스킬 세트. 수동 선택과 합산됩니다.",
+      "phase": {
+        "chat_desc": "일반 대화, Architect 설계",
+        "implementation_desc": "Developer 코드 구현",
+        "review_desc": "Reviewer 코드 검토"
+      }
+    },
+    "context_budget": {
+      "modes": {
+        "auto_desc": "대화 상태에 따라 자동 선택 (기본)",
+        "lite_desc": "프로젝트 + 대화 컨텍스트만 포함",
+        "standard_desc": "Lite + Plan, Findings, Artifacts",
+        "full_desc": "Standard + Skills, rawq, Cross-session"
+      },
+      "included_sections_auto": "Included Sections (Auto 모드: 최대 범위)",
+      "included_sections": "Included Sections",
+      "persona_thread_note": "Persona는 설정 시 항상 포함. Thread는 branch에서 자동 포함. rawq는 코드 신호 감지 시 mode 무관 포함."
+    },
+    "insight_agent": {
+      "description": "Insight 탭 분석에 사용할 에이전트 설정",
+      "preset_label": "프리셋",
+      "engine_label": "엔진",
+      "model_label": "모델",
+      "system_prompt": "시스템 프롬프트",
+      "preset": {
+        "balanced_claude_label": "Balanced (Claude)",
+        "balanced_claude_desc": "정확도와 비용의 균형. 일반적 코드 품질 분석에 적합",
+        "thorough_label": "Thorough (Claude)",
+        "thorough_desc": "정밀 분석. 더 많은 토큰 소비, 더 높은 정확도",
+        "security_label": "Security Focus (Claude)",
+        "security_desc": "보안 취약점 중심 분석. OWASP Top 10 기반",
+        "balanced_gemini_label": "Balanced (Gemini)",
+        "balanced_gemini_desc": "Gemini 엔진 사용. 다른 관점의 분석"
+      }
+    },
+    "pty": {
+      "hint": "PTY 비활성화 시 모든 메시지가 -p 모드로 전송됩니다. /clear로 세션 초기화 가능."
+    },
+    "attachments": {
+      "heading": "Attachments Cleanup",
+      "description": "`.tunaflow/attachments/` 내부의 오래된 첨부 파일을 정리합니다. (.gitignore 는 보존)",
+      "older_than": "보다 오래된 파일 삭제:",
+      "days_suffix": "일 (0 = 전부)",
+      "run": "정리 실행",
+      "running": "정리 중...",
+      "result": "✅ 삭제 {{count}}건 · 확보 {{size}}",
+      "error": {
+        "no_project": "프로젝트가 선택되지 않았습니다.",
+        "no_path": "프로젝트 경로를 찾을 수 없습니다."
+      }
+    }
+  },
+  "conventions": {
+    "heading": "Conventions Context Sync",
+    "description": "정적 ContextPack layer(platform / agent role / persona / user profile)를 CLAUDE.md / AGENTS.md / GEMINI.md로 sync 합니다. 편집 후 \"Sync Now\" 로 파일 갱신.",
+    "toggle": {
+      "label": "ContextPack 에서 정적 레이어 생략",
+      "description": "켜면 매 turn 정적 레이어를 재송신하지 않습니다. CLI 가 CLAUDE.md/AGENTS.md 를 자동 prepending 하며 Anthropic API 경로에서는 prompt cache 적중으로 비용 절감. 먼저 아래에서 해당 프로젝트의 conventions 를 추가하고 \"Sync Now\" 로 파일을 만들어야 실제 효과."
+    },
+    "select_project": "— Project 선택 —",
+    "persona_filter_placeholder": "Persona 필터 (비우면 공통 only)",
+    "reload_title": "다시 불러오기",
+    "syncing": "Syncing…",
+    "sync_now": "Sync Now",
+    "sync_report": "✓ Sync 완료 — entry files: {{entry}}, split files: {{split}}",
+    "sync_report_truncated": " ({{count}}개 truncated)",
+    "error_no_project_path": "project 경로가 없습니다",
+    "empty_hint": "아직 등록된 conventions가 없습니다. 아래에서 추가하세요.",
+    "delete_title": "삭제",
+    "new": {
+      "heading": "새 convention 추가",
+      "persona_placeholder": "Persona (비우면 공통)",
+      "source_placeholder": "Source ID (선택)",
+      "content_placeholder": "Markdown 본문…",
+      "add": "추가"
+    },
+    "layer": {
+      "platform_label": "Platform / Project meta",
+      "platform_hint": "프로젝트 path, 빌드 명령어, 언어 등",
+      "agent_role_label": "Agent role",
+      "agent_role_hint": "에이전트 역할 지침 (architect/coder/reviewer 등)",
+      "persona_label": "Persona",
+      "persona_hint": "페르소나 행동 지침",
+      "user_profile_label": "User profile",
+      "user_profile_hint": "사용자 정보, 선호",
+      "plan_doc_label": "Plan document",
+      "plan_doc_hint": "현재 진행 중인 plan 본문 (revision 기반)",
+      "findings_label": "Findings",
+      "findings_hint": "이전 review verdict의 findings 본문",
+      "artifact_label": "Artifact",
+      "artifact_hint": "참고 산출물 (result.md 등)"
     }
   }
 }
