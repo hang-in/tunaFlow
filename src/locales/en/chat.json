@@ -23,7 +23,11 @@
     "retry": "Retry",
     "delete_pair": "Delete pair",
     "created_branch": "Create branch",
-    "streaming_hint": "Streaming..."
+    "streaming_hint": "Streaming...",
+    "tool_result_label": "Tool call result",
+    "tool_result_lines": "({{count}} lines)",
+    "delete_confirm_title": "Delete message",
+    "delete_confirm_body": "Delete this message?"
   },
   "branch": {
     "create": "Create branch",
