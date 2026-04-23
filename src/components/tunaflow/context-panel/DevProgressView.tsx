@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -18,6 +19,7 @@ interface DevProgressViewProps {
 }
 
 export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
+  const { t } = useTranslation("workflow");
   const { openThread, sendThreadMessage, sendThreadRoundtable, loadBranches, saveConversationEngine } = useChatStore();
   const profiles = useChatStore((s) => s.agentProfiles);
   const runningThreadIds = useChatStore((s) => s.runningThreadIds);
@@ -283,7 +285,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
   };
 
   if (loading) {
-    return <p className="text-xs text-muted-foreground px-2">Loading...</p>;
+    return <p className="text-xs text-muted-foreground px-2">{t("progress.header.loading")}</p>;
   }
 
   // Approval phase: show the gate UI before implementation starts
@@ -294,7 +296,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           <ClipboardList className="w-4 h-4 text-primary/60" />
           <span className="text-xs font-medium text-foreground flex-1">{plan.title}</span>
           <button onClick={() => setShowDoc(true)} className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-primary/60 transition-colors">
-            <FileText className="w-3 h-3" />문서
+            <FileText className="w-3 h-3" />{t("progress.header.doc_button")}
           </button>
         </div>
         <ApprovalGate
@@ -320,14 +322,14 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
             : <ClipboardList className="w-4 h-4 text-primary/60" />}
           <span className="text-xs font-medium text-foreground flex-1">{plan.title}</span>
           {branchRunning && (
-            <span className="text-[9px] text-primary/60">구현 중...</span>
+            <span className="text-[9px] text-primary/60">{t("progress.header.implementing")}</span>
           )}
           <button onClick={() => setShowDoc(true)} className="flex items-center gap-1 text-[9px] text-muted-foreground/50 hover:text-primary/60 transition-colors">
-            <FileText className="w-3 h-3" />문서
+            <FileText className="w-3 h-3" />{t("progress.header.doc_button")}
           </button>
           {plan.implementationBranchId && (
             <button onClick={handleOpenBranch} className="flex items-center gap-1 text-[9px] text-primary/60 hover:text-primary transition-colors">
-              <GitBranch className="w-3 h-3" />Branch 열기
+              <GitBranch className="w-3 h-3" />{t("progress.header.branch_open")}
             </button>
           )}
         </div>
@@ -358,11 +360,11 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                   <p className="text-[10px] text-muted-foreground/60 leading-snug mt-0.5 line-clamp-2">{st.details}</p>
                 )}
                 <div className="flex items-center gap-2 mt-1.5">
-                  {isDone && <span className="text-[9px] text-status-approved/60">완료</span>}
+                  {isDone && <span className="text-[9px] text-status-approved/60">{t("progress.subtask.done_label")}</span>}
                   {!isDone && (
                     <button onClick={() => handleRerunSubtask(st, i)} disabled={busy}
                       className="flex items-center gap-0.5 text-[9px] text-primary/60 hover:text-primary disabled:opacity-40 transition-colors">
-                      <RotateCcw className="w-2.5 h-2.5" />재수행
+                      <RotateCcw className="w-2.5 h-2.5" />{t("progress.subtask.rerun_button")}
                     </button>
                   )}
                   <button onClick={() => handleCreateSubPlan(st, i)} disabled={busy}
@@ -388,35 +390,26 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
             <>
               {failCount === 0 ? (
                 <>
-                  <p className="font-semibold">⚠️ 설계 재검토 필요 — Architect 재설계 진행 중</p>
-                  <p className="text-[9px] text-foreground/60">
-                    이전 싸이클에서 Review 5회 이상 실패로 에스컬레이션 되었습니다.
-                    Architect 의 rev 제안을 검토/승인한 뒤 Dev 를 다시 시작하세요.
-                  </p>
+                  <p className="font-semibold">{t("progress.rework.design_review_required_title")}</p>
+                  <p className="text-[9px] text-foreground/60">{t("progress.rework.design_review_required_body")}</p>
                 </>
               ) : failCount === 1 ? (
                 <>
-                  <p className="font-semibold">⚠️ Review 1회 실패 — 이전 싸이클 설계 재검토 이력 있음</p>
-                  <p className="text-[9px] text-foreground/60">
-                    동일 패턴이 반복되면 설계 재검토가 또 필요할 수 있습니다.
-                    Rework 으로 해소되지 않으면 Architect 재설계를 요청하세요.
-                  </p>
+                  <p className="font-semibold">{t("progress.rework.review_failed_once_title")}</p>
+                  <p className="text-[9px] text-foreground/60">{t("progress.rework.review_failed_once_body")}</p>
                 </>
               ) : (
                 <>
-                  <p className="font-semibold">⚠️ Review {failCount}회 연속 실패 — 설계 재검토가 필요합니다</p>
-                  <p className="text-[9px] text-foreground/60">
-                    동일한 문제가 반복되고 있어 Rework 으로 해결되지 않습니다.
-                    Subtask 설계를 재검토하고 Architect 에게 수정을 요청하세요.
-                  </p>
+                  <p className="font-semibold">{t("progress.rework.review_failed_many_title", { count: failCount })}</p>
+                  <p className="text-[9px] text-foreground/60">{t("progress.rework.review_failed_many_body")}</p>
                 </>
               )}
             </>
           ) : (
-            <p className="font-medium">Rework 필요 — Review에서 다음 사항이 지적되었습니다.</p>
+            <p className="font-medium">{t("progress.rework.rework_needed")}</p>
           )}
           {designReviewSuggested && !doomLoopEscalated && (
-            <p className="text-amber-500 font-medium">⚠️ 동일 파일에서 반복 실패 — Rework 대신 설계 재검토를 권장합니다.</p>
+            <p className="text-amber-500 font-medium">{t("progress.rework.design_review_suggested")}</p>
           )}
           {reviewVerdict && reviewVerdict.findings.length > 0 && (
             <ul className="space-y-0.5 text-[9px] text-foreground/60 pl-2">
@@ -432,7 +425,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
             {!doomLoopEscalated && (
               <button onClick={handleRework} disabled={busy}
                 className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors">
-                {busy ? "전달 중..." : "Developer에게 전달 + Rework"}
+                {busy ? t("progress.rework.deliver_busy") : t("progress.rework.deliver_button")}
               </button>
             )}
             <button
@@ -452,7 +445,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                   ? "bg-amber-500/20 text-amber-600 hover:bg-amber-500/30"
                   : "bg-accent text-muted-foreground hover:text-foreground"
               )}>
-              {doomLoopEscalated ? "설계 재검토 시작 →" : "설계 변경 → Subtask"}
+              {doomLoopEscalated ? t("progress.rework.design_review_button") : t("progress.rework.design_change_button")}
             </button>
           </div>
         </div>
@@ -461,7 +454,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       {/* Test results */}
       {testRunning && (
         <div className="rounded-md border border-primary/20 bg-primary/5 p-2.5 text-[10px] text-primary flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />테스트 실행 중...
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />{t("progress.test.running")}
         </div>
       )}
       {testResult && !testRunning && (
@@ -469,16 +462,16 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
           "rounded-md border p-2.5 text-[10px] space-y-1",
           testResult.success ? "border-status-approved/30 bg-status-approved/5 text-status-approved" : "border-status-rejected/30 bg-status-rejected/5 text-status-rejected"
         )}>
-          <div className="font-medium">{testResult.testType} 테스트: {testResult.success ? "PASS" : "FAIL"}</div>
+          <div className="font-medium">{t("progress.test.result_label", { type: testResult.testType, status: testResult.success ? t("progress.test.result_pass") : t("progress.test.result_fail") })}</div>
           <div className="flex gap-3 text-[9px]">
-            <span>통과: {testResult.passed}</span>
-            <span>실패: {testResult.failed}</span>
-            {testResult.skipped > 0 && <span>건너뜀: {testResult.skipped}</span>}
+            <span>{t("progress.test.passed_label")} {testResult.passed}</span>
+            <span>{t("progress.test.failed_label")} {testResult.failed}</span>
+            {testResult.skipped > 0 && <span>{t("progress.test.skipped_label")} {testResult.skipped}</span>}
             <span>{testResult.durationMs >= 60000 ? `${Math.floor(testResult.durationMs / 60000)}m ${Math.round((testResult.durationMs % 60000) / 1000)}s` : `${Math.round(testResult.durationMs / 1000)}s`}</span>
           </div>
           {!testResult.success && testResult.output && (
             <details className="mt-1">
-              <summary className="text-[9px] cursor-pointer text-muted-foreground/60 hover:text-foreground">출력 보기</summary>
+              <summary className="text-[9px] cursor-pointer text-muted-foreground/60 hover:text-foreground">{t("progress.test.output_toggle")}</summary>
               <pre className="text-[8px] mt-1 max-h-32 overflow-auto bg-card/50 rounded p-1.5 whitespace-pre-wrap">{testResult.output.slice(0, 2000)}</pre>
             </details>
           )}
@@ -488,25 +481,25 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       {/* Re-review findings summary */}
       {implComplete && plan.phase !== "rework" && reviewVerdict && (
         <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-2.5 text-[10px] space-y-1.5">
-          <div className="font-medium text-amber-600">이전 Review Findings (Re-review #{(plan.versionMinor || 0) + 1})</div>
+          <div className="font-medium text-amber-600">{t("progress.rereview.findings_header", { round: (plan.versionMinor || 0) + 1 })}</div>
           <ul className="space-y-0.5 text-[9px] text-foreground/60 pl-2">
             {reviewVerdict.findings.slice(0, 5).map((f, i) => <li key={i}>□ {f.slice(0, 150)}</li>)}
           </ul>
-          <p className="text-[9px] text-muted-foreground/50">위 사항이 수정되었는지 중심으로 재검증됩니다.</p>
+          <p className="text-[9px] text-muted-foreground/50">{t("progress.rereview.reverify_note")}</p>
         </div>
       )}
 
       {/* Summary + actions */}
       <div className="pt-2 border-t border-border/30 space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground/50">{completedNums.size}/{subtasks.length} 완료</span>
+          <span className="text-[10px] text-muted-foreground/50">{t("progress.summary.completed_count", { done: completedNums.size, total: subtasks.length })}</span>
         </div>
         {implComplete && plan.phase !== "rework" && (
           <div className="space-y-1.5">
             {/* Re-review scope indicator */}
             {reviewVerdict && reviewVerdict.failedSubtaskIds.length > 0 && (
               <div className="flex items-center gap-1.5 text-[9px] text-amber-600/70 flex-wrap">
-                <span>리뷰 대상:</span>
+                <span>{t("progress.summary.scope_label")}</span>
                 {reviewVerdict.failedSubtaskIds.map((id) => {
                   const st = subtasks[id - 1];
                   return (
@@ -515,7 +508,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                     </span>
                   );
                 })}
-                <span className="text-muted-foreground/40">나머지는 이전 pass</span>
+                <span className="text-muted-foreground/40">{t("progress.summary.rest_pass")}</span>
               </div>
             )}
             {/* Track selector: Quick = single reviewer chat / Deep = RT with ≥2 engines */}
@@ -523,18 +516,18 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
               <label className="flex items-center gap-1 cursor-pointer">
                 <input type="radio" name="review-track" checked={reviewTrack === "quick"}
                   onChange={() => setReviewTrack("quick")} className="accent-primary" />
-                <span>Quick <span className="text-muted-foreground/60">(단일)</span></span>
+                <span>Quick <span className="text-muted-foreground/60">{t("progress.track.quick_suffix")}</span></span>
               </label>
               <label className="flex items-center gap-1 cursor-pointer">
                 <input type="radio" name="review-track" checked={reviewTrack === "deep"}
                   onChange={() => setReviewTrack("deep")} className="accent-primary" />
-                <span>Deep RT <span className="text-muted-foreground/60">(다명 합의)</span></span>
+                <span>Deep RT <span className="text-muted-foreground/60">{t("progress.track.deep_suffix")}</span></span>
               </label>
             </div>
 
             {reviewTrack === "quick" ? (
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-muted-foreground shrink-0">Reviewer:</span>
+                <span className="text-[10px] text-muted-foreground shrink-0">{t("progress.reviewer.single_label")}</span>
                 <select value={selectedReviewerId} onChange={(e) => setSelectedReviewerId(e.target.value)}
                   disabled={busy}
                   className="flex-1 text-[10px] bg-input border border-border rounded px-1.5 py-0.5 outline-none disabled:opacity-40">
@@ -546,13 +539,13 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                   className={cn("flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium disabled:opacity-50 transition-colors",
                     reviewVerdict ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20",
                   )}>
-                  <Check className="w-3 h-3" />{busy ? "시작 중..." : reviewVerdict ? "Re-review 시작" : "Review 시작"}
+                  <Check className="w-3 h-3" />{busy ? t("progress.reviewer.start_busy") : reviewVerdict ? t("progress.reviewer.re_review_start") : t("progress.reviewer.review_start")}
                 </button>
               </div>
             ) : (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] text-muted-foreground shrink-0">Reviewers:</span>
+                  <span className="text-[10px] text-muted-foreground shrink-0">{t("progress.reviewer.multi_label")}</span>
                   {profiles.map((p) => (
                     <label key={p.id} className={cn(
                       "flex items-center gap-1 px-1.5 py-0.5 rounded border cursor-pointer text-[10px]",
@@ -566,13 +559,13 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[9px] text-muted-foreground/60">
-                    {selectedDeepIds.size}명 선택{selectedDeepIds.size < 2 ? " — 최소 2명 필요" : ""}
+                    {t("progress.reviewer.selection_count", { count: selectedDeepIds.size, suffix: selectedDeepIds.size < 2 ? t("progress.reviewer.min_required_suffix") : "" })}
                   </span>
                   <button onClick={handleStartReviewRT} disabled={busy || selectedDeepIds.size < 2}
                     className={cn("ml-auto flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors",
                       reviewVerdict ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" : "bg-status-approved/10 text-status-approved hover:bg-status-approved/20",
                     )}>
-                    <Check className="w-3 h-3" />{busy ? "시작 중..." : reviewVerdict ? "Re-review RT 시작" : "Review RT 시작"}
+                    <Check className="w-3 h-3" />{busy ? t("progress.reviewer.start_busy") : reviewVerdict ? t("progress.reviewer.re_review_rt_start") : t("progress.reviewer.review_rt_start")}
                   </button>
                 </div>
               </div>
