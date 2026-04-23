@@ -165,11 +165,17 @@ Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WA
 
 ## 알려진 제약 (Beta)
 
-- **macOS 전용** — Windows/Linux 빌드는 후속 과제
-- **ad-hoc 서명** — Gatekeeper 경고 해제 필요 (`xattr -cr /Applications/tunaFlow.app`)
-- **RT 중간 스트리밍 미지원** — Roundtable 은 라운드 단위로만 결과 표시
-- **최초 인덱싱 지연** — 대규모 프로젝트 최초 1회 수 분 소요 (ONNX 스레드 제한 + 세마포어 + 점진적 인덱싱 적용 후 CPU 스파이크는 완화됨. 증분 이후 안정화)
-- **JSONL 완료 감지 실패(P1)** — PTY 세션에서 응답이 UI 에 반영되지 않는 경우 간헐적 발생 (sdk-session WebSocket 경로로 이동 중)
+### 해결 예정 (P0 / P1)
+
+- **PTY 터미널 — 작업 중** — 인앱 터미널 패널은 Beta 번들에서 일시적으로 비활성화되어 재구성 중입니다. 후속 릴리즈에서 복원되기 전까지는 외부 터미널 (iTerm2 / Terminal.app / Warp) 을 병행 사용하세요.
+- **JSONL 완료 감지 실패 (P1)** — PTY 세션에서 응답이 UI 에 반영되지 않는 경우 간헐적 발생 (sdk-session WebSocket 경로로 이동 중).
+- **Windows / Linux 빌드** — 미지원. 패키징 파이프라인 준비 중.
+
+### 설계상 / Beta 단계
+
+- **ad-hoc 서명** — Beta 에서는 Apple Developer ID 서명 없음. Gatekeeper 경고 해제 필요 (`xattr -cr /Applications/tunaFlow.app`).
+- **RT 중간 스트리밍 미지원** — Roundtable 은 라운드 단위로만 결과 표시 (구조적 — 변경 시 대규모 재배선 필요).
+- **최초 인덱싱 지연** — 대규모 프로젝트 최초 1회 수 분 소요 (ONNX 스레드 제한 + 세마포어 + 점진적 인덱싱 적용 후 CPU 스파이크는 완화됨).
 
 자세한 목록: [CLAUDE.md §5](./CLAUDE.md)
 
@@ -181,14 +187,54 @@ Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WA
 
 ---
 
+## tunaFlow 로 만든 프로젝트
+
+tunaFlow 의 멀티 에이전트 오케스트레이션 워크플로우로 개발한 프로젝트:
+
+- **[secall](https://github.com/hang-in/secall)** — AI 대화를 위한 하이브리드 검색 "second brain". Andrej Karpathy 의 LLM wiki 개념을 CJK 환경에 맞게 변형한 것.
+
+---
+
+## References & Acknowledgments
+
+tunaFlow 는 여러 오픈소스 프로젝트의 아이디어와 코드를 참고했습니다. 각 메인테이너에게 감사드립니다.
+
+### 번들 사이드카 (앱과 함께 배포)
+
+- **[rawq](https://github.com/auyelbekov/rawq)** (MIT) — 코드 검색 사이드카. tunaFlow 는 로컬 패치 빌드를 번들로 포함.
+- **[code-review-graph](https://github.com/tirth8205/code-review-graph)** (MIT) — CRG 사이드카 (Full 트랙). 그래프 기반 코드 리뷰 분석.
+- **[context-hub](https://github.com/andrewyng/context-hub)** (MIT) — 컨텍스트 공유 사이드카. 첫 실행 시 자동 설치.
+
+### 설계 / 아키텍처 영향
+
+- **[abtop](https://github.com/graykode/abtop)** (MIT) — AI 코딩 에이전트의 런타임 관측성 / 진단. Trace 패널과 상태바 디자인에 영향.
+- **[hermes-agent](https://github.com/NousResearch/hermes-agent)** (MIT) — memory / toolset / iteration-budget 패턴.
+- **[larksuite-cli](https://github.com/larksuite/cli)** (MIT) — CLI action layering / shared-rule / async-contract 패턴.
+- **[chops](https://github.com/Shpigford/chops)** (MIT) — ContextPack code-slice 주입 아이디어.
+- **[codex](https://github.com/openai/codex)** (Apache 2.0) — CLI 에이전트 프로토콜 참조 구현.
+- **[xterm.js](https://xtermjs.org/)** (MIT) — PTY 패널 터미널 렌더링.
+- **[react-markdown](https://github.com/remarkjs/react-markdown)** (MIT) — 채팅 마크다운 렌더링.
+- **[D2Coding](https://github.com/naver/d2codingfont)** (OFL 1.1) — 번들된 고정폭 폰트.
+- **[Tauri](https://tauri.app/)** (MIT / Apache 2.0) — 데스크탑 셸 프레임워크.
+
+전체 참고 프로젝트 25+ 개 목록은 **[ACKNOWLEDGMENTS.md](./ACKNOWLEDGMENTS.md)** 에서 확인할 수 있습니다. 제3자 라이선스 표기 전문은 [NOTICE](./NOTICE) 참조.
+
+### 철학 / 아티클
+
+- **[Code Agent Orchestra](https://addyosmani.com/blog/code-agent-orchestra/)** by Addy Osmani — tunaFlow 의 멀티 에이전트 오케스트레이션 철학에 영향.
+- Stavros Korokithakis 의 Claude Code 워크플로우 포스트 — `Plan → Dev → Review` 파이프라인 영감.
+
+---
+
 ## 연락처
 
 - Email: d9ng@outlook.com
 - Issues: https://github.com/hang-in/tunaFlow/issues
+- Security: [SECURITY.md](./SECURITY.md) 참조
 
 ---
 
-*Private project. 100% AI-authored codebase — Claude Code가 작성, 사람은 방향만 결정합니다.*
+*100% AI-authored codebase — Claude Code 가 모든 라인을 작성했으며, 사람은 아키텍처와 방향만 결정합니다.*
 
 ---
 🇺🇸 [English](./README.md) · 🇰🇷 한국어

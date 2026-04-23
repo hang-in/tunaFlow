@@ -54,8 +54,6 @@ Reviewed for orchestration patterns; influenced the Roundtable (RT) design and t
 | **entroly** | https://github.com/juyterman1000/entroly |
 | **mex** | https://github.com/open-compress/mex |
 | **LightRAG** | https://github.com/HKUDS/LightRAG |
-| **claude-code** (source snapshot) | https://github.com/instructkr/claude-code |
-| **claw-code** (instructkr) | https://github.com/instructkr/claw-code |
 | **opendev** | — |
 | **speedy-claude** | — |
 | **OpenHarness** | — |
