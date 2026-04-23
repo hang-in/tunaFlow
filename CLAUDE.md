@@ -1,5 +1,7 @@
 # tunaFlow — Claude Code Handoff Document
 
+> This file is the system-level handoff document for AI agents (Claude Code, Codex, Gemini) operating on tunaFlow. Human readers: see [README.md](./README.md) for the product overview and [docs/](./docs/) for architecture and design plans.
+
 > 최종 갱신: 2026-04-13 (세션 34 반영)
 > SSOT: `docs/reference/dataModelRevised.md` (도메인 모델), `docs/reference/implementationStatus.md` (구현 현황)
 > **세션 이력 전체**: `docs/reference/sessionHistory.md` — 새 세션 첫 요청 시 또는 과거 결정 맥락 필요 시 읽을 것

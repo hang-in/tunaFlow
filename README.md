@@ -7,8 +7,9 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
 [![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![DB Schema](https://img.shields.io/badge/DB_Schema-v44-8b5cf6)](.)
-[![License](https://img.shields.io/badge/License-Private-9ca3af)](.)
+[![DB Schema](https://img.shields.io/badge/DB_Schema-v46-8b5cf6)](.)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](./LICENSE)
+[![Status](https://img.shields.io/badge/Status-Beta-f59e0b)](./docs/plans/publicReadinessChecklistPlan.md)
 
 [![🇺🇸 English](https://img.shields.io/badge/🇺🇸-English-2563eb)](./README.md)
 [![🇰🇷 한국어](https://img.shields.io/badge/🇰🇷-한국어-9ca3af)](./README.ko.md)
@@ -28,6 +29,10 @@ A desktop client for domain experts to orchestrate multiple AI agents within a s
 - Users of Claude Code, Codex, or Gemini CLI who need **structured workflows** beyond simple chat.
 - Those who want to delegate execution to agents while **retaining direction and judgment**.
 - Small teams or individuals looking to integrate AI agents into their daily development workflow.
+
+### Why it exists
+
+tunaFlow started from a concrete pain: running Claude Code, Codex, and Gemini CLI side by side meant constant copy-pasting between tmux panes, iTerm tabs, or terminal multiplexers like cmux. Even when the individual engines were great, the workflow was manual stitching. tunaFlow bundles that stitching into a single surface so the user's attention stays on intent, not on terminal pane management.
 
 ---
 

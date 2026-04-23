@@ -368,9 +368,10 @@ function loadGolden() {
   );
 
   // Cleanup scratch `eval-*` projects created during this run.
-  // Opt-in via --cleanup or EVAL_CLEANUP=1 — default off so post-mortem
-  // inspection of a specific failing run is possible.
-  if (process.argv.includes("--cleanup") || process.env.EVAL_CLEANUP === "1") {
+  // Default: ON — external contributors and CI runs should not leave
+  // `[eval] <label>` rows in the DB. Opt-OUT via `--no-cleanup` or
+  // `EVAL_CLEANUP=0` when post-mortem inspection of a failing run is needed.
+  if (!process.argv.includes("--no-cleanup") && process.env.EVAL_CLEANUP !== "0") {
     console.log("\n[eval] cleaning up scratch projects");
     const { spawnSync } = await import("node:child_process");
     spawnSync(

@@ -1,5 +1,7 @@
 # tunaFlow 설치 가이드
 
+> This file is an AI-agent-readable install guide (used by Claude Code / Codex / Gemini during onboarding). **Human users**: [README.md](./README.md) has everything you need.
+
 > 에이전트(Claude Code, Codex 등)가 직접 실행할 수 있도록 작성된 설치 가이드입니다.
 
 ## 전제 조건

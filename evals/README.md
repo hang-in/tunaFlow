@@ -80,6 +80,20 @@ node evals/scripts/report.mjs
 }
 ```
 
+## Running the eval
+
+```bash
+# 전체 golden 셋 실행 (기본: 결과 확인 후 scratch 프로젝트 자동 정리)
+node evals/scripts/run-eval.mjs
+
+# 디버깅 — 실패 run 을 보관한 채 진행 (opt-out)
+node evals/scripts/run-eval.mjs --no-cleanup
+# 또는:
+EVAL_CLEANUP=0 node evals/scripts/run-eval.mjs
+```
+
+기본 cleanup 은 **ON**. `[eval] <label>` 스크래치 프로젝트가 `projects` 테이블에 누적되지 않도록 baseline. 특정 실패 run 의 artifacts 를 사후 검증하려면 `--no-cleanup` / `EVAL_CLEANUP=0` 으로 opt-out.
+
 ## Golden seed 빌드 (secall + 타 프로젝트 기반)
 
 실제 사용자 DB 에서 카테고리별 4개 × 5 = 20개 시나리오를 추출해 JSONL 생성:

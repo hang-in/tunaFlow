@@ -271,7 +271,7 @@ mod tests {
         assert!(is_source_allowed("bundled:skills"));
         assert!(is_source_allowed("private:team-wiki"));
         assert!(is_source_allowed("file:./docs"));
-        assert!(is_source_allowed("/Users/d9ng/docs"));
+        assert!(is_source_allowed("/Users/alice/docs"));
         assert!(is_source_allowed("./relative/path"));
         assert!(is_source_allowed("")); // empty = default
     }

@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a defect in tunaFlow
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. Please fill out the fields below so we can reproduce it.
+  - type: input
+    id: version
+    attributes:
+      label: tunaFlow version
+      description: "e.g. v0.5.0 or commit SHA"
+      placeholder: v0.5.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Affected agent engine
+      multiple: true
+      options:
+        - Claude (CLI)
+        - Codex / OpenAI
+        - Gemini
+        - OpenCode
+        - Ollama
+        - N/A
+    validations:
+      required: false
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimal steps to reproduce.
+      placeholder: |
+        1. Open project X
+        2. Start agent Y
+        3. Observe Z
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant console output, Rust logs, or screenshots. Redact tokens and paths.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: I am on a recent release (or main)
+          required: true
