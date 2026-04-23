@@ -39,7 +39,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
       return (
         <div className="flex flex-col items-center justify-center h-screen w-screen bg-background text-foreground gap-4 p-8">
-          <p className="text-[14px] font-medium text-destructive">렌더링 오류가 발생했습니다</p>
+          <p className="text-[14px] font-medium text-destructive">A rendering error occurred</p>
           <p className="text-[12px] text-muted-foreground max-w-lg text-center">
             {this.state.error?.message ?? "Unknown error"}
           </p>
@@ -53,13 +53,13 @@ export class ErrorBoundary extends Component<Props, State> {
               onClick={() => this.setState({ hasError: false, error: null, componentStack: null })}
               className="px-4 py-2 rounded-md text-[12px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
             >
-              다시 시도
+              Try again
             </button>
             <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground transition-colors"
             >
-              앱 새로고침
+              Reload app
             </button>
             <button
               onClick={() => {
@@ -68,7 +68,7 @@ export class ErrorBoundary extends Component<Props, State> {
               }}
               className="px-4 py-2 rounded-md text-[11px] text-muted-foreground hover:text-foreground transition-colors"
             >
-              복사
+              Copy
             </button>
           </div>
         </div>

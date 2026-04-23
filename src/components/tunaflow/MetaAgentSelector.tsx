@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CheckCircle2, Loader2, AlertTriangle, ChevronDown, ExternalLink } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -30,17 +31,20 @@ interface Props {
 
 // ─── Engine metadata (for display) ───────────────────────────────────────────
 
-const ENGINE_META: Record<string, {
+interface EngineMeta {
   label: string;
-  installHint: string;
+  installHintKey: string; // dialog.meta_agent.* key (falls back to plain installHint when provided)
+  installHint?: string;
   docLink?: string;
   defaultEndpoint?: string;
-}> = {
-  claude:   { label: "Claude",    installHint: "npm install -g @anthropic-ai/claude-code", docLink: "https://docs.claude.com/en/docs/claude-code" },
-  codex:    { label: "Codex",     installHint: "npm install -g @openai/codex-cli",        docLink: "https://openai.com/index/codex" },
-  gemini:   { label: "Gemini",    installHint: "npm install -g @google/gemini-cli",        docLink: "https://ai.google.dev/gemini-api/docs/cli" },
-  ollama:   { label: "Ollama",    installHint: "https://ollama.com/download 에서 설치 후 `ollama serve`", defaultEndpoint: "http://localhost:11434" },
-  lmstudio: { label: "LM Studio", installHint: "https://lmstudio.ai 에서 설치 후 Local Server 시작", defaultEndpoint: "http://localhost:1234/v1" },
+}
+
+const ENGINE_META: Record<string, EngineMeta> = {
+  claude:   { label: "Claude",    installHintKey: "", installHint: "npm install -g @anthropic-ai/claude-code", docLink: "https://docs.claude.com/en/docs/claude-code" },
+  codex:    { label: "Codex",     installHintKey: "", installHint: "npm install -g @openai/codex-cli",        docLink: "https://openai.com/index/codex" },
+  gemini:   { label: "Gemini",    installHintKey: "", installHint: "npm install -g @google/gemini-cli",        docLink: "https://ai.google.dev/gemini-api/docs/cli" },
+  ollama:   { label: "Ollama",    installHintKey: "ollama_install_hint",   defaultEndpoint: "http://localhost:11434" },
+  lmstudio: { label: "LM Studio", installHintKey: "lmstudio_install_hint", defaultEndpoint: "http://localhost:1234/v1" },
 };
 
 // Default model candidates for CLI engines (no live enumeration).
@@ -53,6 +57,7 @@ const CLI_DEFAULT_MODELS: Record<string, string[]> = {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
+  const { t } = useTranslation("dialog");
   const [detections, setDetections] = useState<AgentDetection[] | null>(null);
   const [ollamaEndpoint, setOllamaEndpoint] = useState("http://localhost:11434");
   const [lmstudioEndpoint, setLmstudioEndpoint] = useState("http://localhost:1234/v1");
@@ -134,9 +139,11 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
   return (
     <>
       <div className="px-6 pt-5 pb-4 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground">메타 에이전트 선택</h2>
+        <h2 className="text-sm font-semibold text-foreground">{t("meta_agent.title")}</h2>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          <span className="font-mono">{projectName}</span> 프로젝트 탐색과 기본 문서 생성에 사용할 에이전트를 선택하세요.
+          {t("meta_agent.description_prefix")}
+          <span className="font-mono">{projectName}</span>
+          {t("meta_agent.description_suffix")}
         </p>
       </div>
 
@@ -144,7 +151,7 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
         {detections === null && (
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-4">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            사용 가능한 에이전트 감지 중...
+            {t("meta_agent.detecting")}
           </div>
         )}
 
@@ -224,9 +231,18 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
                   )}
 
                   {/* Install hint when not found */}
-                  {!d.installed && meta?.installHint && (
+                  {!d.installed && meta && (meta.installHint || meta.installHintKey) && (
                     <div className="text-[10px] text-muted-foreground/70 mt-1 space-y-0.5">
-                      <div>설치: <span className="font-mono text-muted-foreground">{meta.installHint}</span></div>
+                      <div>
+                        {t("meta_agent.install_label")}{" "}
+                        <span className="font-mono text-muted-foreground">
+                          {meta.installHintKey === "ollama_install_hint"
+                            ? t("meta_agent.ollama_install_hint")
+                            : meta.installHintKey === "lmstudio_install_hint"
+                            ? t("meta_agent.lmstudio_install_hint")
+                            : meta.installHint}
+                        </span>
+                      </div>
                       {meta.docLink && (
                         <a
                           href={meta.docLink}
@@ -235,7 +251,7 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
                           className="inline-flex items-center gap-1 text-primary/70 hover:text-primary"
                         >
                           <ExternalLink className="w-2.5 h-2.5" />
-                          설치 안내 보기
+                          {t("meta_agent.install_guide")}
                         </a>
                       )}
                     </div>
@@ -257,7 +273,7 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
           onClick={() => setSkipConfirm(true)}
           className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
-          건너뛰기
+          {t("meta_agent.skip_button")}
         </button>
         <button
           onClick={handleProceed}
@@ -269,7 +285,7 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
               : "bg-muted text-muted-foreground/40 cursor-not-allowed"
           )}
         >
-          확인 (진행)
+          {t("meta_agent.proceed_button")}
         </button>
       </div>
 
@@ -286,25 +302,37 @@ export function MetaAgentSelector({ onProceed, onSkip, projectName }: Props) {
 // ─── Skip-with-basic-scaffold confirmation ───────────────────────────────────
 
 function SkipWithBasicOverlay({ onBack, onConfirm }: { onBack: () => void; onConfirm: () => void }) {
+  const { t } = useTranslation("dialog");
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-xl">
       <div className="w-[400px] bg-background border border-border rounded-lg shadow-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">메타에이전트 없이 진행</h3>
+        <h3 className="text-sm font-semibold text-foreground">{t("meta_agent.skip_overlay_title")}</h3>
 
         <div className="space-y-3 text-[11px] text-muted-foreground leading-relaxed">
           <div>
-            <p className="text-foreground/80 font-medium mb-1">메타에이전트를 쓰면:</p>
+            <p className="text-foreground/80 font-medium mb-1">{t("meta_agent.skip_overlay_with_heading")}</p>
             <ul className="space-y-1 pl-3 list-disc list-outside marker:text-primary/50">
-              <li>프로젝트 구조를 실제로 읽고 <span className="text-foreground/70">CLAUDE.md</span>를 프로젝트 맞춤형으로 작성</li>
-              <li>docs 폴더 스캔 결과를 <span className="text-foreground/70">docs/reference/index.md</span>에 요약</li>
+              <li>
+                {t("meta_agent.skip_overlay_with_item_1_before")}
+                <span className="text-foreground/70">{t("meta_agent.skip_overlay_with_item_1_highlight")}</span>
+                {t("meta_agent.skip_overlay_with_item_1_after")}
+              </li>
+              <li>
+                {t("meta_agent.skip_overlay_with_item_2_before")}
+                <span className="text-foreground/70">{t("meta_agent.skip_overlay_with_item_2_highlight")}</span>
+                {t("meta_agent.skip_overlay_with_item_2_after")}
+              </li>
             </ul>
           </div>
           <div>
-            <p className="text-foreground/80 font-medium mb-1">건너뛰면:</p>
+            <p className="text-foreground/80 font-medium mb-1">{t("meta_agent.skip_overlay_without_heading")}</p>
             <ul className="space-y-1 pl-3 list-disc list-outside marker:text-muted-foreground/50">
-              <li><span className="font-mono text-foreground/70">기본 스캐폴딩</span>만 생성 (빈 CLAUDE.md + docs 기본 폴더)</li>
-              <li>에이전트가 프로젝트를 처음 실행할 때 직접 코드를 탐색</li>
-              <li>나중에 Settings → Project 에서 재실행 가능</li>
+              <li>
+                <span className="font-mono text-foreground/70">{t("meta_agent.skip_overlay_without_item_1_highlight")}</span>
+                {t("meta_agent.skip_overlay_without_item_1_after")}
+              </li>
+              <li>{t("meta_agent.skip_overlay_without_item_2")}</li>
+              <li>{t("meta_agent.skip_overlay_without_item_3")}</li>
             </ul>
           </div>
         </div>
@@ -314,13 +342,13 @@ function SkipWithBasicOverlay({ onBack, onConfirm }: { onBack: () => void; onCon
             onClick={onBack}
             className="px-3 py-1.5 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
-            돌아가기
+            {t("meta_agent.skip_overlay_back")}
           </button>
           <button
             onClick={onConfirm}
             className="px-3 py-1.5 rounded text-[11px] font-medium text-foreground hover:bg-accent/50 transition-colors"
           >
-            건너뛰고 진행
+            {t("meta_agent.skip_overlay_confirm")}
           </button>
         </div>
       </div>

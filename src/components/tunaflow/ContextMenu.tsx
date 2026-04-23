@@ -12,6 +12,7 @@
 
 import { useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { Copy, GitBranch, Users, Bookmark, FileText, Forward, Trash2, Pencil, Plus, ClipboardPaste } from "lucide-react";
 
@@ -41,6 +42,7 @@ interface MessageContextMenuProps {
 export function MessageContextMenu({
   children, isUser, onCopy, onBranch, onBranchRT, onMemo, onSaveArtifact, onFollowup, onDelete, onEdit,
 }: MessageContextMenuProps) {
+  const { t } = useTranslation("common");
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger
@@ -57,12 +59,12 @@ export function MessageContextMenu({
       <ContextMenu.Portal>
         <ContextMenu.Content className={menuContentClass}>
           <ContextMenu.Item className={menuItemClass} onSelect={onCopy}>
-            <Copy className={menuIconClass} />복사
+            <Copy className={menuIconClass} />{t("context_menu.copy")}
           </ContextMenu.Item>
 
           {isUser && onEdit && (
             <ContextMenu.Item className={menuItemClass} onSelect={onEdit}>
-              <Pencil className={menuIconClass} />편집 (재전송)
+              <Pencil className={menuIconClass} />{t("context_menu.edit_resend")}
             </ContextMenu.Item>
           )}
 
@@ -70,27 +72,27 @@ export function MessageContextMenu({
             <>
               {onBranch && (
                 <ContextMenu.Item className={menuItemClass} onSelect={onBranch}>
-                  <GitBranch className={menuIconClass} />Branch 분기
+                  <GitBranch className={menuIconClass} />{t("context_menu.branch")}
                 </ContextMenu.Item>
               )}
               {onBranchRT && (
                 <ContextMenu.Item className={menuItemClass} onSelect={onBranchRT}>
-                  <Users className={menuIconClass} />RT 분기
+                  <Users className={menuIconClass} />{t("context_menu.branch_rt")}
                 </ContextMenu.Item>
               )}
               {onMemo && (
                 <ContextMenu.Item className={menuItemClass} onSelect={onMemo}>
-                  <Bookmark className={menuIconClass} />Memo 저장
+                  <Bookmark className={menuIconClass} />{t("context_menu.save_memo")}
                 </ContextMenu.Item>
               )}
               {onSaveArtifact && (
                 <ContextMenu.Item className={menuItemClass} onSelect={onSaveArtifact}>
-                  <FileText className={menuIconClass} />Artifact 저장
+                  <FileText className={menuIconClass} />{t("context_menu.save_artifact")}
                 </ContextMenu.Item>
               )}
               {onFollowup && (
                 <ContextMenu.Item className={menuItemClass} onSelect={onFollowup}>
-                  <Forward className={menuIconClass} />Forward
+                  <Forward className={menuIconClass} />{t("context_menu.forward")}
                 </ContextMenu.Item>
               )}
             </>
@@ -100,7 +102,7 @@ export function MessageContextMenu({
             <>
               <ContextMenu.Separator className={menuSeparatorClass} />
               <ContextMenu.Item className={destructiveItemClass} onSelect={onDelete}>
-                <Trash2 className={cn(menuIconClass, "text-destructive/60")} />삭제
+                <Trash2 className={cn(menuIconClass, "text-destructive/60")} />{t("context_menu.delete")}
               </ContextMenu.Item>
             </>
           )}
@@ -119,6 +121,7 @@ interface ChatAreaContextMenuProps {
 }
 
 export function ChatAreaContextMenu({ children, onNewConversation, onPaste }: ChatAreaContextMenuProps) {
+  const { t } = useTranslation("common");
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger
@@ -133,12 +136,12 @@ export function ChatAreaContextMenu({ children, onNewConversation, onPaste }: Ch
         <ContextMenu.Content className={menuContentClass}>
           {onNewConversation && (
             <ContextMenu.Item className={menuItemClass} onSelect={onNewConversation}>
-              <Plus className={menuIconClass} />새 대화
+              <Plus className={menuIconClass} />{t("context_menu.new_conversation")}
             </ContextMenu.Item>
           )}
           {onPaste && (
             <ContextMenu.Item className={menuItemClass} onSelect={onPaste}>
-              <ClipboardPaste className={menuIconClass} />붙여넣기
+              <ClipboardPaste className={menuIconClass} />{t("context_menu.paste")}
             </ContextMenu.Item>
           )}
         </ContextMenu.Content>
@@ -157,6 +160,7 @@ interface SidebarItemContextMenuProps {
 }
 
 export function SidebarItemContextMenu({ children, onRename, onCreateBranch, onDelete }: SidebarItemContextMenuProps) {
+  const { t } = useTranslation("common");
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger
@@ -171,19 +175,19 @@ export function SidebarItemContextMenu({ children, onRename, onCreateBranch, onD
         <ContextMenu.Content className={menuContentClass}>
           {onRename && (
             <ContextMenu.Item className={menuItemClass} onSelect={onRename}>
-              <Pencil className={menuIconClass} />이름 변경
+              <Pencil className={menuIconClass} />{t("context_menu.rename")}
             </ContextMenu.Item>
           )}
           {onCreateBranch && (
             <ContextMenu.Item className={menuItemClass} onSelect={onCreateBranch}>
-              <GitBranch className={menuIconClass} />Branch 생성
+              <GitBranch className={menuIconClass} />{t("context_menu.create_branch")}
             </ContextMenu.Item>
           )}
           {onDelete && (
             <>
               <ContextMenu.Separator className={menuSeparatorClass} />
               <ContextMenu.Item className={destructiveItemClass} onSelect={onDelete}>
-                <Trash2 className={cn(menuIconClass, "text-destructive/60")} />삭제
+                <Trash2 className={cn(menuIconClass, "text-destructive/60")} />{t("context_menu.delete")}
               </ContextMenu.Item>
             </>
           )}

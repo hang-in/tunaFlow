@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { ChevronLeft, ChevronRight, Loader2, Search, StickyNote } from "lucide-react";
@@ -34,6 +35,7 @@ const PHASE_TO_STAGE: Record<string, WorkflowStageId> = {
 };
 
 export function CenterPanel() {
+  const { t } = useTranslation("common");
   const [activeTab, setActiveTab] = useState<CenterTab>("chat");
   const [activeStage, setActiveStage] = useState<WorkflowStageId>("plan-check");
   const [planRefreshKey, setPlanRefreshKey] = useState(0);
@@ -140,7 +142,7 @@ export function CenterPanel() {
   return (
     <div
       role="main"
-      aria-label="메인 대화 영역"
+      aria-label={t("app.main_aria")}
       className="flex flex-col flex-1 min-w-0 h-full"
     >
       {/* ── Toolbar ── */}
@@ -155,10 +157,10 @@ export function CenterPanel() {
               if (chatConvs.length > 0) selectConversation(chatConvs[0].id);
             }}
             className="flex items-center gap-1 text-[12px] text-muted-foreground/60 hover:text-foreground px-2 py-1 rounded-md hover:bg-accent/50 transition-colors shrink-0"
-            title="최근 채팅 대화로 이동"
+            title={t("app.back_to_chat_tooltip")}
           >
             <ChevronLeft className="w-3.5 h-3.5" />
-            메인 채팅
+            {t("app.main_chat")}
           </button>
         ) : (
           <div className="flex items-center gap-1 shrink-0">
@@ -233,7 +235,7 @@ export function CenterPanel() {
               <div
                 onMouseDown={handleTerminalDragStart}
                 className="shrink-0 h-1 cursor-row-resize hover:bg-primary/30 transition-colors"
-                title="드래그로 크기 조정"
+                title={t("app.terminal_drag_resize")}
               />
               <div className="flex-1 min-h-0">
                 <Suspense fallback={<div className="p-2 text-xs text-muted-foreground">Loading terminal...</div>}>
@@ -328,6 +330,7 @@ function NotesPanel({
   selectConversation: (id: string) => Promise<void>;
   onNavigateToChat: () => void;
 }) {
+  const { t } = useTranslation("common");
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Memos section */}
@@ -343,7 +346,7 @@ function NotesPanel({
         </div>
         {memos.length === 0 ? (
           <p className="text-[11px] text-muted-foreground/30 italic">
-            메시지 우클릭 → Save as memo로 추가할 수 있습니다
+            {t("app.memos_empty_hint")}
           </p>
         ) : (
           <div className="space-y-1.5">

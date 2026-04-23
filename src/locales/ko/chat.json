@@ -12,7 +12,22 @@
     "attach_no_project": "프로젝트가 선택되지 않아 첨부할 수 없습니다",
     "attach_too_large": "{{name}}: 20MB 초과 — 건너뜀",
     "attach_failed": "첨부 실패: {{error}}",
-    "scroll_to_latest": "최신 메시지로"
+    "scroll_to_latest": "최신 메시지로",
+    "agent_running_title": "에이전트 실행 중",
+    "agent_running_fallback": "실행 중",
+    "pty_loading": "PTY 로딩 중",
+    "pty_connected": "PTY 연결됨",
+    "pty_disconnected": "PTY 연결 없음",
+    "attach_tooltip": "파일 첨부 (최대 20MB)",
+    "attach_label": "파일 첨부",
+    "attach_remove_label": "첨부 제거",
+    "attach_preview_label": "{{name}} 미리보기",
+    "close_preview_label": "닫기",
+    "pty_clear_success": "PTY 세션 초기화 완료",
+    "pty_clear_failed": "세션 초기화 실패",
+    "models_catalog_empty": "(카탈로그가 비어 있습니다)",
+    "no_previous_response": "⚠️ **넘길 이전 응답이 없습니다.**\n\n먼저 에이전트에게 질문하고, 응답을 받은 후 handoff를 사용하세요.\n\n입력: `{{prompt}}` → {{engine}}",
+    "rt_config_missing": "⚠️ **RT 설정을 불러오지 못했습니다.** 기본 참가자로 실행합니다.\n\n새 RT를 만들거나 사이드바에서 [+]로 다시 설정하세요."
   },
   "message": {
     "role_user": "사용자",

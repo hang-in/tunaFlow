@@ -50,5 +50,50 @@
     "label": "언어",
     "ko": "한국어",
     "en": "English"
+  },
+  "app": {
+    "main_aria": "메인 대화 영역",
+    "back_to_chat_tooltip": "최근 채팅 대화로 이동",
+    "main_chat": "메인 채팅",
+    "terminal_drag_resize": "드래그로 크기 조정",
+    "memos_empty_hint": "메시지 우클릭 → Save as memo로 추가할 수 있습니다"
+  },
+  "terminal": {
+    "no_project": "Terminal을 사용하려면 프로젝트를 선택하세요",
+    "restart_title": "Claude 재시작",
+    "restart_button": "재시작",
+    "context_main_chat": "메인챗",
+    "context_branch": "브랜치",
+    "context_rt_labeled": "라운드테이블 · {{label}}",
+    "context_branch_labeled": "브랜치 · {{label}}",
+    "dock_to_bottom": "하단 패널로 전환",
+    "close": "닫기",
+    "clear_screen": "화면 지우기"
+  },
+  "context_menu": {
+    "copy": "복사",
+    "edit_resend": "편집 (재전송)",
+    "branch": "Branch 분기",
+    "branch_rt": "RT 분기",
+    "save_memo": "Memo 저장",
+    "save_artifact": "Artifact 저장",
+    "forward": "Forward",
+    "delete": "삭제",
+    "new_conversation": "새 대화",
+    "paste": "붙여넣기",
+    "rename": "이름 변경",
+    "create_branch": "Branch 생성"
+  },
+  "notification_bell": {
+    "just_now": "방금",
+    "minutes_ago": "{{count}}분 전",
+    "hours_ago": "{{count}}시간 전",
+    "days_ago": "{{count}}일 전",
+    "sound_off": "알림음 끄기",
+    "sound_on": "알림음 켜기"
+  },
+  "context_badges": {
+    "active_skills": "활성 스킬 ({{count}})",
+    "show_all": "전체 스킬 보기"
   }
 }

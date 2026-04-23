@@ -1,15 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { Bell, Volume2, VolumeX } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { useNotificationStore, type AppNotification } from "@/stores/notificationStore";
 
-function timeAgo(ts: number): string {
+function timeAgo(ts: number, t: TFunction): string {
   const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return "방금";
-  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-  return `${Math.floor(diff / 86400)}일 전`;
+  if (diff < 60) return t("notification_bell.just_now");
+  if (diff < 3600) return t("notification_bell.minutes_ago", { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t("notification_bell.hours_ago", { count: Math.floor(diff / 3600) });
+  return t("notification_bell.days_ago", { count: Math.floor(diff / 86400) });
 }
 
 const ENGINE_COLORS: Record<string, string> = {
@@ -20,6 +22,7 @@ const ENGINE_COLORS: Record<string, string> = {
 };
 
 function NotificationItem({ n, onNavigate }: { n: AppNotification; onNavigate: (convId: string) => void }) {
+  const { t } = useTranslation("common");
   const typeDots = {
     completed: "bg-status-approved",
     error: "bg-status-rejected",
@@ -45,7 +48,7 @@ function NotificationItem({ n, onNavigate }: { n: AppNotification; onNavigate: (
                 {n.engine}
               </span>
             )}
-            <span className="text-[8px] text-muted-foreground/30 ml-auto shrink-0">{timeAgo(n.timestamp)}</span>
+            <span className="text-[8px] text-muted-foreground/30 ml-auto shrink-0">{timeAgo(n.timestamp, t)}</span>
           </div>
           {/* Row 2: conversation title + body */}
           <div className="flex items-center gap-1 mt-0.5">
@@ -68,6 +71,7 @@ function NotificationItem({ n, onNavigate }: { n: AppNotification; onNavigate: (
 }
 
 export function NotificationBell() {
+  const { t } = useTranslation("common");
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const notifications = useNotificationStore((s) => s.notifications);
@@ -133,7 +137,7 @@ export function NotificationBell() {
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleSound}
-                title={soundEnabled ? "알림음 끄기" : "알림음 켜기"}
+                title={soundEnabled ? t("notification_bell.sound_off") : t("notification_bell.sound_on")}
                 className="text-muted-foreground/40 hover:text-foreground transition-colors"
               >
                 {soundEnabled
