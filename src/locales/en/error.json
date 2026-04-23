@@ -1,0 +1,16 @@
+{
+  "db_error": "A database error occurred",
+  "db_error_with_context": "Database error: {{context}}",
+  "not_found": "The requested resource was not found",
+  "not_found_with_context": "{{context}} not found",
+  "io_error": "A file I/O error occurred",
+  "io_error_with_context": "I/O error: {{context}}",
+  "json_error": "Failed to parse JSON",
+  "json_error_with_context": "JSON error: {{context}}",
+  "agent_error": "Agent execution failed",
+  "agent_error_with_context": "Agent error: {{context}}",
+  "bad_request": "Invalid request",
+  "bad_request_with_context": "Bad request: {{context}}",
+  "lock_error": "Internal lock error",
+  "unknown_error": "Unknown error: {{context}}"
+}

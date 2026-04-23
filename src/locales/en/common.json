@@ -1,0 +1,54 @@
+{
+  "button": {
+    "delete": "Delete",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "close": "Close",
+    "copy": "Copy",
+    "refresh": "Refresh",
+    "search": "Search",
+    "edit": "Edit",
+    "rename": "Rename",
+    "retry": "Retry",
+    "apply": "Apply",
+    "reset": "Reset",
+    "add": "Add",
+    "remove": "Remove",
+    "open": "Open",
+    "run": "Run",
+    "stop": "Stop",
+    "send": "Send",
+    "load_default": "Load defaults",
+    "restore": "Restore",
+    "done": "Done"
+  },
+  "status": {
+    "loading": "Loading...",
+    "saving": "Saving...",
+    "running": "Running...",
+    "done": "Done",
+    "failed": "Failed",
+    "streaming": "Streaming",
+    "pending": "Pending",
+    "cancelled": "Cancelled",
+    "empty": "Empty",
+    "idle": "Idle",
+    "ready": "Ready"
+  },
+  "message": {
+    "untitled": "Untitled",
+    "no_data": "No data",
+    "error": "Error",
+    "copied": "Copied",
+    "saved": "Saved",
+    "confirm_delete": "Are you sure you want to delete?",
+    "loading_failed": "Loading failed",
+    "try_again": "Please try again"
+  },
+  "language": {
+    "label": "Language",
+    "ko": "한국어",
+    "en": "English"
+  }
+}

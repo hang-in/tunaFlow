@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getSetting, setSetting } from "@/lib/appStore";
-import { User, Code2, GitBranch, KeyRound, Clock } from "lucide-react";
+import { User, Code2, GitBranch, KeyRound, Clock, Languages } from "lucide-react";
+import { SUPPORTED_LOCALES, setLocale, getCurrentLocale, type SupportedLocale } from "@/locales";
 
 export interface UserProfile {
   // Basic
@@ -114,6 +116,8 @@ export function ProfileSection() {
         <p className="text-[12px] text-muted-foreground">에이전트 컨텍스트와 개발자 정보를 설정합니다.</p>
       </div>
 
+      <LanguageSelector />
+
       {/* ── Basic ─────────────────────────────────────────────── */}
       <div className="space-y-3">
         <SectionHeader icon={<User className="w-3.5 h-3.5" />} label="기본 정보" />
@@ -214,6 +218,35 @@ export function ProfileSection() {
           <span className="text-[12px] text-status-approved">저장됐습니다</span>
         )}
       </div>
+    </div>
+  );
+}
+
+/** i18nPlan Phase 1-4: Language selector. appStore 아닌 localStorage 경로 —
+ *  i18next 의 LanguageDetector 가 'localStorage' 를 lookup 하도록 설정했기 때문. */
+function LanguageSelector() {
+  const { t } = useTranslation();
+  const [locale, setLocaleState] = useState<SupportedLocale>(getCurrentLocale());
+
+  const handleChange = async (next: SupportedLocale) => {
+    setLocaleState(next);
+    await setLocale(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      <SectionHeader icon={<Languages className="w-3.5 h-3.5" />} label={t("language.label")} />
+      <select
+        value={locale}
+        onChange={(e) => handleChange(e.target.value as SupportedLocale)}
+        className="w-full bg-background border border-border/40 rounded-md px-3 py-1.5 text-[13px] text-foreground focus:outline-none focus:border-ring/50 transition-colors"
+      >
+        {SUPPORTED_LOCALES.map((loc) => (
+          <option key={loc} value={loc}>
+            {t(`language.${loc}` as "language.ko" | "language.en")}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
