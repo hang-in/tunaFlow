@@ -10,6 +10,7 @@ import koChat from "./ko/chat.json";
 import koDialog from "./ko/dialog.json";
 import koWorkflow from "./ko/workflow.json";
 import koBranch from "./ko/branch.json";
+import koInsight from "./ko/insight.json";
 import enCommon from "./en/common.json";
 import enError from "./en/error.json";
 import enSettings from "./en/settings.json";
@@ -18,6 +19,7 @@ import enChat from "./en/chat.json";
 import enDialog from "./en/dialog.json";
 import enWorkflow from "./en/workflow.json";
 import enBranch from "./en/branch.json";
+import enInsight from "./en/insight.json";
 
 /** Supported locales. Add 'ja', 'zh', etc. in later PRs. */
 export type SupportedLocale = "ko" | "en";
@@ -37,6 +39,7 @@ export const resources = {
     dialog: koDialog,
     workflow: koWorkflow,
     branch: koBranch,
+    insight: koInsight,
   },
   en: {
     common: enCommon,
@@ -47,6 +50,7 @@ export const resources = {
     dialog: enDialog,
     workflow: enWorkflow,
     branch: enBranch,
+    insight: enInsight,
   },
 } as const;
 
@@ -60,7 +64,7 @@ i18n
     // 누락 키는 빈 문자열 대신 키 그대로 표시 → 누락 즉시 인지.
     returnEmptyString: false,
     defaultNS: "common",
-    ns: ["common", "error", "settings", "sidebar", "chat", "dialog", "workflow", "branch"],
+    ns: ["common", "error", "settings", "sidebar", "chat", "dialog", "workflow", "branch", "insight"],
     detection: {
       // appStore (IndexedDB) 우선, 그 다음 localStorage/navigator.
       order: ["localStorage", "navigator"],

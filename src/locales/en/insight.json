@@ -1,0 +1,88 @@
+{
+  "category": {
+    "stability": "Stability",
+    "test": "Test",
+    "architecture": "Architecture",
+    "performance": "Performance",
+    "security": "Security",
+    "debt": "Tech debt"
+  },
+  "quadrant": {
+    "auto_fix_tooltip": "Will be enabled after meta-agent introduction",
+    "auto_fix_label": "Auto Fix (coming)"
+  },
+  "finding_card": {
+    "code_label": "Code",
+    "solution_label": "Solution",
+    "estimated_files": "Estimated files: {{count}}",
+    "architect_review_button": "Architect review"
+  },
+  "panel": {
+    "empty_project": "Select a project",
+    "all_categories": "All categories",
+    "no_findings": "No findings",
+    "no_analysis_yet": "No analysis has been run yet.",
+    "no_analysis_hint": "Click \"Run analysis\" to analyze project quality.",
+    "session_loading": "Loading session...",
+    "previous_analysis": "Previous analyses",
+    "last_log": "Last analysis log",
+    "running_log": "Analysis in progress...",
+    "processing": "Processing...",
+    "loading": "Loading...",
+    "progress_in_progress": "{{count}} in progress",
+    "progress_resolved": "{{resolved}}/{{total}} resolved"
+  },
+  "action": {
+    "run_analysis": "Run analysis",
+    "run_analysis_busy": "Analyzing...",
+    "rerun_button": "Re-check",
+    "rerun_tooltip": "Revalidate open findings against current code",
+    "save_button": "Save",
+    "save_tooltip": "Save files under docs/insight/",
+    "select_all": "Select all",
+    "selected_count": "{{count}} selected",
+    "architect_review_button": "Architect review",
+    "dismiss_button": "Dismiss",
+    "delete_tooltip": "Delete"
+  },
+  "toast": {
+    "no_project_path": "Project path not found",
+    "progress_completed": "✓ Done: {{count}} findings",
+    "analysis_success": "Analysis complete: {{count}} findings",
+    "analysis_error": "Analysis failed: {{error}}",
+    "delete_success": "Previous analysis deleted",
+    "delete_error": "Delete failed: {{error}}",
+    "save_success": "Saved {{count}} files (docs/insight/)",
+    "save_error": "File save failed: {{error}}",
+    "select_conversation_first": "Select a conversation first",
+    "branch_send_success": "Architect Review Branch created → {{count}} sent",
+    "branch_creation_failed": "Branch creation failed",
+    "branch_creation_error": "Branch creation failed: {{error}}",
+    "rerun_no_open": "No open findings to re-check",
+    "rerun_progress": "Re-checking {{count}} findings...",
+    "rerun_done_resolved": "Re-check done: {{count}} updated to resolved{{suffix}}",
+    "rerun_uncertain_suffix": ", {{count}} uncertain",
+    "rerun_done_all_valid": "Re-check done: all findings still valid",
+    "rerun_error": "Re-check failed: {{error}}"
+  },
+  "log_hint": {
+    "failure": "fail",
+    "empty": "none"
+  },
+  "review_prompt": {
+    "body": "## Insight analysis review request\n\nPlease review the following {{count}} code quality issues.\n\nFor each item, use **autonomous judgment**:\n- Read the relevant files and verify the current state\n- Decide whether to promote as Plan, record as memo, or mark already-resolved\n- If a Plan is needed, bundle multiple items into one plan-proposal (avoid unnecessary Plans)\n- For items that don't need a Plan, briefly describe the handling\n\n---\n\n{{findings}}",
+    "entry": "### {{title}}\n- **Category**: {{category}} | **Severity**: {{severity}} | **Difficulty**: {{difficulty}}{{location}}\n- **Description**: {{description}}",
+    "entry_location": "\n- **Location**: `{{path}}{{line}}`",
+    "branch_label": "Insight Review ({{count}})"
+  },
+  "identity": {
+    "empty_project": "Select a project.",
+    "force_button": "Force run",
+    "force_tooltip": "Force run (ignore threshold)",
+    "force_busy": "Enqueuing...",
+    "empty_title": "No identity analysis yet.",
+    "empty_hint": "Runs automatically after 3 completed Plans + 10 eligible artifacts accumulated.",
+    "status_summary": "Current Plans done {{done}}, Eligible {{eligible}}/{{required}}",
+    "no_data": "(no data)"
+  }
+}

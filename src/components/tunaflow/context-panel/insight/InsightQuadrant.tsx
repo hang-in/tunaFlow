@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { InsightFinding } from "@/types";
 import type { QuadrantKey } from "./insightConstants";
@@ -28,6 +29,7 @@ export function QuadrantSection({
   onSelect: (f: InsightFinding) => void;
   onAutoFix?: () => void;
 }) {
+  const { t } = useTranslation("insight");
   const [collapsed, setCollapsed] = useState(quadrant === "deprioritize");
   const meta = QUADRANT_META[quadrant];
   const open = findings.filter((f) => f.status !== "resolved" && f.status !== "dismissed");
@@ -47,10 +49,10 @@ export function QuadrantSection({
         </button>
         {quadrant === "quick-wins" && open.length > 0 && (
           <span
-            title="메타에이전트 도입 후 활성화 예정"
+            title={t("quadrant.auto_fix_tooltip")}
             className="text-tf-micro px-1.5 py-0.5 rounded bg-muted/30 text-prose-disabled cursor-not-allowed"
           >
-            Auto Fix (준비 중)
+            {t("quadrant.auto_fix_label")}
           </span>
         )}
       </div>

@@ -1,0 +1,88 @@
+{
+  "category": {
+    "stability": "안정성",
+    "test": "테스트",
+    "architecture": "아키텍처",
+    "performance": "성능",
+    "security": "보안",
+    "debt": "기술 부채"
+  },
+  "quadrant": {
+    "auto_fix_tooltip": "메타에이전트 도입 후 활성화 예정",
+    "auto_fix_label": "Auto Fix (준비 중)"
+  },
+  "finding_card": {
+    "code_label": "코드",
+    "solution_label": "해결 방법",
+    "estimated_files": "예상 수정 파일: {{count}}개",
+    "architect_review_button": "Architect 검토"
+  },
+  "panel": {
+    "empty_project": "프로젝트를 선택하세요",
+    "all_categories": "전체 카테고리",
+    "no_findings": "발견 사항 없음",
+    "no_analysis_yet": "아직 분석을 실행하지 않았습니다.",
+    "no_analysis_hint": "\"분석 실행\" 버튼으로 프로젝트 품질을 분석하세요.",
+    "session_loading": "세션 로드 중...",
+    "previous_analysis": "이전 분석",
+    "last_log": "마지막 분석 로그",
+    "running_log": "분석 진행 중...",
+    "processing": "처리 중...",
+    "loading": "로드 중...",
+    "progress_in_progress": "{{count}} 진행 중",
+    "progress_resolved": "{{resolved}}/{{total}} 해결"
+  },
+  "action": {
+    "run_analysis": "분석 실행",
+    "run_analysis_busy": "분석 중...",
+    "rerun_button": "재검토",
+    "rerun_tooltip": "현재 코드 기반으로 open findings 재검토",
+    "save_button": "저장",
+    "save_tooltip": "docs/insight/ 에 파일 저장",
+    "select_all": "전체 선택",
+    "selected_count": "{{count}}개 선택됨",
+    "architect_review_button": "Architect 검토",
+    "dismiss_button": "무시",
+    "delete_tooltip": "삭제"
+  },
+  "toast": {
+    "no_project_path": "프로젝트 경로 없음",
+    "progress_completed": "✓ 완료: {{count}}건 발견",
+    "analysis_success": "분석 완료: {{count}}건 발견",
+    "analysis_error": "분석 실패: {{error}}",
+    "delete_success": "이전 분석 삭제됨",
+    "delete_error": "삭제 실패: {{error}}",
+    "save_success": "{{count}}개 파일 저장 완료 (docs/insight/)",
+    "save_error": "파일 저장 실패: {{error}}",
+    "select_conversation_first": "대화를 먼저 선택해주세요",
+    "branch_send_success": "Architect Review Branch 생성 → {{count}}건 전달",
+    "branch_creation_failed": "브랜치 생성 실패",
+    "branch_creation_error": "브랜치 생성 실패: {{error}}",
+    "rerun_no_open": "재검토할 open findings가 없습니다",
+    "rerun_progress": "{{count}}건 재검토 중...",
+    "rerun_done_resolved": "재검토 완료: {{count}}건 해결됨으로 업데이트{{suffix}}",
+    "rerun_uncertain_suffix": ", {{count}}건 불확실",
+    "rerun_done_all_valid": "재검토 완료: 모든 findings가 여전히 유효합니다",
+    "rerun_error": "재검토 실패: {{error}}"
+  },
+  "log_hint": {
+    "failure": "실패",
+    "empty": "없음"
+  },
+  "review_prompt": {
+    "body": "## Insight 분석 결과 검토 요청\n\n다음 {{count}}건의 코드 품질 이슈를 검토해주세요.\n\n각 항목에 대해 **자율적으로 판단**해주세요:\n- 관련 파일을 직접 읽고 현재 상태 확인\n- Plan으로 승격할지, 단순 메모로 처리할지, 이미 해결됐는지 판단\n- Plan이 필요하다면 여러 항목을 묶어 하나의 plan-proposal로 작성 (불필요한 Plan 낭비 방지)\n- Plan 없이 처리 가능한 것들은 처리 방법을 간략히 설명\n\n---\n\n{{findings}}",
+    "entry": "### {{title}}\n- **카테고리**: {{category}} | **심각도**: {{severity}} | **난이도**: {{difficulty}}{{location}}\n- **설명**: {{description}}",
+    "entry_location": "\n- **위치**: `{{path}}{{line}}`",
+    "branch_label": "Insight Review ({{count}}건)"
+  },
+  "identity": {
+    "empty_project": "프로젝트를 선택하세요.",
+    "force_button": "강제 실행",
+    "force_tooltip": "강제 실행 (threshold 무시)",
+    "force_busy": "enqueue 중...",
+    "empty_title": "아직 정체성 분석 결과가 없습니다.",
+    "empty_hint": "Plan 3개 완료 + eligible artifact 10개 누적 시 자동 실행됩니다.",
+    "status_summary": "현재 Plans done {{done}}개, Eligible {{eligible}}/{{required}}",
+    "no_data": "(데이터 없음)"
+  }
+}

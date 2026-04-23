@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { CheckSquare, Square, CheckCircle2, Clock, GitBranch } from "lucide-react";
 import type { InsightFinding, InsightSeverity } from "@/types";
@@ -90,6 +91,7 @@ export function FindingRow({
 // ── Detail panel ─────────────────────────────────────────────
 
 export function FindingDetail({ finding, onSendToArchitect }: { finding: InsightFinding; onSendToArchitect?: (f: InsightFinding) => void }) {
+  const { t } = useTranslation("insight");
   const catMeta = CATEGORY_META[finding.category];
   const sevMeta = SEVERITY_META[finding.severity];
 
@@ -127,7 +129,7 @@ export function FindingDetail({ finding, onSendToArchitect }: { finding: Insight
       {/* Code snippet */}
       {finding.snippet && (
         <div>
-          <p className="text-tf-xs text-prose-faint mb-1">코드</p>
+          <p className="text-tf-xs text-prose-faint mb-1">{t("finding_card.code_label")}</p>
           <pre className="text-tf-sm bg-[#1e1e1e] text-[#d4d4d4] rounded-md p-3 overflow-x-auto font-mono leading-relaxed">
             {finding.snippet}
           </pre>
@@ -137,7 +139,7 @@ export function FindingDetail({ finding, onSendToArchitect }: { finding: Insight
       {/* Resolution (resolved/done findings) */}
       {finding.resolution && (
         <div>
-          <p className="text-tf-xs text-status-approved/70 mb-1 font-medium">해결 방법</p>
+          <p className="text-tf-xs text-status-approved/70 mb-1 font-medium">{t("finding_card.solution_label")}</p>
           <div className="text-tf-sm text-prose-base bg-status-approved/5 border border-status-approved/20 rounded-md p-3 whitespace-pre-wrap">
             {finding.resolution}
           </div>
@@ -147,7 +149,7 @@ export function FindingDetail({ finding, onSendToArchitect }: { finding: Insight
       {/* Meta */}
       {finding.estimatedFiles && finding.estimatedFiles > 1 && (
         <p className="text-tf-xs text-prose-disabled">
-          예상 수정 파일: {finding.estimatedFiles}개
+          {t("finding_card.estimated_files", { count: finding.estimatedFiles })}
         </p>
       )}
 
@@ -158,7 +160,7 @@ export function FindingDetail({ finding, onSendToArchitect }: { finding: Insight
           className="flex items-center gap-1 text-tf-xs px-2 py-1 rounded font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
         >
           <GitBranch className="w-3 h-3" />
-          Architect 검토
+          {t("finding_card.architect_review_button")}
         </button>
       )}
     </div>

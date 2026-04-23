@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import {
@@ -61,6 +62,7 @@ function InsightTabsBar({
 }
 
 function InsightFindingsTab() {
+  const { t } = useTranslation("insight");
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const projects = useChatStore((s) => s.projects);
   // Running-analysis state lives in the store so a tab switch (which
@@ -116,7 +118,7 @@ function InsightFindingsTab() {
     if (!selectedProjectKey || running) return;
     const project = projects.find((p) => p.key === selectedProjectKey);
     if (!project?.path) {
-      toast.error("프로젝트 경로 없음");
+      toast.error(t("toast.no_project_path"));
       return;
     }
 
@@ -134,14 +136,14 @@ function InsightFindingsTab() {
       setActiveSession(session);
       setFindings(newFindings);
       setSessions((prev) => [session, ...prev.filter((s) => s.id !== session.id)]);
-      useChatStore.getState().insightAppendProgress(`✓ 완료: ${newFindings.length}건 발견`);
+      useChatStore.getState().insightAppendProgress(t("toast.progress_completed", { count: newFindings.length }));
       useChatStore.getState().insightFinishRun(session.id);
-      toast.success(`분석 완료: ${newFindings.length}건 발견`);
+      toast.success(t("toast.analysis_success", { count: newFindings.length }));
     } catch (err) {
       useChatStore.getState().insightFailRun(String(err));
-      toast.error(`분석 실패: ${formatError(err)}`);
+      toast.error(t("toast.analysis_error", { error: formatError(err) }));
     }
-  }, [selectedProjectKey, projects, categoryFilter, running]);
+  }, [selectedProjectKey, projects, categoryFilter, running, t]);
 
   // Toggle selection
   const handleToggle = useCallback((id: string) => {
@@ -172,11 +174,11 @@ function InsightFindingsTab() {
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
       setSessionFindings((prev) => { const next = { ...prev }; delete next[sessionId]; return next; });
       setExpandedSessionIds((prev) => { const next = new Set(prev); next.delete(sessionId); return next; });
-      toast.success("이전 분석 삭제됨");
+      toast.success(t("toast.delete_success"));
     } catch (err) {
-      toast.error(`삭제 실패: ${formatError(err)}`);
+      toast.error(t("toast.delete_error", { error: formatError(err) }));
     }
-  }, []);
+  }, [t]);
 
   // Toggle accordion for previous session
   const handleToggleSession = useCallback(async (sessionId: string) => {
@@ -206,53 +208,55 @@ function InsightFindingsTab() {
   const handleExportToFiles = useCallback(async () => {
     if (!activeSession || !selectedProjectKey) return;
     const project = projects.find((p) => p.key === selectedProjectKey);
-    if (!project?.path) { toast.error("프로젝트 경로 없음"); return; }
+    if (!project?.path) { toast.error(t("toast.no_project_path")); return; }
     try {
       const count = await insightApi.exportInsightToFiles(activeSession.id, project.path);
-      toast.success(`${count}개 파일 저장 완료 (docs/insight/)`);
+      toast.success(t("toast.save_success", { count }));
     } catch (err) {
-      toast.error(`파일 저장 실패: ${formatError(err)}`);
+      toast.error(t("toast.save_error", { error: formatError(err) }));
     }
-  }, [activeSession, selectedProjectKey, projects]);
+  }, [activeSession, selectedProjectKey, projects, t]);
 
   // Send findings to Architect via a new Review Branch (B안)
   const handleSendToArchitect = useCallback(async (targetFindings: InsightFinding[]) => {
     if (targetFindings.length === 0) return;
     const store = useChatStore.getState();
     const convId = store.selectedConversationId;
-    if (!convId) { toast.error("대화를 먼저 선택해주세요"); return; }
+    if (!convId) { toast.error(t("toast.select_conversation_first")); return; }
 
     const lines = targetFindings.map((f) => {
-      let entry = `### ${f.title}\n- **카테고리**: ${f.category} | **심각도**: ${f.severity} | **난이도**: ${f.fixDifficulty}`;
-      if (f.filePath) entry += `\n- **위치**: \`${f.filePath}${f.lineNumber ? `:${f.lineNumber}` : ""}\``;
-      entry += `\n- **설명**: ${f.description}`;
+      const location = f.filePath
+        ? t("review_prompt.entry_location", {
+            path: f.filePath,
+            line: f.lineNumber ? `:${f.lineNumber}` : "",
+          })
+        : "";
+      let entry = t("review_prompt.entry", {
+        title: f.title,
+        category: f.category,
+        severity: f.severity,
+        difficulty: f.fixDifficulty,
+        location,
+        description: f.description,
+      });
       if (f.snippet) entry += `\n\`\`\`\n${f.snippet.slice(0, 300)}\n\`\`\``;
       return entry;
     });
 
-    const prompt = `## Insight 분석 결과 검토 요청
-
-다음 ${targetFindings.length}건의 코드 품질 이슈를 검토해주세요.
-
-각 항목에 대해 **자율적으로 판단**해주세요:
-- 관련 파일을 직접 읽고 현재 상태 확인
-- Plan으로 승격할지, 단순 메모로 처리할지, 이미 해결됐는지 판단
-- Plan이 필요하다면 여러 항목을 묶어 하나의 plan-proposal로 작성 (불필요한 Plan 낭비 방지)
-- Plan 없이 처리 가능한 것들은 처리 방법을 간략히 설명
-
----
-
-${lines.join("\n\n")}`;
+    const prompt = t("review_prompt.body", {
+      count: targetFindings.length,
+      findings: lines.join("\n\n"),
+    });
 
     try {
       // Create Architect Review Branch
-      await store.createBranch(convId, undefined, `Insight Review (${targetFindings.length}건)`, "chat");
+      await store.createBranch(convId, undefined, t("review_prompt.branch_label", { count: targetFindings.length }), "chat");
       // Branch is now at top of list — find it
       const newBranch = useChatStore.getState().branches
         .filter((b) => b.conversationId === convId && b.mode !== "roundtable")
         .sort((a, b) => b.createdAt - a.createdAt)[0];
 
-      if (!newBranch) { toast.error("브랜치 생성 실패"); return; }
+      if (!newBranch) { toast.error(t("toast.branch_creation_failed")); return; }
 
       // Handoff to Architect = findings done from Insight's perspective. Mark
       // them resolved immediately so the user's "needs action" queue stays
@@ -276,11 +280,11 @@ ${lines.join("\n\n")}`;
         store.sendThreadMessage(prompt);
       }, 300);
 
-      toast.success(`Architect Review Branch 생성 → ${targetFindings.length}건 전달`);
+      toast.success(t("toast.branch_send_success", { count: targetFindings.length }));
     } catch (err) {
-      toast.error(`브랜치 생성 실패: ${formatError(err)}`);
+      toast.error(t("toast.branch_creation_error", { error: formatError(err) }));
     }
-  }, []);
+  }, [t]);
 
   // Revalidate open findings against current codebase. Routes the same
   // store-backed progress path as handleRunAnalysis so revalidation
@@ -288,11 +292,11 @@ ${lines.join("\n\n")}`;
   const handleRevalidate = useCallback(async () => {
     if (running || !selectedProjectKey) return;
     const openCount = findings.filter((f) => f.status === "open").length;
-    if (openCount === 0) { toast.info("재검토할 open findings가 없습니다"); return; }
+    if (openCount === 0) { toast.info(t("toast.rerun_no_open")); return; }
 
     const store = useChatStore.getState();
     store.insightStartRun();
-    store.insightAppendProgress(`${openCount}건 재검토 중...`);
+    store.insightAppendProgress(t("toast.rerun_progress", { count: openCount }));
     try {
       const results = await revalidateFindings(
         findings,
@@ -314,15 +318,18 @@ ${lines.join("\n\n")}`;
       }
 
       const msg = resolved.length > 0
-        ? `재검토 완료: ${resolved.length}건 해결됨으로 업데이트${uncertain.length > 0 ? `, ${uncertain.length}건 불확실` : ""}`
-        : `재검토 완료: 모든 findings가 여전히 유효합니다`;
+        ? t("toast.rerun_done_resolved", {
+            count: resolved.length,
+            suffix: uncertain.length > 0 ? t("toast.rerun_uncertain_suffix", { count: uncertain.length }) : "",
+          })
+        : t("toast.rerun_done_all_valid");
       useChatStore.getState().insightFinishRun();
       toast.success(msg);
     } catch (err) {
       useChatStore.getState().insightFailRun(String(err));
-      toast.error(`재검토 실패: ${formatError(err)}`);
+      toast.error(t("toast.rerun_error", { error: formatError(err) }));
     }
-  }, [running, findings, selectedProjectKey]);
+  }, [running, findings, selectedProjectKey, t]);
 
   // Auto fix — disabled, pending meta-agent (see docs/ideas/onboardingMetaAgentIdea.md §8)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -354,7 +361,7 @@ ${lines.join("\n\n")}`;
       : activeFinding ? "finding" : "none";
 
   if (!selectedProjectKey) {
-    return <div className="p-4 text-center text-muted-foreground/50 text-xs">프로젝트를 선택하세요</div>;
+    return <div className="p-4 text-center text-muted-foreground/50 text-xs">{t("panel.empty_project")}</div>;
   }
 
   return (
@@ -372,7 +379,7 @@ ${lines.join("\n\n")}`;
           )}
         >
           {running ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-          {running ? "분석 중..." : "분석 실행"}
+          {running ? t("action.run_analysis_busy") : t("action.run_analysis")}
         </button>
 
         {activeSession && findings.length > 0 && (
@@ -380,10 +387,10 @@ ${lines.join("\n\n")}`;
             onClick={handleRevalidate}
             disabled={running}
             className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-prose-muted hover:text-foreground hover:bg-muted/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="현재 코드 기반으로 open findings 재검토"
+            title={t("action.rerun_tooltip")}
           >
             <RefreshCw className="w-3 h-3" />
-            재검토
+            {t("action.rerun_button")}
           </button>
         )}
 
@@ -391,10 +398,10 @@ ${lines.join("\n\n")}`;
           <button
             onClick={handleExportToFiles}
             className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded text-prose-muted hover:text-foreground hover:bg-muted/30 transition-colors"
-            title="docs/insight/ 에 파일 저장"
+            title={t("action.save_tooltip")}
           >
             <Download className="w-3 h-3" />
-            저장
+            {t("action.save_button")}
           </button>
         )}
 
@@ -405,9 +412,9 @@ ${lines.join("\n\n")}`;
           onChange={(e) => setCategoryFilter(e.target.value as InsightCategory | "all")}
           className="text-[10px] bg-transparent border border-border/30 rounded px-1.5 py-0.5 text-foreground"
         >
-          <option value="all">전체 카테고리</option>
-          {Object.entries(CATEGORY_META).map(([k, v]) => (
-            <option key={k} value={k}>{v.label}</option>
+          <option value="all">{t("panel.all_categories")}</option>
+          {Object.keys(CATEGORY_META).map((k) => (
+            <option key={k} value={k}>{t(`category.${k}` as "category.stability")}</option>
           ))}
         </select>
 
@@ -453,8 +460,8 @@ ${lines.join("\n\n")}`;
             <span className="w-px h-2.5 bg-border/30" />
             <span className="text-prose-disabled">
               {open > 0 && <span className="text-foreground/50">{open} open</span>}
-              {inProgress > 0 && <span className="ml-1.5 text-primary/50">{inProgress} 진행 중</span>}
-              {resolved > 0 && <span className="ml-1.5 text-status-approved/60">{resolved}/{total} 해결</span>}
+              {inProgress > 0 && <span className="ml-1.5 text-primary/50">{t("panel.progress_in_progress", { count: inProgress })}</span>}
+              {resolved > 0 && <span className="ml-1.5 text-status-approved/60">{t("panel.progress_resolved", { resolved, total })}</span>}
             </span>
             {resolved > 0 && (
               <div className="ml-auto w-20 h-1 bg-muted/40 rounded-full overflow-hidden">
@@ -487,11 +494,11 @@ ${lines.join("\n\n")}`;
                     {allSelected
                       ? <CheckSquare className="w-3 h-3 text-accent" />
                       : <Square className="w-3 h-3 text-muted-foreground/40" />}
-                    전체 선택
+                    {t("action.select_all")}
                   </button>
                   {selectedIds.size > 0 && (
                     <>
-                      <span className="text-[10px] text-prose-disabled">{selectedIds.size}개 선택됨</span>
+                      <span className="text-[10px] text-prose-disabled">{t("action.selected_count", { count: selectedIds.size })}</span>
                       <button
                         onClick={() => {
                           const selected = findings.filter((f) => selectedIds.has(f.id));
@@ -500,13 +507,13 @@ ${lines.join("\n\n")}`;
                         className="flex items-center gap-0.5 text-[10px] text-primary hover:text-primary/80 px-1.5 py-0.5 rounded border border-primary/30"
                       >
                         <GitBranch className="w-2.5 h-2.5" />
-                        Architect 검토
+                        {t("action.architect_review_button")}
                       </button>
                       <button
                         onClick={handleDismiss}
                         className="text-[10px] text-prose-faint hover:text-foreground px-1.5 py-0.5 rounded border border-border/30"
                       >
-                        무시
+                        {t("action.dismiss_button")}
                       </button>
                     </>
                   )}
@@ -520,19 +527,19 @@ ${lines.join("\n\n")}`;
             </>
           ) : activeSession ? (
             <div className="text-center text-prose-faint text-tf-sm py-8">
-              {activeSession.status === "completed" ? "발견 사항 없음" : activeSession.summary || "세션 로드 중..."}
+              {activeSession.status === "completed" ? t("panel.no_findings") : activeSession.summary || t("panel.session_loading")}
             </div>
           ) : (
             <div className="text-center text-prose-faint text-tf-sm py-8">
-              <p>아직 분석을 실행하지 않았습니다.</p>
-              <p className="mt-1">"분석 실행" 버튼으로 프로젝트 품질을 분석하세요.</p>
+              <p>{t("panel.no_analysis_yet")}</p>
+              <p className="mt-1">{t("panel.no_analysis_hint")}</p>
             </div>
           )}
 
           {/* Previous sessions — accordion */}
           {sessions.length > 1 && (
             <div className="pt-3 border-t border-border/20 space-y-1">
-              <p className="text-[10px] font-semibold text-prose-disabled uppercase tracking-wider mb-2">이전 분석</p>
+              <p className="text-[10px] font-semibold text-prose-disabled uppercase tracking-wider mb-2">{t("panel.previous_analysis")}</p>
               {sessions.slice(1).map((s) => {
                 const expanded = expandedSessionIds.has(s.id);
                 const sFindings = sessionFindings[s.id];
@@ -557,7 +564,7 @@ ${lines.join("\n\n")}`;
                       <button
                         onClick={() => handleDeleteSession(s.id)}
                         className="shrink-0 p-0.5 rounded text-prose-disabled hover:text-destructive hover:bg-destructive/10 transition-colors"
-                        title="삭제"
+                        title={t("action.delete_tooltip")}
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -567,10 +574,10 @@ ${lines.join("\n\n")}`;
                       <div className="border-t border-border/10 px-2 py-1.5 space-y-1">
                         {sFindings === undefined ? (
                           <div className="flex items-center gap-1 text-[9px] text-prose-disabled py-1">
-                            <Loader2 className="w-2.5 h-2.5 animate-spin" /> 로드 중...
+                            <Loader2 className="w-2.5 h-2.5 animate-spin" /> {t("panel.loading")}
                           </div>
                         ) : sFindings.length === 0 ? (
-                          <p className="text-[9px] text-prose-faint py-1">발견 사항 없음</p>
+                          <p className="text-[9px] text-prose-faint py-1">{t("panel.no_findings")}</p>
                         ) : (
                           sFindings.map((f) => (
                             <button
@@ -615,7 +622,7 @@ ${lines.join("\n\n")}`;
               /* Progress log — streaming style */
               <div className="flex-1 overflow-y-auto p-3">
                 <p className="text-[9px] font-semibold uppercase tracking-wider text-prose-disabled mb-2">
-                  {running ? "분석 진행 중..." : "마지막 분석 로그"}
+                  {running ? t("panel.running_log") : t("panel.last_log")}
                 </p>
                 <div className="space-y-0.5 font-mono">
                   {progressLines.map((line, i) => (
@@ -623,7 +630,7 @@ ${lines.join("\n\n")}`;
                       "text-[10px] leading-relaxed",
                       line.startsWith("✓") ? "text-status-approved/80" :
                       line.startsWith("✗") ? "text-destructive/80" :
-                      line.includes("실패") || line.includes("없음") ? "text-prose-disabled" :
+                      line.includes(t("log_hint.failure")) || line.includes(t("log_hint.empty")) ? "text-prose-disabled" :
                       "text-prose-muted",
                     )}>
                       {line}
@@ -631,7 +638,7 @@ ${lines.join("\n\n")}`;
                   ))}
                   {running && (
                     <div className="flex items-center gap-1 text-[10px] text-primary/60 animate-pulse mt-1">
-                      <Loader2 className="w-2.5 h-2.5 animate-spin" /> 처리 중...
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" /> {t("panel.processing")}
                     </div>
                   )}
                   <div ref={progressEndRef} />

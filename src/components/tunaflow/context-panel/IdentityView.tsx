@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { RefreshCw, Clock, AlertTriangle, Check } from "lucide-react";
@@ -25,6 +26,7 @@ import type { Artifact } from "@/types";
  *  - Empty state — summary 없을 때 조건 안내
  */
 export function IdentityView() {
+  const { t } = useTranslation("insight");
   const projectKey = useChatStore((s) => s.selectedProjectKey);
   const [summaries, setSummaries] = useState<Artifact[]>([]);
   const [selected, setSelected] = useState<Artifact | null>(null);
@@ -83,7 +85,7 @@ export function IdentityView() {
   };
 
   if (!projectKey) {
-    return <div className="p-4 text-[11px] text-muted-foreground">프로젝트를 선택하세요.</div>;
+    return <div className="p-4 text-[11px] text-muted-foreground">{t("identity.empty_project")}</div>;
   }
 
   return (
@@ -121,6 +123,7 @@ function Toolbar({
   onRun: (force: boolean) => void;
   busy: boolean;
 }) {
+  const { t } = useTranslation("insight");
   return (
     <div className="flex items-center gap-2 px-3 py-2 border-b border-border/20 shrink-0">
       <button
@@ -134,7 +137,7 @@ function Toolbar({
         )}
       >
         {busy ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-        {busy ? "enqueue 중..." : "강제 실행"}
+        {busy ? t("identity.force_busy") : t("identity.force_button")}
       </button>
       {summaries.length > 0 && (
         <select
@@ -194,16 +197,20 @@ function EmptyState({
   onForce: () => void;
   busy: boolean;
 }) {
+  const { t } = useTranslation("insight");
   return (
     <div className="flex flex-col items-center justify-center h-full p-6 gap-3 text-center">
-      <p className="text-[12px] text-foreground">아직 정체성 분석 결과가 없습니다.</p>
+      <p className="text-[12px] text-foreground">{t("identity.empty_title")}</p>
       <p className="text-[10px] text-muted-foreground max-w-[360px] leading-relaxed">
-        Plan 3개 완료 + eligible artifact 10개 누적 시 자동 실행됩니다.
+        {t("identity.empty_hint")}
         {status && (
           <>
             {" "}
-            현재 Plans done {status.donePlanCount}개, Eligible {status.eligibleArtifactCount}/
-            {status.threshold}.
+            {t("identity.status_summary", {
+              done: status.donePlanCount,
+              eligible: status.eligibleArtifactCount,
+              required: status.threshold,
+            })}
           </>
         )}
       </p>
@@ -212,7 +219,7 @@ function EmptyState({
         disabled={busy}
         className="text-[10px] px-2.5 py-1 rounded bg-accent text-accent-foreground hover:bg-accent/80 disabled:opacity-50"
       >
-        강제 실행 (threshold 무시)
+        {t("identity.force_tooltip")}
       </button>
     </div>
   );
@@ -249,11 +256,12 @@ function SummaryBody({ summary, parsed }: { summary: Artifact; parsed: ParsedIde
 }
 
 function Section({ title, content }: { title: string; content: string }) {
+  const { t } = useTranslation("insight");
   if (!content.trim()) {
     return (
       <div>
         <h4 className="text-[11px] font-semibold text-foreground/80 mb-1">{title}</h4>
-        <p className="text-[10px] text-muted-foreground italic">(데이터 없음)</p>
+        <p className="text-[10px] text-muted-foreground italic">{t("identity.no_data")}</p>
       </div>
     );
   }
@@ -268,13 +276,14 @@ function Section({ title, content }: { title: string; content: string }) {
 }
 
 function InflectionTimeline({ points }: { points: InflectionPoint[] }) {
+  const { t } = useTranslation("insight");
   if (points.length === 0) {
     return (
       <div>
         <h4 className="text-[11px] font-semibold text-foreground/80 mb-1">
           Recent inflection points
         </h4>
-        <p className="text-[10px] text-muted-foreground italic">(데이터 없음)</p>
+        <p className="text-[10px] text-muted-foreground italic">{t("identity.no_data")}</p>
       </div>
     );
   }
@@ -300,11 +309,12 @@ function InflectionTimeline({ points }: { points: InflectionPoint[] }) {
 }
 
 function DoAvoidLists({ items }: { items: { do: string[]; avoid: string[] } }) {
+  const { t } = useTranslation("insight");
   if (items.do.length === 0 && items.avoid.length === 0) {
     return (
       <div>
         <h4 className="text-[11px] font-semibold text-foreground/80 mb-1">Do / Avoid</h4>
-        <p className="text-[10px] text-muted-foreground italic">(데이터 없음)</p>
+        <p className="text-[10px] text-muted-foreground italic">{t("identity.no_data")}</p>
       </div>
     );
   }
