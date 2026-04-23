@@ -22,43 +22,53 @@ for arg in "$@"; do
 done
 
 # ── Detect arch ───────────────────────────────────────────────────────────────
+# ── Detect OS ─────────────────────────────────────────────────────────────────
+OS="$(uname -s)"
+if [[ "$OS" != "Darwin" ]]; then
+  echo "오류: 현재 install.sh 는 macOS 전용입니다. (감지된 OS: $OS)" >&2
+  echo "Windows / Linux 빌드는 로드맵에 있습니다:" >&2
+  echo "  https://github.com/${REPO}/issues" >&2
+  exit 1
+fi
+
+# ── Detect arch ───────────────────────────────────────────────────────────────
+# tauri-action 이 번들하는 DMG 파일명 규약:
+#   tunaFlow_{version}_{arch_tag}.dmg            (lite, 기본)
+#   tunaFlow_{version}_{arch_tag}_full.dmg       (full — 현재는 Release 에 없을 수도 있음)
+# arch_tag 는 "aarch64" / "x64" — Rust triple 이 아님.
 ARCH=$(uname -m)
 case "$ARCH" in
-  arm64)   TRIPLE="aarch64-apple-darwin" ;;
-  x86_64)  TRIPLE="x86_64-apple-darwin" ;;
-  *)       echo "지원하지 않는 아키텍처: $ARCH" >&2; exit 1 ;;
+  arm64|aarch64)  ARCH_TAG="aarch64" ;;
+  x86_64|amd64)   ARCH_TAG="x64" ;;
+  *)              echo "지원하지 않는 아키텍처: $ARCH" >&2; exit 1 ;;
 esac
 
-echo "tunaFlow 설치 중... (트랙: $TRACK, 아키텍처: $ARCH)"
+echo "tunaFlow 설치 중... (트랙: $TRACK, 아키텍처: $ARCH_TAG)"
 
 # ── Fetch latest release ───────────────────────────────────────────────────────
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
-if [[ "$TRACK" == "full" ]]; then
-  ASSET_PATTERN="${TRIPLE}.*full.*\.dmg\|full.*${TRIPLE}.*\.dmg"
-else
-  ASSET_PATTERN="${TRIPLE}.*\.dmg"
-fi
-
-DMG_URL=$(curl -fsSL "$API_URL" \
-  | grep "browser_download_url" \
-  | grep -i "$TRIPLE" \
-  | grep -i "\.dmg" \
-  | grep -v "full" \
-  | head -1 \
-  | cut -d '"' -f 4)
+ASSETS_JSON=$(curl -fsSL "$API_URL")
 
 if [[ "$TRACK" == "full" ]]; then
-  DMG_URL=$(curl -fsSL "$API_URL" \
+  DMG_URL=$(echo "$ASSETS_JSON" \
     | grep "browser_download_url" \
-    | grep -i "$TRIPLE" \
+    | grep -i "_${ARCH_TAG}" \
     | grep -i "full" \
     | grep -i "\.dmg" \
+    | head -1 \
+    | cut -d '"' -f 4)
+else
+  DMG_URL=$(echo "$ASSETS_JSON" \
+    | grep "browser_download_url" \
+    | grep -i "_${ARCH_TAG}" \
+    | grep -i "\.dmg" \
+    | grep -v -i "full" \
     | head -1 \
     | cut -d '"' -f 4)
 fi
 
 if [[ -z "$DMG_URL" ]]; then
-  echo "오류: $TRACK 트랙 ($ARCH) dmg를 찾을 수 없습니다." >&2
+  echo "오류: $TRACK 트랙 ($ARCH_TAG) dmg를 찾을 수 없습니다." >&2
   echo "릴리즈 페이지를 직접 확인하세요: https://github.com/${REPO}/releases" >&2
   exit 1
 fi
