@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import "./locales"; // i18next 초기화 (side-effect import — App 렌더 전에 설정 완료)
 import App from "./App";
 import { installCrashReporter } from "./lib/crashReporter";
 

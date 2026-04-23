@@ -1,0 +1,54 @@
+{
+  "button": {
+    "delete": "삭제",
+    "cancel": "취소",
+    "confirm": "확인",
+    "save": "저장",
+    "close": "닫기",
+    "copy": "복사",
+    "refresh": "새로고침",
+    "search": "검색",
+    "edit": "편집",
+    "rename": "이름 변경",
+    "retry": "재시도",
+    "apply": "적용",
+    "reset": "초기화",
+    "add": "추가",
+    "remove": "제거",
+    "open": "열기",
+    "run": "실행",
+    "stop": "중지",
+    "send": "보내기",
+    "load_default": "기본값 로드",
+    "restore": "복원",
+    "done": "완료"
+  },
+  "status": {
+    "loading": "불러오는 중...",
+    "saving": "저장 중...",
+    "running": "실행 중...",
+    "done": "완료",
+    "failed": "실패",
+    "streaming": "스트리밍 중",
+    "pending": "대기 중",
+    "cancelled": "취소됨",
+    "empty": "비어있음",
+    "idle": "대기",
+    "ready": "준비됨"
+  },
+  "message": {
+    "untitled": "제목 없음",
+    "no_data": "데이터 없음",
+    "error": "오류",
+    "copied": "복사됨",
+    "saved": "저장됨",
+    "confirm_delete": "정말 삭제하시겠습니까?",
+    "loading_failed": "불러오기 실패",
+    "try_again": "다시 시도해주세요"
+  },
+  "language": {
+    "label": "언어",
+    "ko": "한국어",
+    "en": "English"
+  }
+}
