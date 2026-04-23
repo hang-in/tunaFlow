@@ -3,13 +3,13 @@ import { useTranslation, Trans } from "react-i18next";
 import { ExternalLink, Keyboard, Lightbulb, AlertTriangle, FileWarning } from "lucide-react";
 import { listRecentCrashReports, type CrashReportSummary } from "@/lib/crashReporter";
 
-const SHORTCUT_KEYS: { keys: string; descKey: string }[] = [
+const SHORTCUT_KEYS = [
   { keys: "Cmd+K", descKey: "help.shortcut_desc.cmd_k" },
   { keys: "Cmd+Enter", descKey: "help.shortcut_desc.cmd_enter" },
   { keys: "Shift+Enter", descKey: "help.shortcut_desc.shift_enter" },
   { keys: "Esc", descKey: "help.shortcut_desc.esc" },
   { keys: "Tab", descKey: "help.shortcut_desc.tab" },
-];
+] as const;
 
 const FEATURE_KEYS = ["pdr", "branch", "contextpack", "insight", "pty"] as const;
 const TROUBLESHOOTING_KEYS = ["no_response", "insight_reset", "cpu_high", "macos_gatekeeper"] as const;

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { cn, errorMessage } from "@/lib/utils";
@@ -9,13 +10,13 @@ import { SKILL_SETS, expandSkillRefs } from "@/lib/skillSets";
 
 // ─── Workflow Skills Config ──────────────────────────────────────────────────
 
-const WORKFLOW_PHASES = [
-  { key: "chat", label: "Chat / Planning", desc: "일반 대화, Architect 설계" },
-  { key: "implementation", label: "Implementation", desc: "Developer 코드 구현" },
-  { key: "review", label: "Review", desc: "Reviewer 코드 검토" },
-] as const;
-
 function WorkflowSkillsConfig() {
+  const { t } = useTranslation("settings");
+  const WORKFLOW_PHASES = [
+    { key: "chat", label: "Chat / Planning", desc: t("runtime.workflow_skills.phase.chat_desc") },
+    { key: "implementation", label: "Implementation", desc: t("runtime.workflow_skills.phase.implementation_desc") },
+    { key: "review", label: "Review", desc: t("runtime.workflow_skills.phase.review_desc") },
+  ] as const;
   const workflowSkills = useChatStore((s) => s.workflowSkills);
   const saveWorkflowSkills = useChatStore((s) => s.saveWorkflowSkills);
   const [expandedPhase, setExpandedPhase] = useState<string | null>(null);
@@ -31,8 +32,8 @@ function WorkflowSkillsConfig() {
   return (
     <div className="rounded-lg border border-border/30 bg-background/50 p-4 space-y-3">
       <div>
-        <h3 className="text-[13px] font-medium text-foreground">Workflow Skills</h3>
-        <p className="text-[11px] text-muted-foreground/60 mt-0.5">워크플로우 단계별 스킬 세트. 수동 선택과 합산됩니다.</p>
+        <h3 className="text-[13px] font-medium text-foreground">{t("runtime.workflow_skills.heading")}</h3>
+        <p className="text-[11px] text-muted-foreground/60 mt-0.5">{t("runtime.workflow_skills.description")}</p>
       </div>
       <div className="space-y-3">
         {WORKFLOW_PHASES.map(({ key, label, desc }) => {
@@ -95,13 +96,6 @@ function WorkflowSkillsConfig() {
 
 // ─── Context Budget Control ──────────────────────────────────────────────────
 
-const CONTEXT_MODES = [
-  { id: "auto", label: "Auto", desc: "대화 상태에 따라 자동 선택 (기본)" },
-  { id: "lite", label: "Lite", desc: "프로젝트 + 대화 컨텍스트만 포함" },
-  { id: "standard", label: "Standard", desc: "Lite + Plan, Findings, Artifacts" },
-  { id: "full", label: "Full", desc: "Standard + Skills, rawq, Cross-session" },
-] as const;
-
 const SECTION_POLICY: Record<string, string[]> = {
   lite: ["Project", "Context"],
   standard: ["Project", "Context", "Plan", "Findings", "Artifacts"],
@@ -124,11 +118,9 @@ interface InsightPreset {
   systemPrompt: string;
 }
 
-const INSIGHT_PRESETS: InsightPreset[] = [
+const INSIGHT_PRESETS_DATA: Omit<InsightPreset, "label" | "desc">[] = [
   {
     id: "balanced",
-    label: "Balanced (Claude)",
-    desc: "정확도와 비용의 균형. 일반적 코드 품질 분석에 적합",
     engine: "claude",
     model: "",
     systemPrompt: `You are a senior code quality analyst performing a targeted review.
@@ -147,8 +139,6 @@ const INSIGHT_PRESETS: InsightPreset[] = [
   },
   {
     id: "thorough",
-    label: "Thorough (Claude)",
-    desc: "정밀 분석. 더 많은 토큰 소비, 더 높은 정확도",
     engine: "claude",
     model: "",
     systemPrompt: `You are a principal software engineer conducting a thorough code quality audit.
@@ -175,8 +165,6 @@ Respond in Korean for descriptions, keep technical terms in English.`,
   },
   {
     id: "security",
-    label: "Security Focus (Claude)",
-    desc: "보안 취약점 중심 분석. OWASP Top 10 기반",
     engine: "claude",
     model: "",
     systemPrompt: `You are a security engineer conducting a focused vulnerability assessment.
@@ -206,8 +194,6 @@ Respond in Korean for descriptions, English for technical terms and CWE referenc
   },
   {
     id: "gemini",
-    label: "Balanced (Gemini)",
-    desc: "Gemini 엔진 사용. 다른 관점의 분석",
     engine: "gemini",
     model: "",
     systemPrompt: `You are a senior code quality analyst performing a targeted review.
@@ -225,11 +211,27 @@ Respond in Korean for descriptions, English for technical terms and CWE referenc
 const DEFAULT_INSIGHT_CONFIG = {
   engine: "claude",
   model: "",
-  systemPrompt: INSIGHT_PRESETS[0].systemPrompt,
+  systemPrompt: INSIGHT_PRESETS_DATA[0].systemPrompt,
   presetId: "balanced",
 };
 
+const INSIGHT_PRESET_I18N = {
+  balanced: { labelKey: "runtime.insight_agent.preset.balanced_claude_label", descKey: "runtime.insight_agent.preset.balanced_claude_desc" },
+  thorough: { labelKey: "runtime.insight_agent.preset.thorough_label", descKey: "runtime.insight_agent.preset.thorough_desc" },
+  security: { labelKey: "runtime.insight_agent.preset.security_label", descKey: "runtime.insight_agent.preset.security_desc" },
+  gemini: { labelKey: "runtime.insight_agent.preset.balanced_gemini_label", descKey: "runtime.insight_agent.preset.balanced_gemini_desc" },
+} as const;
+
 function InsightAgentConfig() {
+  const { t } = useTranslation("settings");
+  const INSIGHT_PRESETS: InsightPreset[] = INSIGHT_PRESETS_DATA.map((p) => {
+    const i18n = INSIGHT_PRESET_I18N[p.id as keyof typeof INSIGHT_PRESET_I18N];
+    return {
+      ...p,
+      label: i18n ? t(i18n.labelKey) : p.id,
+      desc: i18n ? t(i18n.descKey) : "",
+    };
+  });
   const [config, setConfig] = useState(DEFAULT_INSIGHT_CONFIG);
   const [expanded, setExpanded] = useState(false);
   const engineModels = useChatStore((s) => s.engineModels);
@@ -259,12 +261,12 @@ function InsightAgentConfig() {
     <div className="rounded-lg border border-border/30 bg-background/50 p-4 space-y-3">
       <div>
         <h3 className="text-[13px] font-medium text-foreground">Insight Agent</h3>
-        <p className="text-[11px] text-muted-foreground/60 mt-0.5">Insight 탭 분석에 사용할 에이전트 설정</p>
+        <p className="text-[11px] text-muted-foreground/60 mt-0.5">{t("runtime.insight_agent.description")}</p>
       </div>
 
       {/* Preset buttons */}
       <div className="space-y-1.5">
-        <span className="text-[10px] text-muted-foreground/50">프리셋</span>
+        <span className="text-[10px] text-muted-foreground/50">{t("runtime.insight_agent.preset_label")}</span>
         <div className="flex flex-wrap gap-1.5">
           {INSIGHT_PRESETS.map((p) => (
             <button
@@ -287,7 +289,7 @@ function InsightAgentConfig() {
       {/* Engine + Model */}
       <div className="flex gap-3">
         <div className="space-y-1 flex-1">
-          <span className="text-[10px] text-muted-foreground/50">엔진</span>
+          <span className="text-[10px] text-muted-foreground/50">{t("runtime.insight_agent.engine_label")}</span>
           <select
             value={config.engine}
             onChange={(e) => update({ engine: e.target.value, model: "", presetId: "custom" })}
@@ -301,7 +303,7 @@ function InsightAgentConfig() {
           </select>
         </div>
         <div className="space-y-1 flex-1">
-          <span className="text-[10px] text-muted-foreground/50">모델</span>
+          <span className="text-[10px] text-muted-foreground/50">{t("runtime.insight_agent.model_label")}</span>
           <select
             value={config.model}
             onChange={(e) => update({ model: e.target.value, presetId: "custom" })}
@@ -324,7 +326,7 @@ function InsightAgentConfig() {
           className="flex items-center gap-1 text-[10px] text-muted-foreground/50 hover:text-foreground"
         >
           {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          시스템 프롬프트 {config.presetId !== "custom" && `(${config.presetId})`}
+          {t("runtime.insight_agent.system_prompt")} {config.presetId !== "custom" && `(${config.presetId})`}
         </button>
         {expanded && (
           <textarea
@@ -340,6 +342,13 @@ function InsightAgentConfig() {
 }
 
 function ContextBudgetControl() {
+  const { t } = useTranslation("settings");
+  const CONTEXT_MODES = [
+    { id: "auto", label: "Auto", desc: t("runtime.context_budget.modes.auto_desc") },
+    { id: "lite", label: "Lite", desc: t("runtime.context_budget.modes.lite_desc") },
+    { id: "standard", label: "Standard", desc: t("runtime.context_budget.modes.standard_desc") },
+    { id: "full", label: "Full", desc: t("runtime.context_budget.modes.full_desc") },
+  ] as const;
   const [config, setConfig] = useState({ mode: "auto", totalCap: BUDGET_DEFAULT });
   const [loaded, setLoaded] = useState(false);
 
@@ -389,14 +398,14 @@ function ContextBudgetControl() {
         </div>
       </div>
       <div className="space-y-1.5">
-        <label className="text-[11px] text-muted-foreground">Included Sections {config.mode === "auto" ? "(Auto 모드: 최대 범위)" : ""}</label>
+        <label className="text-[11px] text-muted-foreground">{config.mode === "auto" ? t("runtime.context_budget.included_sections_auto") : t("runtime.context_budget.included_sections")}</label>
         <div className="flex flex-wrap gap-1">
           {["Project", "Context", "Persona", "Plan", "Findings", "Artifacts", "Skills", "rawq", "Cross-session", "Thread"].map((sec) => (
             <span key={sec} className={cn("px-1.5 py-0.5 rounded text-[9px] font-medium",
               sections.includes(sec) || sec === "Persona" || sec === "Thread" ? "bg-accent/60 text-foreground/60" : "bg-muted/30 text-muted-foreground/25 line-through")}>{sec}</span>
           ))}
         </div>
-        <p className="text-[9px] text-muted-foreground/30">Persona는 설정 시 항상 포함. Thread는 branch에서 자동 포함. rawq는 코드 신호 감지 시 mode 무관 포함.</p>
+        <p className="text-[9px] text-muted-foreground/30">{t("runtime.context_budget.persona_thread_note")}</p>
       </div>
     </div>
   );
@@ -523,6 +532,7 @@ function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
 // ─── PTY Mode Toggle ────────────────────────────────────────────────────────
 
 function PtyModeToggle() {
+  const { t } = useTranslation("settings");
   const [ptyEnabled, setPtyEnabled] = useState(true);
 
   useEffect(() => {
@@ -565,7 +575,7 @@ function PtyModeToggle() {
           <span className="text-foreground/80">{ptyEnabled ? "PTY (stateful, multi-turn)" : "CLI -p (stateless, per-message)"}</span>
         </div>
         <p className="text-[11px] text-muted-foreground/50 mt-1">
-          PTY 비활성화 시 모든 메시지가 -p 모드로 전송됩니다. /clear로 세션 초기화 가능.
+          {t("runtime.pty.hint")}
         </p>
       </div>
     </div>
@@ -573,6 +583,7 @@ function PtyModeToggle() {
 }
 
 export function RuntimeSection() {
+  const { t } = useTranslation("settings");
   const rawqStatus = useChatStore((s) => s.rawqStatus);
   const engineModels = useChatStore((s) => s.engineModels);
   const loadEngineModels = useChatStore((s) => s.loadEngineModels);
@@ -588,8 +599,8 @@ export function RuntimeSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-[14px] font-[550] text-foreground mb-1">Runtime</h2>
-        <p className="text-[12px] text-muted-foreground mb-4">런타임 환경 상태를 확인하고 관리합니다.</p>
+        <h2 className="text-[14px] font-[550] text-foreground mb-1">{t("runtime.heading")}</h2>
+        <p className="text-[12px] text-muted-foreground mb-4">{t("runtime.description")}</p>
       </div>
 
       {/* rawq */}
@@ -653,6 +664,7 @@ export function RuntimeSection() {
 // ─── Attachments Cleanup ──────────────────────────────────────────────────────
 
 function AttachmentsCleanupPanel() {
+  const { t } = useTranslation("settings");
   const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const [olderThanDays, setOlderThanDays] = useState(30);
   const [running, setRunning] = useState(false);
@@ -661,14 +673,14 @@ function AttachmentsCleanupPanel() {
 
   const runCleanup = async () => {
     if (!selectedProjectKey) {
-      setError("프로젝트가 선택되지 않았습니다.");
+      setError(t("runtime.attachments.error.no_project"));
       return;
     }
     setRunning(true);
     setError(null);
     try {
       const project = await invoke<{ path?: string }>("get_project", { key: selectedProjectKey });
-      if (!project.path) { setError("프로젝트 경로를 찾을 수 없습니다."); return; }
+      if (!project.path) { setError(t("runtime.attachments.error.no_path")); return; }
       const result = await invoke<{ deletedCount: number; freedBytes: number }>("cleanup_attachments", {
         projectPath: project.path,
         olderThanDays,
@@ -688,13 +700,13 @@ function AttachmentsCleanupPanel() {
   return (
     <div className="rounded-lg border border-border/30 bg-background/50 p-4 space-y-3">
       <div>
-        <h3 className="text-[13px] font-medium text-foreground">Attachments Cleanup</h3>
+        <h3 className="text-[13px] font-medium text-foreground">{t("runtime.attachments.heading")}</h3>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          `.tunaflow/attachments/` 내부의 오래된 첨부 파일을 정리합니다. (.gitignore 는 보존)
+          {t("runtime.attachments.description")}
         </p>
       </div>
       <div className="flex items-center gap-2 text-[12px]">
-        <span className="text-muted-foreground">보다 오래된 파일 삭제:</span>
+        <span className="text-muted-foreground">{t("runtime.attachments.older_than")}</span>
         <input
           type="number"
           min={0}
@@ -703,18 +715,18 @@ function AttachmentsCleanupPanel() {
           onChange={(e) => setOlderThanDays(Math.max(0, parseInt(e.target.value || "0", 10)))}
           className="w-16 px-2 py-1 rounded border border-border/40 bg-background text-foreground"
         />
-        <span className="text-muted-foreground">일 (0 = 전부)</span>
+        <span className="text-muted-foreground">{t("runtime.attachments.days_suffix")}</span>
         <button
           onClick={runCleanup}
           disabled={running || !selectedProjectKey}
           className="ml-auto px-3 py-1 rounded bg-primary text-primary-foreground text-[12px] disabled:opacity-50"
         >
-          {running ? "정리 중..." : "정리 실행"}
+          {running ? t("runtime.attachments.running") : t("runtime.attachments.run")}
         </button>
       </div>
       {lastResult && (
         <div className="text-[11px] text-muted-foreground">
-          ✅ 삭제 {lastResult.deletedCount}건 · 확보 {formatSize(lastResult.freedBytes)}
+          {t("runtime.attachments.result", { count: lastResult.deletedCount, size: formatSize(lastResult.freedBytes) })}
         </div>
       )}
       {error && (
