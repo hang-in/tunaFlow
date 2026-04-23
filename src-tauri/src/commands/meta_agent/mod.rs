@@ -10,3 +10,4 @@
 
 pub mod background_jobs;
 pub mod background_worker;
+pub mod identity_trigger;

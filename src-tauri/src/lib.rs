@@ -291,6 +291,9 @@ pub fn run() {
             commands::meta_agent::background_jobs::count_background_jobs,
             commands::meta_agent::background_jobs::get_background_insight_enabled,
             commands::meta_agent::background_jobs::set_background_insight_enabled,
+            // metaAgent Phase 3 — identity analysis trigger
+            commands::meta_agent::identity_trigger::trigger_identity_analysis_now,
+            commands::meta_agent::identity_trigger::get_identity_trigger_status,
             // PTY
             commands::pty::pty_spawn,
             commands::pty::pty_write,

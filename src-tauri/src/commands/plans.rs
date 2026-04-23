@@ -4,9 +4,11 @@ use tauri::State;
 use uuid::Uuid;
 
 use std::path::Path;
+use tauri::AppHandle;
 use crate::db::{migrations::{now_epoch, now_epoch_ms}, models::{ArtifactKind, Plan, PlanEvent, PlanSubtask}, DbState};
 use crate::errors::AppError;
 use super::artifacts::create_identity_input_artifact;
+use super::meta_agent::identity_trigger::maybe_trigger_identity_analysis_on_plan_done;
 
 // ─── Input types ─────────────────────────────────────────────────────────────
 
@@ -289,6 +291,7 @@ pub fn update_plan_meta(
 pub fn update_plan_status(
     input: UpdatePlanStatusInput,
     state: State<DbState>,
+    app: AppHandle,
 ) -> Result<(), AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let now = now_epoch_ms();
@@ -327,6 +330,12 @@ pub fn update_plan_status(
         prior_status.as_deref(),
         &input.status,
     );
+
+    // metaAgent Phase 3: plan done 전이 시점에 identity analysis trigger 평가.
+    // fire-and-forget — 실패해도 plan 상태 갱신에는 영향 없음.
+    if input.status == "done" && prior_status.as_deref() != Some("done") {
+        maybe_trigger_identity_analysis_on_plan_done(&conn, Some(&app), &input.id);
+    }
     Ok(())
 }
 
