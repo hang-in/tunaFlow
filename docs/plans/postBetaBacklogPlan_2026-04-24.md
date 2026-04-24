@@ -30,6 +30,7 @@ related:
 | 메타에이전트 Phase 1-A/B | [metaAgentPlan](./metaAgentPlan.md) | P1 | 10편 |
 | i18n A3-ext + PR B | [i18nCompletionPlan_2026-04-24](./i18nCompletionPlan_2026-04-24.md) | P2 | (README) |
 | rawq upstream PR | ✅ 제출: [auyelbekov/rawq#11](https://github.com/auyelbekov/rawq/pull/11) | 완료 | 7편 |
+| Manual verification gate (B-19) | [manualVerificationGatePlan_2026-04-24](./manualVerificationGatePlan_2026-04-24.md) | P1 (ready-to-implement, 피드백 반영 완료) | Issue #176 |
 
 ---
 
@@ -175,13 +176,11 @@ MVP (`customEndpointConfigPlan_2026-04-24`, 머지: `6cc991c`) 는 Ollama / LM S
 
 ### B-19. 사용자 확인 게이트 (Manual verification gate, 출처: Issue #176)
 
-`impl-complete` 와 Reviewer 시작 사이에 사람이 확인해야 하는 manual 항목을 검증하는 게이트. Reviewer 는 역할 규칙상 shell 실행 불가라 UI/API/runtime 동작 검증은 현재 owner 가 없음 → Review 라운드가 이를 떠안아 비용 낭비.
+→ **상세 설계 plan**: [manualVerificationGatePlan_2026-04-24](./manualVerificationGatePlan_2026-04-24.md)
 
-- **MVP (P1, 1~2일)**: `⚠️ Manual` 라인 파싱 (result report) → 확인 dialog (pass/skip/fail) → 전부 pass 면 Review 진행 / fail 있으면 Developer Rework 큐로 라우팅. Settings 에 "Skip gate" 토글.
-- **Extended (P2)**: Manual 항목별 자동 스크린샷 (Tauri FS API), verification 결과 DB 영속 (plan_events 연동), RT 토론으로 manual 확인 자동화 실험.
-- 수정 지점: `src/lib/workflow/reviewWorkflow.ts` (상태머신), 새 컴포넌트 `ManualVerificationGate.tsx`, `plan_events` 테이블 활용 검토.
-- 미해결 UX 질문: fail 시 사용자가 실패 사유 텍스트를 직접 입력하는가 (이슈 본 댓글에서 문의) — Developer 가 무엇을 고쳐야 할지 알려면 필요해 보임.
-- 참고: `CLAUDE.md §16` 코딩 컨벤션의 "Reviewer = 코드만" 규칙.
+- 상태: `ready-to-implement` / P1 (2026-04-24 커뮤니티 피드백 반영 완료)
+- 피드백 반영 결과: fail 사유 입력은 **optional**, 사유 미입력 시 rework_reason 에 "manual verification failed" placeholder.
+- 요약: `impl-complete` 직후 `⚠️ Manual:` 라인 파싱 → UI dialog (pass/skip/fail + optional 사유) → fail 있으면 기존 Rework 경로, pass 면 Review 진행. Settings 에 skip 토글.
 
 ---
 
