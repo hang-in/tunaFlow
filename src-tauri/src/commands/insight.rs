@@ -7,6 +7,24 @@ use std::path::Path;
 use crate::db::{migrations::now_epoch, models::{InsightSession, InsightFinding, InsightReport}, DbState};
 use crate::errors::AppError;
 
+lazy_static::lazy_static! {
+    /// tunaFlow 내부 마커를 잡는 정규식. FE 의 stripTunaflowMarkers 와 대응.
+    /// export_insight_to_files 의 2차 안전망 — DB 레거시 오염분을 런타임에 정화.
+    static ref TF_MARKER_RE: regex::Regex = regex::Regex::new(
+        r"<!--\s*(?:tunaflow:[a-z_-]+(?::\d+)?|subtask-done:\d+|impl-complete)\s*-->"
+    ).expect("TF_MARKER_RE compile");
+    /// 3개 이상 연속 개행을 2개로 정규화.
+    static ref TF_BLANKLINE_RE: regex::Regex = regex::Regex::new(r"\n{3,}").expect("blank-line RE compile");
+}
+
+/// tunaFlow 내부 마커 제거 + 연속 빈 줄 정규화 + trim.
+/// 사용자 가시 산출물 (docs/insight/*.md) 쓰기 직전 모든 텍스트 필드 통과시킬 것.
+fn strip_tf_markers(s: &str) -> String {
+    let no_markers = TF_MARKER_RE.replace_all(s, "");
+    let normalized = TF_BLANKLINE_RE.replace_all(&no_markers, "\n\n");
+    normalized.trim().to_string()
+}
+
 // ─── Input types ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -447,12 +465,12 @@ pub fn export_insight_to_files(
             md.push_str(&format!("- **File**: {}{}\n", fp,
                 f.line_number.map(|n| format!(":{}", n)).unwrap_or_default()));
         }
-        md.push_str(&format!("\n## Description\n\n{}\n", f.description));
+        md.push_str(&format!("\n## Description\n\n{}\n", strip_tf_markers(&f.description)));
         if let Some(ref snippet) = f.snippet {
-            md.push_str(&format!("\n## Snippet\n\n```\n{}\n```\n", snippet));
+            md.push_str(&format!("\n## Snippet\n\n```\n{}\n```\n", strip_tf_markers(snippet)));
         }
         if let Some(ref resolution) = f.resolution {
-            md.push_str(&format!("\n## Resolution\n\n{}\n", resolution));
+            md.push_str(&format!("\n## Resolution\n\n{}\n", strip_tf_markers(resolution)));
         }
         let path = findings_dir.join(&filename);
         std::fs::write(&path, &md)
@@ -467,7 +485,7 @@ pub fn export_insight_to_files(
 
     let mut report = format!("# Insight Report — {}\n\n", ts);
     if let Some(ref summary) = session.summary {
-        report.push_str(&format!("{}\n\n", summary));
+        report.push_str(&format!("{}\n\n", strip_tf_markers(summary)));
     }
 
     // Group by category
@@ -498,4 +516,50 @@ pub fn export_insight_to_files(
     count += 1;
 
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_tf_markers;
+
+    #[test]
+    fn strip_tf_markers_empty_returns_empty() {
+        assert_eq!(strip_tf_markers(""), "");
+    }
+
+    #[test]
+    fn strip_tf_markers_no_marker_leaves_text_intact() {
+        assert_eq!(strip_tf_markers("plain report body"), "plain report body");
+    }
+
+    #[test]
+    fn strip_tf_markers_removes_inline_tunaflow_marker() {
+        assert_eq!(
+            strip_tf_markers("hello <!-- tunaflow:plan-proposal --> world"),
+            "hello  world"
+        );
+    }
+
+    #[test]
+    fn strip_tf_markers_removes_subtask_done_and_normalizes_blank_lines() {
+        assert_eq!(
+            strip_tf_markers("done\n\n\n\n<!-- subtask-done:3 -->\ndone"),
+            "done\n\ndone"
+        );
+    }
+
+    #[test]
+    fn strip_tf_markers_removes_impl_complete_and_payload_markers() {
+        let input = "<!-- impl-complete -->\nresult\n<!-- tunaflow:insight-findings:12 -->";
+        assert_eq!(strip_tf_markers(input), "result");
+    }
+
+    #[test]
+    fn strip_tf_markers_preserves_non_tunaflow_html_comments() {
+        // INV-5: only tunaflow markers are matched; user-authored comments stay.
+        assert_eq!(
+            strip_tf_markers("before <!-- user comment --> after"),
+            "before <!-- user comment --> after"
+        );
+    }
 }
