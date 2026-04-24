@@ -136,7 +136,9 @@ tunaFlow/
 
 ---
 
-## DB 스키마 (v30)
+## DB 스키마 (v46)
+
+> 버전별 마이그레이션 요약은 `docs/reference/implementationStatus.md` 의 "DB 스키마" 표 참조. 아래는 현재 스키마의 핵심 테이블 목록.
 
 | 테이블 | 핵심 필드 |
 |---|---|

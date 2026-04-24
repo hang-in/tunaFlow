@@ -20,7 +20,7 @@ SSOT: `docs/reference/dataModelRevised.md`
 | Memo CRUD | done | list/create/delete + branch_brief |
 | Artifact CRUD | done | list/create/update_status/delete + subtask link + provenance |
 | Skill 로딩 | done | ~/.tunaflow/skills/ 스캔 + vendor 그룹핑 + 검색/필터 |
-| DB migrations v1-v30 | done | v13-v25 기존 + v26 plan.slug, v27 failure_lessons, v28 artifacts.plan_id, v29 insight_sessions/findings/reports, v30 vec_chunks(sqlite-vec) |
+| DB migrations v1-v46 | done | v26 plan.slug → v46 agent_jobs background worker. 세부 버전 매핑은 §DB 스키마 표 참조 |
 
 ### HTTP API (axum, localhost:19840)
 
@@ -220,22 +220,32 @@ UI `ENGINE_CONFIGS` 기준으로 **5 엔진** 디스패치 (`claude` / `codex` /
 | v23 | trace_log.message_id |
 | v24 | plan_subtasks.depends_on + parallel_group |
 | v25 | plans.parent_plan_id |
+| v26 | plans.slug |
+| v27 | failure_lessons (FTS5) |
+| v28 | artifacts.plan_id |
+| v29 | insight_sessions / findings / reports |
+| v30 | vec_chunks (sqlite-vec vec0) |
+| v31 | document_edges + document_index_status (doc graph) |
+| v32 | bge-m3 migration (vec_chunks 384→1024dim + embed_model 컬럼) |
+| v33 | projects.meta_conversation_id + onboarding_done (meta agent) |
+| v34 | insight_findings.review_branch_id |
+| v35 | trace_log.cache_read_tokens + cache_creation_tokens |
+| v36 | defensive repair (v35 cache 컬럼 누락 idempotent 재적용) |
+| v37 | per-project conventions sync toggle |
+| v38 | meta_notifications 테이블 |
+| v39 | conversation_chunks 스테일 row 정리 |
+| v40 | branches.adopt_message_id (mobile δ-Branch) |
+| v41 | ws_event_log 테이블 |
+| v42 | meta_notifications 복구 (v38 부분 실패 케이스 대응) |
+| v43 | agent_session_audit 테이블 |
+| v44 | query_cache 테이블 |
+| v45 | messages_fts standalone FTS5 (external content 제거) + content_tokenized |
+| v46 | agent_jobs background worker 컬럼 3건 (metaAgent Phase 4) |
 
 ---
 
 ## 다음 단계 권장
 
-### P0 (세션 11)
-- 문서 정합성 유지 자동화 (DB 버전, 테스트 수 등 수동 문서 지표 최소화)
-- 스트리밍 로직 공용 추출 (RuntimeSlice ↔ ThreadSlice 중복)
-- 통합 테스트 추가 (스트리밍, RT, 워크플로우 흐름)
+현재 우선순위는 `CLAUDE.md §11 다음 우선순위` 참조 (세션 단위 갱신). 본 문서는 기능별 구현 현황 SSOT 에 집중하며, 로드맵은 단일 소스로 통합됐음.
 
-### P1
-- 대형 컴포넌트 분할 (BranchThreadPanel, TracePanel)
-- RT 전용 페르소나 설계
-- ContextPack DB/assembly 파일 분리
-
-### P2
-- Long-term memory Phase 2: vector/embedding path 재평가
-- context-hub auto ContextPack injection
-- Chat virtualization (200+ 메시지)
+머지된 P0/P1/P2 항목 이력은 `docs/reference/sessionHistory.md` 의 세션별 기록 참조.
