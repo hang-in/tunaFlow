@@ -190,6 +190,21 @@ Highlights:
 
 ---
 
+## Security & Permissions
+
+tunaFlow launches the Claude CLI with the `--dangerously-skip-permissions` flag. This means the CLI skips approval prompts for file access outside the project directory, system commands, and similar operations.
+
+**Your responsibilities**:
+- Choose the project directory you hand to the agent carefully — it defines the trust boundary.
+- Do not enable untrusted prompts, tools, or MCP servers.
+- Review the work the agent performed periodically; don't treat autonomous runs as unattended.
+
+Why this flag, and why no UI approval flow: the `stream-json` protocol does not emit a `permission_request` event, so there is no way for tunaFlow to intercept prompts and surface them in the UI. The CLI writes prompts directly to the terminal, and tunaFlow holds stdin for outbound messages, so prompts go unanswered — which is exactly the [#178](https://github.com/hang-in/tunaFlow/issues/178) infinite-hang path. Until Anthropic ships a first-class permission event (tracked in `postBetaBacklog` B-20), `--dangerously-skip-permissions` is the pragmatic choice.
+
+If this trade-off is unacceptable for your workflow, run Claude Code directly in a terminal instead of via tunaFlow for that task — the permission surface is identical either way, just under your direct interaction.
+
+---
+
 ## Known Constraints (Beta)
 
 ### Will be fixed (P0 / P1)

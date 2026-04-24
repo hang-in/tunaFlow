@@ -182,6 +182,18 @@ MVP (`customEndpointConfigPlan_2026-04-24`, 머지: `6cc991c`) 는 Ollama / LM S
 - 피드백 반영 결과: fail 사유 입력은 **optional**, 사유 미입력 시 rework_reason 에 "manual verification failed" placeholder.
 - 요약: `impl-complete` 직후 `⚠️ Manual:` 라인 파싱 → UI dialog (pass/skip/fail + optional 사유) → fail 있으면 기존 Rework 경로, pass 면 Review 진행. Settings 에 skip 토글.
 
+### B-20. Anthropic upstream 에 stream-json permission_request 이벤트 요청 (출처: Issue #178)
+
+- 카테고리: **outreach** — upstream 기능 요청
+- 우선순위: **P2** — 단기 차단 없음 (`--dangerously-skip-permissions` 플래그로 interim fix 완료, PR #178 대응 참조)
+- 배경: Claude CLI 의 `stream-json` 프로토콜에 `permission_request` 이벤트가 부재 → tunaFlow 에서 per-tool 승인 UI 를 구현할 경로가 없음. 이슈 [#178](https://github.com/hang-in/tunaFlow/issues/178) 제보자(`batmania52`)의 기술 분석 완료.
+- 필요 요소:
+  1. Anthropic `claude-code` repo (또는 공식 채널) 에 기능 요청 이슈 제기
+  2. tunaFlow 측 대체 UI 승인 흐름 설계 (PTY 복원 또는 stdin-over-WS 채널)
+  3. 이벤트 채택 시 `--dangerously-skip-permissions` 되돌리고 per-tool 승인 UI 구현
+- 구현 부담: outreach 자체는 낮음 / 채택 후 UI 설계는 중간
+- 선결 조건: 현 hotfix (#178) 머지 ✅ / upstream 응답 대기
+
 ---
 
 ## 운영 정책

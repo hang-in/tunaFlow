@@ -378,7 +378,7 @@ async fn spawn_session(
         .arg("--input-format").arg("stream-json")
         .arg("--output-format").arg("stream-json")
         .arg("--replay-user-messages")
-        .arg("--permission-mode").arg("bypassPermissions")
+        .arg("--dangerously-skip-permissions")
         .env("CLAUDE_CODE_ENVIRONMENT_KIND", "bridge")
         .env("CLAUDE_CODE_SESSION_ACCESS_TOKEN", &auth_token)
         // HybridTransport: 이벤트를 HTTP POST로 전송 (Desktop 앱 동일 패턴)
