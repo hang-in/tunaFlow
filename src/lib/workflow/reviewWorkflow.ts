@@ -5,6 +5,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Message, Plan, RoundtableParticipant } from "@/types";
 import * as planApi from "../api/plans";
+import { getSetting } from "../appStore";
+import {
+  extractManualItems,
+  type ManualVerificationItem,
+  type ManualVerificationResult,
+} from "../manualVerification";
 import * as failureLessonsApi from "../api/failureLessons";
 import * as insightApi from "../api/insight";
 import { dispatchMetaNotification } from "../metaNotifications";
@@ -31,6 +37,20 @@ import type { ParsedImplPlan, ParsedReviewVerdict } from "../planProposalParser"
 
 export type { CreateBranchResult };
 
+/**
+ * Manual verification gate error (B-19 / Issue #176).
+ *
+ * Gate 결과에 fail 이 있을 때 startReviewRT 가 던진다. 호출부는 instanceof 로
+ * 구분해 DevProgressView 의 기존 rework 상태 전환 UI 를 트리거하고 toast 는
+ * 띄우지 않는다 (normal "review failed" 경로와 UX 맞춤).
+ */
+export class ManualVerificationFailed extends Error {
+  constructor(public readonly failedItems: Array<{ label: string; reason?: string }>) {
+    super(`Manual verification failed: ${failedItems.length} item(s)`);
+    this.name = "ManualVerificationFailed";
+  }
+}
+
 // ─── Phase D→E: impl-complete → Start Review RT ───────────────────────────
 
 export interface StartReviewRTResult extends CreateBranchResult {
@@ -54,7 +74,68 @@ export async function startReviewRT(
   implMessages: Message[],
   testOutput?: string,
   reviewers?: ReviewerChoice[] | string[],
+  /**
+   * Manual verification gate callback (B-19). 호출부가 UI dialog 를 띄우고
+   * results (items 와 동일 순서/길이) 를 resolve, 사용자 취소 시 null 을 resolve.
+   * 제공 안 하면 게이트 skip (기존 플로우 유지 — 테스트/CLI 호환).
+   */
+  runManualGate?: (items: ManualVerificationItem[]) => Promise<ManualVerificationResult[] | null>,
 ): Promise<StartReviewRTResult> {
+  // ─── Manual Verification Gate (B-19) ───
+  // Phase 전환 전에 수행 — fail 시 review phase 로 잘못 진입 방지 (INV-1).
+  const skipGate = await getSetting<boolean>("skipManualVerificationGate", false).catch(() => false);
+  if (!skipGate && runManualGate) {
+    const manualItems = extractManualItems(implMessages);
+    if (manualItems.length === 0) {
+      // INV-3: 0 items 면 다이얼로그 안 띄움. 이 경우에만 skipped 기록 (plan 주의).
+      await planApi.createPlanEvent(plan.id, "manual_verification_skipped", "system",
+        JSON.stringify({ reason: "no manual items found in impl response" })).catch(() => {});
+    } else {
+      const results = await runManualGate(manualItems);
+      if (results === null) {
+        // 사용자가 dialog 취소 → phase 유지. INV-5.
+        throw new Error("Manual verification cancelled by user");
+      }
+      const hasFail = results.some((r) => r.status === "fail");
+      const eventType = hasFail ? "manual_verification_failed" : "manual_verification_passed";
+      await planApi.createPlanEvent(plan.id, eventType, "user", JSON.stringify({
+        items: manualItems.map((it, i) => ({
+          label: it.label,
+          status: results[i].status,
+          reason: results[i].reason,
+        })),
+      })).catch((e) => console.warn("[manual-gate] plan_event failed:", e));
+
+      if (hasFail) {
+        // Rework 경로 진입. INV-1: phase 를 review 로 넘기지 않는다.
+        const failItems = manualItems
+          .map((it, i) => ({ label: it.label, reason: results[i].reason }))
+          .filter((_, i) => results[i].status === "fail");
+        await planApi.updatePlanPhase(plan.id, "rework");
+        // INV-6: rework_reason identity-input artifact 에 manual 실패 항목 포함.
+        // 기존 createReworkReasonArtifact 는 ParsedReviewVerdict 시그니처라 inline
+        // invoke 로 manual 전용 artifact 작성.
+        invoke("create_identity_artifact", {
+          input: {
+            kind: "rework_reason",
+            conversationId: plan.conversationId,
+            planId: plan.id,
+            subtaskId: null,
+            title: `Manual verification failed: ${plan.title}`,
+            content: {
+              source: "manual_verification",
+              failedItems: failItems.map((f) => ({
+                label: f.label,
+                reason: f.reason || "manual verification failed",
+              })),
+            },
+          },
+        }).catch((e) => console.warn("[manual-gate] artifact failed:", e));
+        throw new ManualVerificationFailed(failItems);
+      }
+    }
+  }
+
   await planApi.updatePlanPhase(plan.id, "review");
   await planApi.createPlanEvent(plan.id, "impl_completed", "developer");
 

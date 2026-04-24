@@ -31,8 +31,15 @@ vi.mock("@/lib/api/plans", () => ({
   listPlanEvents: vi.fn(() => Promise.resolve([])),
 }));
 
+// Mock appStore — skipManualVerificationGate default false; individual tests override.
+vi.mock("@/lib/appStore", () => ({
+  getSetting: vi.fn((_key: string, fallback: unknown) => Promise.resolve(fallback)),
+  setSetting: vi.fn(() => Promise.resolve()),
+}));
+
 import { invoke } from "@tauri-apps/api/core";
 import * as planApi from "@/lib/api/plans";
+import * as appStore from "@/lib/appStore";
 import {
   approveAndStartImplementation,
   approveImplPlan,
@@ -42,6 +49,7 @@ import {
   slugifyPlanTitle,
   startReviewBranch,
   startReviewRT,
+  ManualVerificationFailed,
 } from "@/lib/workflowOrchestration";
 import type { Plan, Message } from "@/types";
 
@@ -417,5 +425,72 @@ describe("startReviewRT", () => {
     expect(config.participants[0]).toMatchObject({ engine: "codex", model: "gpt-5", name: "Reviewer-Codex" });
     expect(config.participants[1]).toMatchObject({ engine: "gemini", model: "gemini-2.5-pro" });
     expect(result.participants[0].model).toBe("gpt-5");
+  });
+});
+
+// ─── startReviewRT — Manual Verification Gate (B-19) ───────────────────────
+
+describe("startReviewRT — manual verification gate", () => {
+  const msgWithManual: Message[] = [
+    {
+      id: "m1", conversationId: "c1", role: "assistant",
+      content: "implemented X\n⚠️ Manual: Click button to verify",
+      timestamp: 0, status: "done",
+    },
+  ];
+
+  it("bypasses the gate when skipManualVerificationGate=true", async () => {
+    (appStore.getSetting as any).mockImplementationOnce(() => Promise.resolve(true));
+    const runManualGate = vi.fn();
+    const result = await startReviewRT(mockPlan, msgWithManual, undefined, undefined, runManualGate);
+    expect(runManualGate).not.toHaveBeenCalled();
+    expect(result.branch.id).toBe("br-1");
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "review");
+  });
+
+  it("skips gate when there are no manual items", async () => {
+    const msgsNoManual: Message[] = [{
+      id: "m1", conversationId: "c1", role: "assistant",
+      content: "implemented X", timestamp: 0, status: "done",
+    }];
+    const runManualGate = vi.fn();
+    await startReviewRT(mockPlan, msgsNoManual, undefined, undefined, runManualGate);
+    expect(runManualGate).not.toHaveBeenCalled();
+    // plan 주의사항: 0-items 케이스만 manual_verification_skipped 기록
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "manual_verification_skipped", "system", expect.any(String),
+    );
+  });
+
+  it("records manual_verification_passed and proceeds to review on all-pass", async () => {
+    const runManualGate = vi.fn(async () => [{ status: "pass" as const }]);
+    const result = await startReviewRT(mockPlan, msgWithManual, undefined, undefined, runManualGate);
+    expect(runManualGate).toHaveBeenCalledTimes(1);
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "manual_verification_passed", "user", expect.any(String),
+    );
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "review");
+    expect(result.branch.id).toBe("br-1");
+  });
+
+  it("throws ManualVerificationFailed and enters rework on any fail", async () => {
+    const runManualGate = vi.fn(async () => [{ status: "fail" as const, reason: "button broken" }]);
+    await expect(startReviewRT(mockPlan, msgWithManual, undefined, undefined, runManualGate))
+      .rejects.toBeInstanceOf(ManualVerificationFailed);
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "manual_verification_failed", "user", expect.any(String),
+    );
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "rework");
+    // INV-1: review phase 로 진입하지 않는다.
+    expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "review");
+  });
+
+  it("throws a generic Error when the user cancels the dialog", async () => {
+    const runManualGate = vi.fn(async () => null);
+    await expect(startReviewRT(mockPlan, msgWithManual, undefined, undefined, runManualGate))
+      .rejects.toThrow(/cancelled by user/);
+    // phase 는 그대로 (INV-5)
+    expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "review");
+    expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "rework");
   });
 });

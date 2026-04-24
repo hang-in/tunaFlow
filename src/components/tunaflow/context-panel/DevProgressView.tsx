@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileText } from "lucide-react";
 import type { Plan, PlanPhase, PlanSubtask } from "@/types";
 import * as planApi from "@/lib/api/plans";
-import { getPlanSlug, syncResultReport, startReviewRT } from "@/lib/workflowOrchestration";
+import {
+  getPlanSlug, syncResultReport, startReviewRT, ManualVerificationFailed,
+} from "@/lib/workflowOrchestration";
+import type {
+  ManualVerificationItem,
+  ManualVerificationResult,
+} from "@/lib/manualVerification";
+import { ManualVerificationGate } from "@/components/workflow/ManualVerificationGate";
 import { runProjectTests } from "@/lib/api/testRunner";
 import type { Branch, Message } from "@/types";
 import { PlanDocumentModal } from "./PlanDocumentModal";
@@ -32,6 +40,30 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
 
   const [busy, setBusy] = useState(false);
   const [showDoc, setShowDoc] = useState(false);
+
+  // Manual Verification Gate (B-19 / Issue #176) — dialog state + resolver ref.
+  // runManualGate 콜백이 items 를 state 에 세팅하고 resolver 를 ref 에 저장한 뒤
+  // Promise 를 반환. dialog 의 onComplete/onCancel 이 resolver 를 호출해 결과 전달.
+  const [manualGate, setManualGate] = useState<{ open: boolean; items: ManualVerificationItem[] }>({
+    open: false, items: [],
+  });
+  const manualGateResolverRef = useRef<((r: ManualVerificationResult[] | null) => void) | null>(null);
+  const runManualGate = (items: ManualVerificationItem[]): Promise<ManualVerificationResult[] | null> => {
+    return new Promise((resolve) => {
+      manualGateResolverRef.current = resolve;
+      setManualGate({ open: true, items });
+    });
+  };
+  const handleManualGateComplete = (results: ManualVerificationResult[]) => {
+    manualGateResolverRef.current?.(results);
+    manualGateResolverRef.current = null;
+    setManualGate({ open: false, items: [] });
+  };
+  const handleManualGateCancel = () => {
+    manualGateResolverRef.current?.(null);
+    manualGateResolverRef.current = null;
+    setManualGate({ open: false, items: [] });
+  };
   // reviewMode state 제거 (2026-04-19) — Dev 시작과 동일하게 한 번 클릭으로 즉시 실행.
   // 이전엔 "Review 시작" → select 모드 전환 → reviewer 선택 + "Review 시작" 3단계였고,
   // 이제는 implComplete 가 되면 곧바로 reviewer 선택 UI 가 노출되고 "Review 시작" 1회로 끝.
@@ -188,13 +220,23 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       // model 이 유실 → codex_app_server fallback(gpt-5-codex) 로 귀결 → ChatGPT
       // 구독 계정에서 400 에러가 발생했음 (s37 재현).
       const reviewers = chosenProfiles.map((p) => ({ engine: p.engine, model: p.model, name: p.label }));
-      const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, reviewers);
+      const { branch, participants, prompt, mode } = await startReviewRT(plan, msgs, testOutput, reviewers, runManualGate);
       onPlanUpdate(plan.id, { phase: "review" as PlanPhase, reviewBranchId: branch.id });
       await loadBranches(plan.conversationId);
       await openThread(branch.id);
       // Deep review = ≥2 reviewers → auto-synthesize MoA summary after the round.
       await sendThreadRoundtable(prompt, participants, mode, { autoSynthesize: true });
-    } catch (e) { console.warn("[tunaflow]", e); }
+    } catch (e) {
+      if (e instanceof ManualVerificationFailed) {
+        // Rework 경로로 전환됨 — startReviewRT 안에서 phase/artifact 이미 처리.
+        // UI 측은 plan 상태 갱신만 하면 rework notice 섹션이 자동 노출.
+        onPlanUpdate(plan.id, { phase: "rework" as PlanPhase });
+      } else if (e instanceof Error && e.message.includes("cancelled by user")) {
+        toast.info("수동 확인이 취소되었습니다");
+      } else {
+        console.warn("[tunaflow]", e);
+      }
+    }
     setBusy(false);
   };
 
@@ -598,6 +640,12 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         )}
       </div>
       {showDoc && <PlanDocumentModal plan={plan} onClose={() => setShowDoc(false)} />}
+      <ManualVerificationGate
+        open={manualGate.open}
+        items={manualGate.items}
+        onComplete={handleManualGateComplete}
+        onCancel={handleManualGateCancel}
+      />
     </div>
   );
 }
