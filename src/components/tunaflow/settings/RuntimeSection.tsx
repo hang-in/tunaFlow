@@ -585,9 +585,11 @@ function PtyModeToggle() {
 export function RuntimeSection() {
   const { t } = useTranslation("settings");
   const rawqStatus = useChatStore((s) => s.rawqStatus);
+  const selectedProjectKey = useChatStore((s) => s.selectedProjectKey);
   const engineModels = useChatStore((s) => s.engineModels);
   const loadEngineModels = useChatStore((s) => s.loadEngineModels);
   const [refreshing, setRefreshing] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const [hubHealth, setHubHealth] = useState<HubHealth | null>(null);
 
   useEffect(() => { invoke<HubHealth>("context_hub_health").then(setHubHealth).catch((e) => console.debug("[hub-health]", e)); }, []);
@@ -595,6 +597,27 @@ export function RuntimeSection() {
   const handleRefreshModels = async () => { setRefreshing(true); await loadEngineModels(true); setRefreshing(false); };
 
   const engineGroups = engineModels.reduce<Record<string, number>>((acc, m) => { acc[m.engine] = (acc[m.engine] ?? 0) + 1; return acc; }, {});
+
+  // Issue #180 — hardcoded exclude 적용 이전에 쌓인 target/ 등 오염 인덱스 정리용.
+  const handleRebuildIndex = async () => {
+    if (!selectedProjectKey || rebuilding) return;
+    try {
+      const project = await invoke<{ path?: string }>("get_project", { key: selectedProjectKey });
+      if (!project?.path) return;
+      const confirmed = window.confirm(
+        "기존 인덱스를 삭제하고 다시 빌드합니다. 프로젝트 크기에 따라 수 분이 걸릴 수 있습니다. 계속하시겠습니까?"
+      );
+      if (!confirmed) return;
+      setRebuilding(true);
+      // 상태는 `rawq:indexing` / `rawq:indexed` / `rawq:error` 이벤트가 store 로 반영.
+      await invoke("rebuild_rawq_index", { projectPath: project.path });
+    } catch (e) {
+      console.error("[rawq] rebuild failed:", errorMessage(e));
+    } finally {
+      // 이벤트 도착까지는 store 가 indexing 상태를 유지 — 버튼은 잠깐 deb
+      setTimeout(() => setRebuilding(false), 1500);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -619,6 +642,21 @@ export function RuntimeSection() {
             <div className="flex items-center gap-2"><span className="text-muted-foreground w-[80px]">Available</span><span className="text-foreground/80">{rawqStatus.available ? "Yes" : "No"}</span></div>
           </div>
         ) : <p className="text-[12px] text-muted-foreground/50">No project selected</p>}
+        {/* Issue #180 — rebuild with current hardcoded exclude patterns. */}
+        {rawqStatus && rawqStatus.available && selectedProjectKey && (
+          <div className="flex items-center gap-2 pt-2">
+            <button
+              onClick={handleRebuildIndex}
+              disabled={rebuilding || rawqStatus.status === "indexing"}
+              className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 font-medium"
+            >
+              {rebuilding || rawqStatus.status === "indexing" ? "재빌드 중…" : "인덱스 재빌드"}
+            </button>
+            <p className="text-[10px] text-muted-foreground/60">
+              빌드 산출물 (target/, node_modules/, dist/ 등) 자동 제외. 기존 인덱스는 삭제됩니다.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Model Catalog */}
