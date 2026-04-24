@@ -25,6 +25,7 @@ import type {
 } from "./api/insight";
 import { extractInsightFindings } from "./planProposalParser";
 import type { InsightFindingItemInput } from "./schemas/insightFindings";
+import { stripTunaflowMarkers } from "./workflow/markerScrub";
 
 // ── Fix difficulty evaluation ────────────────────────────────
 
@@ -261,7 +262,7 @@ export async function runInsightAnalysis(
           session.id,
           projectKey,
           "category",
-          response.slice(0, 5000), // save first 5k chars for debugging
+          stripTunaflowMarkers(response).slice(0, 5000), // save first 5k chars for debugging
           cat,
         );
         continue;
@@ -270,7 +271,7 @@ export async function runInsightAnalysis(
       if (parsed.findings.length === 0) {
         onProgress?.(`${catLabel}: 발견 사항 없음`);
         if (parsed.summary) {
-          await insightApi.createInsightReport(session.id, projectKey, "category", parsed.summary, cat);
+          await insightApi.createInsightReport(session.id, projectKey, "category", stripTunaflowMarkers(parsed.summary), cat);
         }
         continue;
       }
@@ -282,22 +283,26 @@ export async function runInsightAnalysis(
         onProgress?.(`${catLabel}: ${filtered}개 low-confidence finding 필터링`);
       }
 
-      // Evaluate fix_difficulty and prepare for DB
-      const findingInputs = reliable.map((f) => ({
-        sessionId: session.id,
-        projectKey,
-        category: f.category || cat,
-        severity: f.severity,
-        fixDifficulty: evaluateFixDifficulty(f),
-        title: f.title,
-        description: f.evidence
-          ? `${f.description}\n\n**Evidence**: \`${f.evidence}\``
-          : f.description,
-        filePath: f.file_path,
-        lineNumber: f.line_number,
-        snippet: f.snippet,
-        estimatedFiles: f.estimated_files,
-      }));
+      // Evaluate fix_difficulty and prepare for DB.
+      // DB 쓰기 직전 마커 스크럽 — description 은 먼저 스크럽 후 evidence 병합 순서 유지.
+      const findingInputs = reliable.map((f) => {
+        const scrubbedDesc = stripTunaflowMarkers(f.description);
+        return {
+          sessionId: session.id,
+          projectKey,
+          category: f.category || cat,
+          severity: f.severity,
+          fixDifficulty: evaluateFixDifficulty(f),
+          title: f.title,
+          description: f.evidence
+            ? `${scrubbedDesc}\n\n**Evidence**: \`${f.evidence}\``
+            : scrubbedDesc,
+          filePath: f.file_path,
+          lineNumber: f.line_number,
+          snippet: f.snippet ? stripTunaflowMarkers(f.snippet) : undefined,
+          estimatedFiles: f.estimated_files,
+        };
+      });
 
       // Store findings
       const stored = await insightApi.createInsightFindingsBatch(findingInputs);
@@ -305,7 +310,7 @@ export async function runInsightAnalysis(
 
       // Store category report
       if (parsed.summary) {
-        await insightApi.createInsightReport(session.id, projectKey, "category", parsed.summary, cat);
+        await insightApi.createInsightReport(session.id, projectKey, "category", stripTunaflowMarkers(parsed.summary), cat);
       }
 
       const u = getInsightTokenUsage();
