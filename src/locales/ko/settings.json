@@ -190,6 +190,12 @@
   "agents": {
     "heading": "Agent Profiles",
     "description": "에이전트 프로필을 관리합니다. 각 프로필은 엔진, 모델, 기본 스킬을 하나의 실행 단위로 묶습니다.",
+    "endpoint": {
+      "label": "Base URL (비우면 기본값 사용)",
+      "hint": "원격 Ollama (Tailscale / NAS) 또는 LM Studio 대체 포트용. 빈 값이면 OLLAMA_HOST / LMSTUDIO_ENDPOINT 환경변수 → 기본값 순으로 사용합니다.",
+      "placeholder_ollama": "http://localhost:11434",
+      "placeholder_lmstudio": "http://localhost:1234"
+    },
     "role_coverage": {
       "title": "역할 커버리지",
       "ready_count": "{{ready}}/{{total}} ready",
