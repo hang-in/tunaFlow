@@ -30,6 +30,7 @@ related:
 | 메타에이전트 Phase 1-A/B | [metaAgentPlan](./metaAgentPlan.md) | P1 | 10편 |
 | i18n A3-ext + PR B | [i18nCompletionPlan_2026-04-24](./i18nCompletionPlan_2026-04-24.md) | P2 | (README) |
 | rawq upstream PR | ✅ 제출: [auyelbekov/rawq#11](https://github.com/auyelbekov/rawq/pull/11) | 완료 | 7편 |
+| rawq upstream — gitignore 무시 이슈 | 🐛 제출: [auyelbekov/rawq#12](https://github.com/auyelbekov/rawq/issues/12) | 대기 (upstream) | 7편 / #180 |
 | Manual verification gate (B-19) | [manualVerificationGatePlan_2026-04-24](./manualVerificationGatePlan_2026-04-24.md) | P1 (ready-to-implement, 피드백 반영 완료) | Issue #176 |
 
 ---
