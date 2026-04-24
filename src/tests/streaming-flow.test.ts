@@ -17,7 +17,13 @@ import { listen } from "@tauri-apps/api/event";
 // ─── Mock dependencies ─────────────────────────────────────────────────────
 
 vi.mock("@/lib/appStore", () => ({
-  getSetting: vi.fn(() => Promise.resolve({ mode: "auto", totalCap: 60000 })),
+  getSetting: vi.fn((key: string, fallback: unknown) => {
+    // Issue #175 — engineEndpoint:* is read by buildSendInput for openai-compat
+    // engines. Tests don't exercise the override path, so return the fallback
+    // (empty string) instead of the legacy contextBudgetConfig shape.
+    if (key.startsWith("engineEndpoint:")) return Promise.resolve(fallback);
+    return Promise.resolve({ mode: "auto", totalCap: 60000 });
+  }),
   setSetting: vi.fn(() => Promise.resolve()),
 }));
 

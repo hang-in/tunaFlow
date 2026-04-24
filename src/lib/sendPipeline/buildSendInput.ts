@@ -45,6 +45,16 @@ export async function buildSendInput(p: BuildSendInputParams): Promise<SendWithC
   }).catch(() => null);
   const activeSkills = p.getEffectiveSkills(planPhase, p.prompt);
 
+  // Issue #175 — forward UI base URL override for openai-compat engines.
+  // Empty string is equivalent to "no override" so the backend falls back to
+  // env var / hardcoded default; only non-empty trimmed value is forwarded.
+  let customBaseUrl: string | undefined;
+  if (p.engine === "ollama" || p.engine === "lmstudio") {
+    const raw = await getSetting<string>(`engineEndpoint:${p.engine}`, "");
+    const trimmed = raw.trim();
+    if (trimmed) customBaseUrl = trimmed;
+  }
+
   return {
     projectKey: p.projectKey,
     conversationId: p.conversationId,
@@ -63,5 +73,6 @@ export async function buildSendInput(p: BuildSendInputParams): Promise<SendWithC
     ...(p.opts?.imagePaths && p.opts.imagePaths.length > 0
       ? { imagePaths: p.opts.imagePaths }
       : {}),
+    ...(customBaseUrl ? { customBaseUrl } : {}),
   };
 }

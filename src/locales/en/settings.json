@@ -190,6 +190,12 @@
   "agents": {
     "heading": "Agent Profiles",
     "description": "Manage agent profiles. Each profile bundles an engine, model, and default skills into a single execution unit.",
+    "endpoint": {
+      "label": "Base URL (leave empty to use the default)",
+      "hint": "For remote Ollama (Tailscale / NAS) or an alternate LM Studio port. Empty value falls back to OLLAMA_HOST / LMSTUDIO_ENDPOINT env var, then the hardcoded default.",
+      "placeholder_ollama": "http://localhost:11434",
+      "placeholder_lmstudio": "http://localhost:1234"
+    },
     "role_coverage": {
       "title": "Role coverage",
       "ready_count": "{{ready}}/{{total}} ready",

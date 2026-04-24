@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Plus, Trash2, CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { DEFAULT_PERSONAS } from "@/lib/defaultPersonas";
+import { getSetting, setSetting } from "@/lib/appStore";
 import { AgentAvatar } from "../AgentAvatar";
 import type { AgentProfile } from "@/types";
 import {
@@ -68,6 +69,28 @@ export function AgentsSection() {
     updateField("defaultSkills", has
       ? selected.defaultSkills.filter((sk: string) => sk !== skillName)
       : [...selected.defaultSkills, skillName]);
+  };
+
+  // Issue #175 MVP — Ollama / LM Studio base URL override.
+  // Keyed by engine; appStore key pattern `engineEndpoint:{engine}` mirrors
+  // existing conventions (activeSkills:{pk}, skillDetectionDismissed:{pk}).
+  const [endpointOverride, setEndpointOverride] = useState<Record<"ollama" | "lmstudio", string>>({
+    ollama: "",
+    lmstudio: "",
+  });
+  useEffect(() => {
+    (async () => {
+      const [ol, ls] = await Promise.all([
+        getSetting<string>("engineEndpoint:ollama", ""),
+        getSetting<string>("engineEndpoint:lmstudio", ""),
+      ]);
+      setEndpointOverride({ ollama: ol, lmstudio: ls });
+    })();
+  }, []);
+  const handleEndpointChange = async (engine: "ollama" | "lmstudio", value: string) => {
+    const trimmed = value.trim();
+    setEndpointOverride((prev) => ({ ...prev, [engine]: trimmed }));
+    await setSetting(`engineEndpoint:${engine}`, trimmed);
   };
 
   if (profiles.length === 0) return null;
@@ -135,6 +158,29 @@ export function AgentsSection() {
                 </select>
               </div>
             </div>
+
+            {/* Issue #175 MVP — Ollama / LM Studio base URL override */}
+            {(selected.engine === "ollama" || selected.engine === "lmstudio") && (
+              <div>
+                <label className="text-tf-sm text-muted-foreground mb-1 block">
+                  {t("agents.endpoint.label")}
+                </label>
+                <input
+                  type="text"
+                  value={endpointOverride[selected.engine]}
+                  onChange={(e) => handleEndpointChange(selected.engine as "ollama" | "lmstudio", e.target.value)}
+                  placeholder={
+                    selected.engine === "ollama"
+                      ? t("agents.endpoint.placeholder_ollama")
+                      : t("agents.endpoint.placeholder_lmstudio")
+                  }
+                  className="w-full bg-background rounded-lg px-3 py-2 text-tf-caption font-mono outline-none border border-border/30 focus:border-ring/40"
+                />
+                <p className="text-tf-caption text-muted-foreground mt-1">
+                  {t("agents.endpoint.hint")}
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="text-tf-sm text-muted-foreground mb-1 block">Model</label>

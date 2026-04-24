@@ -53,6 +53,12 @@ pub struct SendWithClaudeInput {
     /// read the image via `Read` tool from the prompt path section.
     #[serde(default)]
     pub image_paths: Vec<String>,
+    /// Base URL override for OpenAI-compatible engines (ollama / lmstudio).
+    /// Empty string and None both mean "fallback to env / hardcoded default".
+    /// Issue #175: lets users point at remote Ollama (Tailscale / NAS) or an
+    /// alternate LM Studio port without relying on env vars.
+    #[serde(default)]
+    pub custom_base_url: Option<String>,
 }
 
 /// Wrap persona_fragment with identity framing block for a given engine.
@@ -462,6 +468,8 @@ pub async fn start_openai_compat_stream(
     let write_arc = db_write_arc(&state);
     let cid = input.conversation_id.clone();
     let mo = input.model.clone();
+    // Preserve custom base URL override before `input` is moved into spawn_blocking.
+    let custom_base_url_override = input.custom_base_url.clone();
 
     let prep = tokio::task::spawn_blocking(move || {
         // Local models have limited context — cap budget to avoid exceeding model limits.
@@ -476,7 +484,20 @@ pub async fn start_openai_compat_stream(
     let ret = prep.msg_id.clone();
     let system_prompt = prep.system_context.clone();
     let PreparedRun { msg_id, job_id, enriched_prompt, project_path, ctx_meta, audit_session_id, .. } = prep;
-    let base_url = if is_lmstudio { openai_compat::lmstudio_base_url() } else { std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into()) };
+    // Priority: UI override (non-empty) → env var → hardcoded default.
+    // INV-1: env-var users keep working when UI override is empty.
+    let base_url = custom_base_url_override
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            if is_lmstudio {
+                openai_compat::lmstudio_base_url()
+            } else {
+                std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".into())
+            }
+        });
 
     let cid2 = cid.clone();
     let el = engine_label.to_string();

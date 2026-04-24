@@ -196,6 +196,10 @@ export interface SendWithClaudeInput {
   /** Absolute paths of image attachments — used by Codex CLI (`-i <path>`).
    *  Other engines read the image via `Read` tool from the prompt path section. */
   imagePaths?: string[];
+  /** Base URL override for OpenAI-compatible engines (ollama / lmstudio).
+   *  Empty/undefined falls back to env var (OLLAMA_HOST / LMSTUDIO_ENDPOINT)
+   *  then the hardcoded default. Issue #175 MVP. */
+  customBaseUrl?: string;
 }
 
 export interface RoundtableParticipant {
