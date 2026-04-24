@@ -160,6 +160,63 @@ pub fn start_rawq_index(
     Ok(())
 }
 
+/// Rebuild rawq index — drops the existing index and rebuilds with the current
+/// hardcoded exclude patterns. #180 hotfix 후 레거시 오염분 정리용.
+/// Emits the same events as start_rawq_index (rawq:indexing / rawq:indexed / rawq:error).
+#[tauri::command]
+pub fn rebuild_rawq_index(
+    project_path: String,
+    app: tauri::AppHandle,
+    indexing: State<RawqIndexing>,
+) -> Result<(), AppError> {
+    use crate::agents::rawq;
+    use tauri::Emitter;
+
+    // Duplicate guard — reuse start_rawq_index 의 set.
+    {
+        let mut set = indexing.0.lock();
+        if set.contains(&project_path) {
+            eprintln!("[rawq] already indexing {}, skipping rebuild", project_path);
+            return Ok(());
+        }
+        set.insert(project_path.clone());
+    }
+    let guard = indexing.0.clone();
+
+    let _ = app.emit("rawq:indexing", serde_json::json!({
+        "projectPath": &project_path,
+        "message": "Rebuilding code index (removing legacy data)..."
+    }));
+
+    std::thread::spawn(move || {
+        let result = match rawq::rebuild_index(&project_path) {
+            Ok(n) => RawqStatus {
+                available: true, indexed: true,
+                status: "built".into(), message: format!("rebuilt: indexed {} files", n),
+                files: Some(n), chunks: None,
+            },
+            Err(e) => {
+                eprintln!("[rebuild_rawq_index] {}", e);
+                let available = !matches!(e, rawq::RawqError::NotFound(_));
+                RawqStatus {
+                    available, indexed: false,
+                    status: if available { "error" } else { "unavailable" }.into(),
+                    message: format!("{}", e),
+                    files: None, chunks: None,
+                }
+            }
+        };
+
+        let event = if result.indexed { "rawq:indexed" } else { "rawq:error" };
+        let _ = app.emit(event, &result);
+
+        let mut set = guard.lock();
+        set.remove(&project_path);
+    });
+
+    Ok(())
+}
+
 /// Git status for a project path.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
