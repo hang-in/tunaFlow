@@ -656,7 +656,49 @@ export function RuntimeSection() {
         </div>
       </div>
 
+      <ManualVerificationGateToggle />
       <AttachmentsCleanupPanel />
+    </div>
+  );
+}
+
+// ─── Manual Verification Gate Toggle (B-19 / Issue #176) ───────────────────
+
+function ManualVerificationGateToggle() {
+  const [skipGate, setSkipGate] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getSetting<boolean>("skipManualVerificationGate", false).then((v) => {
+      if (alive) { setSkipGate(v); setLoaded(true); }
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const onToggle = async (next: boolean) => {
+    setSkipGate(next);
+    await setSetting("skipManualVerificationGate", next);
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div className="rounded-lg border border-border/30 bg-background/50 p-4 space-y-2">
+      <h3 className="text-[13px] font-medium text-foreground">Manual Verification Gate</h3>
+      <label className="flex items-center gap-2 text-[12px] text-foreground/80 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={skipGate}
+          onChange={(e) => onToggle(e.target.checked)}
+          className="accent-primary"
+        />
+        수동 확인 게이트 건너뛰기 (개발자 모드)
+      </label>
+      <p className="text-[11px] text-muted-foreground/60">
+        Developer 의 <code className="bg-muted/40 px-1 py-0.5 rounded">⚠️ Manual:</code> 항목을
+        다이얼로그 없이 자동으로 통과시킵니다. UI 검증을 자주 건너뛰면 회귀를 놓칠 수 있습니다.
+      </p>
     </div>
   );
 }
