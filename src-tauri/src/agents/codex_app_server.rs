@@ -523,7 +523,7 @@ async fn get_or_create_thread(
     }
 
     let cwd = resolve_cwd(project_path);
-    // sandbox=danger-full-access는 claude의 --permission-mode bypassPermissions와 등가.
+    // sandbox=danger-full-access는 claude의 --dangerously-skip-permissions와 등가.
     // 이게 없으면 codex는 default sandbox(workspace-write, network 차단)에서 동작하여
     // gh/curl 등 네트워크 도구가 모두 실패한다.
     // persistExtendedHistory/experimentalRawEvents는 experimentalApi capability가 있어야
