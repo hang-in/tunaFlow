@@ -22,7 +22,9 @@ Stop shuttling between tmux panes. tunaFlow is a desktop client that runs multip
 
 ![tunaFlow screenshot](./docs/assets/screenshot-main.png)
 
-> 📺 [Watch demo (6 min, 10 MB)](./docs/assets/tunaFlow-demo.mp4)
+> 📺 Workflow demo (6 min)
+
+https://github.com/user-attachments/assets/69cdc5b3-2456-4873-9599-3c2c3e0f6f13
 
 ---
 

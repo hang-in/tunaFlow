@@ -22,7 +22,9 @@
 
 ![tunaFlow screenshot](./docs/assets/screenshot-main.png)
 
-> 📺 [데모 영상 보기 (6분, 10 MB)](./docs/assets/tunaFlow-demo.mp4)
+> 📺 워크플로 데모 (6분)
+
+https://github.com/user-attachments/assets/69cdc5b3-2456-4873-9599-3c2c3e0f6f13
 
 ---
 
