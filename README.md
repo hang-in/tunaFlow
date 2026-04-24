@@ -202,7 +202,7 @@ Highlights:
 
 - **Ad-hoc Signature** — No Apple Developer ID signing in Beta. Requires Gatekeeper bypass (`xattr -cr /Applications/tunaFlow.app`).
 - **Limited mid-round RT interruption** — participant-level token streaming works in real time, but once a round is in progress, redirecting the discussion mid-round is awkward. Feedback is delivered between rounds.
-- **Initial Indexing Delay** — Large projects may take several minutes for the first run (CPU spikes mitigated via ONNX thread limits, semaphores, and incremental indexing).
+- **Initial Indexing Delay** — Large projects may take several minutes for the first run (CPU spikes mitigated via ONNX thread limits, semaphores, and incremental indexing). Build artifact directories (`target/`, `node_modules/`, `dist/`, `.venv/`, `__pycache__/` and similar) are excluded from rawq indexing to prevent OOM — full list and the `Rebuild index` button (for users upgrading from before the exclude list) are documented in [rawq-setup.md](./docs/how-to/rawq-setup.md#제외-패턴-exclude-patterns--issue-180-hotfix).
 
 Detailed list: [CLAUDE.md §5](./CLAUDE.md)
 
