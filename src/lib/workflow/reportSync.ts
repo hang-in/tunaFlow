@@ -5,6 +5,7 @@ import type { Message, Plan } from "@/types";
 import * as planApi from "../api/plans";
 import type { ParsedReviewVerdict } from "../planProposalParser";
 import { getProjectPath, createTestReportArtifact } from "./helpers";
+import { stripTunaflowMarkers } from "./markerScrub";
 
 /** Generate/update plan document in project directory. Fire-and-forget. */
 export async function syncPlanDocument(planId: string): Promise<void> {
@@ -25,10 +26,14 @@ export async function syncReviewReport(
   try {
     const pp = await getProjectPath();
     if (!pp) return;
+    // testOutput 은 LLM/CI raw 문자열일 가능성이 있어 스크럽 통과.
+    // verdict.findings/recommendations 는 planProposalParser 에서 marker 제거 후
+    // payload 만 넘겨주므로 추가 처리 없음.
+    const scrubbedTestOutput = testOutput ? stripTunaflowMarkers(testOutput) : undefined;
     await planApi.generateReviewReport(
       planId, pp, verdict.verdict,
       verdict.findings, verdict.recommendations,
-      reviewerEngines, testOutput,
+      reviewerEngines, scrubbedTestOutput,
     );
   } catch (e) { console.warn("[tunaflow]", e); }
 }
@@ -44,13 +49,6 @@ export async function syncResultReport(
     const pp = await getProjectPath();
     if (!pp) return;
 
-    const stripMarkers = (text: string) =>
-      text.replace(/<!--\s*tunaflow:[a-z_-]+(?::\d+)?\s*-->/g, "")
-          .replace(/<!--\s*subtask-done:\d+\s*-->/g, "")
-          .replace(/<!--\s*impl-complete\s*-->/g, "")
-          .replace(/\n{3,}/g, "\n\n")
-          .trim();
-
     let lastReworkIdx = -1;
     for (let i = implMessages.length - 1; i >= 0; i--) {
       if (implMessages[i].role === "user" && implMessages[i].content.includes("### 🔄 Rework")) {
@@ -63,14 +61,14 @@ export async function syncResultReport(
       : implMessages;
     const assistantMsgs = relevantMessages.filter((m) => m.role === "assistant");
     const summary = assistantMsgs.length > 0
-      ? stripMarkers(assistantMsgs[assistantMsgs.length - 1].content.slice(0, 2000))
+      ? stripTunaflowMarkers(assistantMsgs[assistantMsgs.length - 1].content.slice(0, 2000))
       : "(No implementation output)";
 
     const { scanCompletedSubtasks } = await import("../planProposalParser");
     const completedNums = scanCompletedSubtasks(implMessages);
     const subtaskResults = assistantMsgs
       .slice(-10)
-      .map((m) => stripMarkers(m.content.slice(0, 500)))
+      .map((m) => stripTunaflowMarkers(m.content.slice(0, 500)))
       .filter((c) => c.trim().length > 0);
 
     const knownIssues: string[] = [];
