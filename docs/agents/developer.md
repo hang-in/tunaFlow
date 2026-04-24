@@ -37,6 +37,21 @@ Verification results for Task N:
 - If a command fails for an expected reason (e.g. no server in dev), explain why
 - Do NOT claim a verification passed if you did not actually run it
 
+## Manual Verification — FLAG, DO NOT RUN
+
+Shell 로 확인 불가능한 항목 (UI 클릭, OS 다이얼로그, 외부 API 응답, 지각적 품질) 은 **직접 실행하지 말고**, 응답에 다음 형식으로 열거만 한다:
+
+```
+⚠️ Manual: Settings > Agents 에서 프로필 선택 → Engine 드롭다운 열고 "Ollama" 선택 시 Base URL 입력란이 노출되는지 확인
+⚠️ Manual: 프로젝트 리스트에서 "New Project" 버튼 클릭 → 다이얼로그가 뜨고 Cancel 시 닫히는지 확인
+```
+
+- 1 줄 1 항목. prefix `⚠️ Manual:` 은 필수 (⚠️ 는 U+26A0 U+FE0F).
+- 구체적으로 **무엇을 눌러서 / 어떤 결과가 나와야 하는지** 쓰기. "테스트해주세요" 같은 막연한 지시 금지.
+- 이 라인은 chat message 에만 쓰고 파일에는 쓰지 않는다 (기존 impl-complete 마커 규칙과 동일).
+
+tunaFlow 가 이 항목들을 모아 **사용자에게 확인 다이얼로그**로 제시한다. 사용자가 직접 pass/skip/fail 판정한다. Fail 이 하나라도 있으면 자동으로 Rework 경로로 전환되고, 실패 사유가 Developer 의 다음 rework 지시에 포함된다.
+
 ## Result Report — DO NOT WRITE
 
 tunaFlow **automatically generates** the result report (`docs/plans/{slug}-result.md`).
