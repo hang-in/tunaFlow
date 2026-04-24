@@ -163,6 +163,9 @@ pub fn run(conn: &mut Connection) -> Result<(), AppError> {
     if current < 46 {
         apply_v46(conn)?;
     }
+    if current < 47 {
+        apply_v47(conn)?;
+    }
     Ok(())
 }
 
@@ -1179,6 +1182,58 @@ fn apply_v46(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v47: `agent_jobs.conversation_id` NOT NULL → nullable (Issue #185).
+///
+/// metaAgent Phase 4 (v46) 에서 background worker 용 컬럼을 추가했지만,
+/// background 작업 (identity_analysis 등) 은 conversation 단위가 아니라
+/// project 단위라 `conversation_id` 를 NULL 로 넣어야 한다. 기존 v10 의
+/// NOT NULL 제약 때문에 `enqueue_background_job(conn, None, ...)` 가 항상
+/// 실패했다 (`[identity-trigger] enqueue failed: NOT NULL constraint ...`).
+///
+/// SQLite 는 컬럼 제약 직접 변경 불가 → 표준 recreate 패턴.
+/// FK (`ON DELETE CASCADE`) + 인덱스 3개 (v10 2개 + v46 1개) 모두 재생성.
+/// Recreate 중 FK check 는 OFF 로 일시 해제 (SQLite 권장).
+fn apply_v47(conn: &Connection) -> Result<(), AppError> {
+    conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
+
+    let result = (|| -> Result<(), AppError> {
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE agent_jobs_new (
+                 id               TEXT    PRIMARY KEY,
+                 conversation_id  TEXT    REFERENCES conversations(id) ON DELETE CASCADE,
+                 message_id       TEXT    REFERENCES messages(id) ON DELETE SET NULL,
+                 engine           TEXT    NOT NULL,
+                 kind             TEXT    NOT NULL DEFAULT 'agent',
+                 status           TEXT    NOT NULL DEFAULT 'running',
+                 error            TEXT,
+                 started_at       INTEGER NOT NULL,
+                 updated_at       INTEGER NOT NULL,
+                 priority         INTEGER NOT NULL DEFAULT 0,
+                 dedupe_key       TEXT,
+                 visibility       TEXT    NOT NULL DEFAULT 'visible'
+             );
+             INSERT INTO agent_jobs_new SELECT * FROM agent_jobs;
+             DROP TABLE agent_jobs;
+             ALTER TABLE agent_jobs_new RENAME TO agent_jobs;
+             CREATE INDEX IF NOT EXISTS idx_agent_jobs_conversation_id ON agent_jobs(conversation_id);
+             CREATE INDEX IF NOT EXISTS idx_agent_jobs_status            ON agent_jobs(status);
+             CREATE INDEX IF NOT EXISTS idx_agent_jobs_bg_pending         ON agent_jobs(priority, status, started_at);
+             COMMIT;",
+        )?;
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (47, ?1)",
+            [now_epoch_ms()],
+        )?;
+        Ok(())
+    })();
+
+    // Recreate 성공 여부와 무관하게 FK 복원.
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+
+    result
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1663,5 +1718,110 @@ mod tests {
             .filter(|c| c == "priority")
             .count();
         assert_eq!(priority_count, 1, "priority column 이 중복 생성되면 안 됨");
+    }
+
+    // ─── v47: agent_jobs.conversation_id NOT NULL → nullable (Issue #185) ───
+
+    /// v46 까지 적용된 상태 (agent_jobs + priority/dedupe_key/visibility) 준비.
+    fn open_with_agent_jobs_for_v47() -> Connection {
+        let conn = open_with_agent_jobs_for_v46();
+        apply_v46(&conn).expect("apply_v46");
+        conn
+    }
+
+    #[test]
+    fn v47_makes_conversation_id_nullable() {
+        let conn = open_with_agent_jobs_for_v47();
+        apply_v47(&conn).expect("apply_v47");
+
+        let mut stmt = conn.prepare("PRAGMA table_info(agent_jobs)").unwrap();
+        let cols: Vec<(String, i64)> = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, i64>(3)?)))
+            .unwrap()
+            .flatten()
+            .collect();
+        let conv = cols
+            .iter()
+            .find(|(n, _)| n == "conversation_id")
+            .expect("conversation_id column should exist");
+        assert_eq!(conv.1, 0, "conversation_id should be nullable (notnull=0) after v47");
+    }
+
+    #[test]
+    fn v47_allows_null_conversation_id_insert() {
+        let conn = open_with_agent_jobs_for_v47();
+        apply_v47(&conn).expect("apply_v47");
+        // apply_v47 은 복원 과정에서 FK=ON. 테스트 conn 에는 `conversations`/`messages`
+        // 테이블이 없으므로 FK 체크가 걸린다. 본 테스트 목적은 NOT NULL 제약 완화 검증이므로 FK 만 끈다.
+        conn.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
+
+        // Issue #185 재현 조건: background job 이 conversation_id=NULL 로 insert 가능해야.
+        conn.execute(
+            "INSERT INTO agent_jobs (id, conversation_id, engine, kind, status, started_at, updated_at) \
+             VALUES ('job-null-1', NULL, 'meta', 'identity_analysis', 'pending', 1000, 1000)",
+            [],
+        )
+        .expect("NULL conversation_id insert should succeed after v47");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM agent_jobs WHERE id = 'job-null-1' AND conversation_id IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn v47_preserves_existing_rows_and_v46_columns() {
+        let conn = open_with_agent_jobs_for_v47();
+        // v46 데이터 한 건 insert (v46 컬럼 priority/dedupe_key/visibility 는 기본값 사용).
+        conn.execute(
+            "INSERT INTO agent_jobs (id, conversation_id, engine, started_at, updated_at) \
+             VALUES ('j-pre', 'conv-1', 'claude', 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        apply_v47(&conn).expect("apply_v47");
+
+        // 기존 row 보존 + v46 컬럼 defaults 유지
+        let (id, engine, priority, dedupe_key, visibility): (String, String, i64, Option<String>, String) =
+            conn.query_row(
+                "SELECT id, engine, priority, dedupe_key, visibility FROM agent_jobs WHERE id='j-pre'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .expect("row should be preserved through v47");
+        assert_eq!(id, "j-pre");
+        assert_eq!(engine, "claude");
+        assert_eq!(priority, 0);
+        assert_eq!(dedupe_key, None);
+        assert_eq!(visibility, "visible");
+    }
+
+    #[test]
+    fn v47_records_schema_version() {
+        let conn = open_with_agent_jobs_for_v47();
+        apply_v47(&conn).expect("apply_v47");
+        let v: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 47);
+    }
+
+    #[test]
+    fn v47_preserves_bg_pending_index() {
+        let conn = open_with_agent_jobs_for_v47();
+        apply_v47(&conn).expect("apply_v47");
+        // v46 에서 만든 idx_agent_jobs_bg_pending 이 recreate 후에도 존재해야 함.
+        let c: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_agent_jobs_bg_pending'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(c, 1);
     }
 }
