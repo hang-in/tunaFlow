@@ -333,10 +333,28 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
     }
 
     let bin = resolve_rawq_bin()?;
-    // Note: rawq's WalkBuilder respects .gitignore automatically.
-    // Explicit -x patterns are not needed for standard ignores.
+    // rawq WalkBuilder .gitignore 지원이 실측상 신뢰 불가 (#180). 공통 빌드
+    // 산출물은 하드코딩으로 제외해 OOM / 시스템 프리즈를 방어한다.
+    // INV-3: 패턴은 추가만 가능 — 삭제 시 기존 사용자 DB 에 대량 재인덱싱 유발.
     let child = Command::new(&bin)
-        .args(["index", "build", project_path, "--json"])
+        .args([
+            "index", "build", project_path, "--json",
+            "-x", "target/**",          // Rust
+            "-x", "node_modules/**",    // Node
+            "-x", "dist/**",            // FE build output
+            "-x", "build/**",           // general build
+            "-x", ".venv/**",           // Python
+            "-x", "venv/**",            // Python variant
+            "-x", "__pycache__/**",     // Python
+            "-x", ".next/**",           // Next.js
+            "-x", ".nuxt/**",           // Nuxt
+            "-x", ".cache/**",          // general cache
+            "-x", "coverage/**",        // test coverage
+            "-x", "*.min.js",           // minified
+            "-x", "*.min.css",
+            "-x", "*.lock",             // lockfile
+            "-x", "*.log",
+        ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -366,6 +384,37 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
     let total = parsed.get("total_files").and_then(|v| v.as_u64()).unwrap_or(0);
     eprintln!("[rawq] index built: {} files", total);
     Ok(total)
+}
+
+/// 기존 인덱스를 제거하고 재빌드. #180 hotfix 후 레거시 오염분 (target/ 등
+/// 하드코딩 exclude 이전에 인덱싱된 값) 정리용.
+///
+/// CLI: `rawq index remove <path>` → `rawq index build <path> --json -x ...`
+/// remove 실패는 무시 (인덱스 없을 수 있음). 로그만 남기고 build 로 진행.
+pub fn rebuild_index(project_path: &str) -> Result<u64, RawqError> {
+    let bin = resolve_rawq_bin()?;
+    // Step 1: 기존 인덱스 제거 시도. 실패해도 계속 진행 (처음부터 없을 수 있음).
+    match Command::new(&bin)
+        .args(["index", "remove", project_path])
+        .output()
+    {
+        Ok(out) if out.status.success() => {
+            eprintln!("[rawq] index removed for {}", project_path);
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!(
+                "[rawq] index remove non-zero (ignored): code={} stderr={}",
+                out.status.code().unwrap_or(-1),
+                stderr.trim()
+            );
+        }
+        Err(e) => {
+            eprintln!("[rawq] index remove exec failed (ignored): {}", e);
+        }
+    }
+    // Step 2: ensure_index 재호출 (하드코딩 exclude 적용된 새 인덱스).
+    ensure_index(project_path)
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
