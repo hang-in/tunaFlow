@@ -186,6 +186,21 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   const isCurrentThreadRunning = !!effectiveThreadId && runningThreadIds.includes(effectiveThreadId);
   const currentQueueLength = messageQueue.filter((q) => q.threadId === selectedConversationId).length;
 
+  // [PR #198 follow-up] brand=main session 공유의 부작용 차단:
+  // brand drawer 의 Developer 가 작업 중인 동안 main chat 입력이 같은
+  // process 에 끼어들어 의도외 응답을 만드는 케이스. main mode 에서
+  // 어떤 brand 라도 running (= `runningThreadIds` 에 `branch:` prefix 키
+  // 존재) 이면 입력을 차단하고 "드로어 열기" 안내 banner 노출.
+  // 상세: `docs/plans/mainChatBrandRunningGuardPlan_2026-04-25.md`.
+  const brandRunning = useMemo(
+    () => !threadMode && runningThreadIds.some((id) => id.startsWith("branch:")),
+    [threadMode, runningThreadIds],
+  );
+  const runningBrandConvId = useMemo(
+    () => (brandRunning ? runningThreadIds.find((id) => id.startsWith("branch:")) ?? null : null),
+    [brandRunning, runningThreadIds],
+  );
+
   // 현재 엔진의 모델 목록
   const currentModels = useMemo(
     () => engineModels.filter((m) => m.engine === engine),
@@ -389,6 +404,31 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         </div>
         ); })()}
 
+      {/* Brand running guard banner — main mode 에서 brand 가 running 중일 때
+          입력 차단 안내 + "드로어 열기" 빠른 액션. PR #198 session 공유
+          부작용 차단 (`mainChatBrandRunningGuardPlan_2026-04-25.md`). */}
+      {brandRunning && (
+        <div
+          className="mb-1.5 flex items-center gap-2 text-[10px] rounded px-2.5 py-1 text-amber-600/70 bg-amber-500/8"
+          data-testid="brand-running-guard-banner"
+        >
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span className="flex-1">{t("input.brand_running_guard")}</span>
+          {runningBrandConvId && (
+            <button
+              type="button"
+              onClick={() => {
+                const branchId = runningBrandConvId.replace(/^branch:/, "");
+                useChatStore.getState().openThread(branchId);
+              }}
+              className="text-amber-600/80 hover:underline"
+            >
+              {t("input.brand_running_open_drawer")}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Context status */}
       <ContextBadges activeSkills={activeSkills} crossSessionIds={crossSessionIds} />
 
@@ -503,7 +543,18 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onKeyDown={(e) => {
+            // brand running 가드: Enter / Cmd+Enter 모두 차단해 같은 SDK
+            // process 에 main 메시지가 끼어들지 않게 함. handleSend 자체에는
+            // 가드를 두지 않아도 disabled state 와 함께 동작하지만, IME
+            // composition 우회 등 edge case 에서 실제 send 가 진행되는
+            // 케이스를 막기 위해 keyDown 단계에서 한번 더 차단.
+            if (brandRunning) {
+              if (e.key === "Enter" && !e.shiftKey) e.preventDefault();
+              return;
+            }
+            handleKeyDown(e);
+          }}
           onPaste={handlePaste}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -517,7 +568,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
                 : t("input.placeholder_rt_empty")
               : t("input.placeholder_chat")
           }
-          disabled={!selectedConversationId}
+          disabled={!selectedConversationId || brandRunning}
           rows={1}
           className={cn(
             // `focus:outline-none` + `focus-visible:outline-none` 명시 — macOS
@@ -590,10 +641,10 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
           )}
           <button
             onClick={handleSend}
-            disabled={!text.trim() || !selectedConversationId || ptyRespawning}
+            disabled={!text.trim() || !selectedConversationId || ptyRespawning || brandRunning}
             className={cn(
               "flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-medium transition-colors",
-              text.trim() && selectedConversationId && !ptyRespawning
+              text.trim() && selectedConversationId && !ptyRespawning && !brandRunning
                 ? isCurrentThreadRunning
                   ? "bg-agent-gemini/12 text-agent-gemini/80 hover:bg-agent-gemini/20"
                   : "bg-primary/90 text-primary-foreground hover:bg-primary"
