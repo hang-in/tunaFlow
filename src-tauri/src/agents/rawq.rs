@@ -8,6 +8,8 @@
 /// If rawq is not available, this module returns explicit errors — no silent fallback.
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Search result mapped from rawq JSON output.
 pub struct SearchResult {
@@ -25,6 +27,9 @@ pub enum RawqError {
     NonZeroExit { code: i32, stderr: String },
     ParseFailed(String),
     NoResults,
+    /// Cancel flag was set before/while the index build was running.
+    /// Caller treats this as graceful no-op (no error toast).
+    Cancelled,
 }
 
 impl std::fmt::Display for RawqError {
@@ -35,6 +40,7 @@ impl std::fmt::Display for RawqError {
             Self::NonZeroExit { code, stderr } => write!(f, "rawq exit {}: {}", code, stderr),
             Self::ParseFailed(e) => write!(f, "rawq JSON parse: {}", e),
             Self::NoResults => write!(f, "rawq: 0 results"),
+            Self::Cancelled => write!(f, "rawq index build cancelled"),
         }
     }
 }
@@ -317,7 +323,34 @@ pub fn is_indexed(project_path: &str) -> Result<bool, RawqError> {
 ///
 /// CLI: `rawq index build <path> --json`
 /// Returns number of files indexed, or error.
+///
+/// Convenience wrapper for callers that don't need cancellation
+/// (e.g. the post-run hook in `commands/jobs.rs` where the build is short).
+/// New code should prefer `ensure_index_cancellable` so the user can dismiss
+/// long builds without leaving the rawq subprocess running.
 pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
+    ensure_index_cancellable(project_path, None)
+}
+
+/// Cancellable variant of `ensure_index`. The optional `cancel` flag is
+/// polled while waiting for the rawq subprocess; setting it to `true`
+/// causes `Child::kill()` and returns `RawqError::Cancelled`.
+///
+/// **Plan invariants** (`docs/plans/rawqIndexCancelChannelPlan_2026-04-25.md`):
+/// - INV-1: caller may cancel via `Arc<AtomicBool>::store(true, …)`.
+/// - INV-2: cancel leaves a possibly partial index; the next call's
+///   `is_indexed()` check is still valid because rawq treats the on-disk
+///   DB as source of truth and rebuilds incrementally.
+/// - INV-3: each call has its own `Child`, so killing one project's build
+///   does not touch another project's subprocess.
+pub fn ensure_index_cancellable(
+    project_path: &str,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<u64, RawqError> {
+    if cancel_is_set(&cancel) {
+        return Err(RawqError::Cancelled);
+    }
+
     // Check first — skip if already indexed
     match is_indexed(project_path) {
         Ok(true) => {
@@ -332,11 +365,15 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
         }
     }
 
+    if cancel_is_set(&cancel) {
+        return Err(RawqError::Cancelled);
+    }
+
     let bin = resolve_rawq_bin()?;
     // rawq WalkBuilder .gitignore 지원이 실측상 신뢰 불가 (#180). 공통 빌드
     // 산출물은 하드코딩으로 제외해 OOM / 시스템 프리즈를 방어한다.
     // INV-3: 패턴은 추가만 가능 — 삭제 시 기존 사용자 DB 에 대량 재인덱싱 유발.
-    let child = Command::new(&bin)
+    let mut child = Command::new(&bin)
         .args([
             "index", "build", project_path, "--json",
             "-x", "target/**",          // Rust
@@ -360,10 +397,34 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
         .spawn()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
 
-    // Wait for completion — no timeout. Runs in background thread,
-    // and daemon handles the actual work so killing the CLI is ineffective anyway.
+    // Poll loop — yields to cancel flag every 100 ms. Without `cancel`
+    // this is functionally equivalent to the previous `wait_with_output`,
+    // just structured so the cancel branch can `kill()` and bail out.
     let t0 = std::time::Instant::now();
-    let output = child.wait_with_output()
+    let poll_interval = std::time::Duration::from_millis(100);
+    loop {
+        if cancel_is_set(&cancel) {
+            // Best-effort kill — ignore the result because the child may
+            // already have exited between the poll and the kill call.
+            let _ = child.kill();
+            // Reap so the subprocess does not become a zombie.
+            let _ = child.wait();
+            eprintln!(
+                "[rawq] index build cancelled for {} after {}s",
+                project_path,
+                t0.elapsed().as_secs()
+            );
+            return Err(RawqError::Cancelled);
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => std::thread::sleep(poll_interval),
+            Err(e) => return Err(RawqError::ExecFailed(e.to_string())),
+        }
+    }
+
+    let output = child
+        .wait_with_output()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
     eprintln!("[rawq] index build took {}s", t0.elapsed().as_secs());
 
@@ -391,7 +452,23 @@ pub fn ensure_index(project_path: &str) -> Result<u64, RawqError> {
 ///
 /// CLI: `rawq index remove <path>` → `rawq index build <path> --json -x ...`
 /// remove 실패는 무시 (인덱스 없을 수 있음). 로그만 남기고 build 로 진행.
+///
+/// Convenience wrapper. Active call sites use `rebuild_index_cancellable`;
+/// keep this so external/test code can opt out of cancellation.
+#[allow(dead_code)]
 pub fn rebuild_index(project_path: &str) -> Result<u64, RawqError> {
+    rebuild_index_cancellable(project_path, None)
+}
+
+/// Cancellable variant of `rebuild_index`. Same cancel contract as
+/// `ensure_index_cancellable`.
+pub fn rebuild_index_cancellable(
+    project_path: &str,
+    cancel: Option<Arc<AtomicBool>>,
+) -> Result<u64, RawqError> {
+    if cancel_is_set(&cancel) {
+        return Err(RawqError::Cancelled);
+    }
     let bin = resolve_rawq_bin()?;
     // Step 1: 기존 인덱스 제거 시도. 실패해도 계속 진행 (처음부터 없을 수 있음).
     match Command::new(&bin)
@@ -413,8 +490,16 @@ pub fn rebuild_index(project_path: &str) -> Result<u64, RawqError> {
             eprintln!("[rawq] index remove exec failed (ignored): {}", e);
         }
     }
-    // Step 2: ensure_index 재호출 (하드코딩 exclude 적용된 새 인덱스).
-    ensure_index(project_path)
+    // Step 2: ensure_index_cancellable 재호출 (하드코딩 exclude 적용된 새 인덱스).
+    ensure_index_cancellable(project_path, cancel)
+}
+
+#[inline]
+fn cancel_is_set(cancel: &Option<Arc<AtomicBool>>) -> bool {
+    cancel
+        .as_ref()
+        .map(|f| f.load(Ordering::Relaxed))
+        .unwrap_or(false)
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -753,5 +838,51 @@ mod embed_tests {
         let a = vec![1.0, 0.0];
         let b = vec![-1.0, 0.0];
         assert!((cosine_similarity(&a, &b) - (-1.0)).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+
+    #[test]
+    fn cancel_is_set_handles_none() {
+        assert!(!cancel_is_set(&None));
+    }
+
+    #[test]
+    fn cancel_is_set_handles_unset_flag() {
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(!cancel_is_set(&Some(flag)));
+    }
+
+    #[test]
+    fn cancel_is_set_handles_set_flag() {
+        let flag = Arc::new(AtomicBool::new(true));
+        assert!(cancel_is_set(&Some(flag)));
+    }
+
+    /// INV-1: a pre-set cancel flag short-circuits before subprocess spawn.
+    /// We do not need a real rawq binary because the cancel check runs first.
+    /// Path is intentionally invalid; the test would otherwise depend on
+    /// `is_indexed` succeeding.
+    #[test]
+    fn ensure_index_cancellable_returns_cancelled_when_preset() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let result = ensure_index_cancellable("/nonexistent/path/zzzzz", Some(flag));
+        match result {
+            Err(RawqError::Cancelled) => {}
+            other => panic!("expected Cancelled, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn rebuild_index_cancellable_returns_cancelled_when_preset() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let result = rebuild_index_cancellable("/nonexistent/path/zzzzz", Some(flag));
+        match result {
+            Err(RawqError::Cancelled) => {}
+            other => panic!("expected Cancelled, got {:?}", other),
+        }
     }
 }
