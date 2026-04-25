@@ -50,6 +50,7 @@
 | [branchAdoptRollbackPlan_2026-04-25](./branchAdoptRollbackPlan_2026-04-25.md) | **P2 (audit follow-up)** — adoptBranch LLM/DB 부분 적용 위험 (s25 history). DB transaction + LLM retry + 부분 적용 복구 UX. Developer 핸드오프 포함 |
 | [planGenerationRollbackPlan_2026-04-25](./planGenerationRollbackPlan_2026-04-25.md) | **P2 (audit follow-up)** — generate_plan_document LLM/DB/file 부분 적용 위험. atomic transaction + 응답 파싱 강건화 + timeout. Developer 핸드오프 포함 |
 | [rawqIndexCancelChannelPlan_2026-04-25](./rawqIndexCancelChannelPlan_2026-04-25.md) | **P3 (audit follow-up, low priority)** — rawq subprocess cancel 채널 부재. Child kill on Drop 패턴 권장. Developer 핸드오프 포함 |
+| [codexGeminiOnboardingAnalysisFailureInvestigationPlan_2026-04-25](./codexGeminiOnboardingAnalysisFailureInvestigationPlan_2026-04-25.md) | **P2 (Issue #176 sibling)** — Codex/Gemini 메타 분석 자체 실패 원인 조사 + fix. parse_output 강건화 / build_prompt engine-agnostic / JSON 응답 옵션. Developer 핸드오프 포함 |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
 | [roleAssignmentCoverageUxPlan](./roleAssignmentCoverageUxPlan.md) | P2 — Settings 역할 커버리지 UX (inferred 저장 명시화 + stale ID 자동 정리 + assertRoleReady 원클릭 적용) |
