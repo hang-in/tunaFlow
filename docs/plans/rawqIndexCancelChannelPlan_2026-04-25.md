@@ -1,12 +1,15 @@
 ---
 title: rawq index build cancel 채널 추가 (subprocess kill 대안)
-status: ready-to-implement (gray-box plan, 우선순위 낮음)
+status: implemented (Option A — 2026-04-25)
 priority: P3 (영향 범위 작음 — UI freeze 까진 안 가는 것으로 추정)
 created_at: 2026-04-25
+updated_at: 2026-04-25
 related:
   - docs/reference/asyncCancelPipelineAudit_2026-04-25.md  # 항목 5
-  - src-tauri/src/agents/rawq.rs  # ensure_index, start_rawq_index
-  - src-tauri/src/commands/project_tools.rs  # rebuild_rawq_index (PR #182 에서 추가)
+  - src-tauri/src/agents/rawq.rs  # ensure_index_cancellable, rebuild_index_cancellable
+  - src-tauri/src/commands/project_tools.rs  # cancel_rawq_index (이번 PR), rebuild_rawq_index
+  - src-tauri/src/commands/projects.rs       # RawqIndexing { active, cancels }
+  - src/lib/bootstrap/project.ts             # teardownPreviousProject — auto cancel
 canonical: true
 owners:
   - architect (본 plan 작성)
@@ -108,9 +111,32 @@ rawq daemon 에 cancel 신호를 socket 으로 전송. graceful shutdown.
 "feat: rawq index build cancel channel (audit follow-up, low priority)"
 ```
 
+# 구현 결과 (2026-04-25)
+
+Option A 채택. 구현 매핑:
+
+- `agents/rawq.rs` — `RawqError::Cancelled` 추가, `ensure_index_cancellable(path, Option<Arc<AtomicBool>>)` / `rebuild_index_cancellable(...)` 신설. 100 ms poll loop 에서 flag 감시 후 `Child::kill() + wait()` (좀비 방지). 기존 `ensure_index` / `rebuild_index` 는 `None` cancel 로 위임하는 호환 wrapper 로 유지 (jobs.rs 등 변경 영향 0).
+- `commands/projects.rs` — `RawqIndexing` 이 `active: HashSet<String>` + `cancels: HashMap<String, Arc<AtomicBool>>` 두 필드를 갖도록 확장. `RawqIndexing::new()` 추가.
+- `commands/project_tools.rs` — `register_indexing()` helper 로 단일 lock scope 에서 duplicate guard + cancel flag 등록. `start_rawq_index`/`rebuild_rawq_index` 가 cancel-aware 변형 호출. `Cancelled` 결과는 `rawq:cancelled` 이벤트로 emit (success/error 와 분리). 신규 `cancel_rawq_index` command (idempotent — 알 수 없는 path 는 false 반환 no-op).
+- `bootstrap/services.rs` — `RawqIndexing` 생성을 `RawqIndexing::new()` 으로 단순화.
+- `lib.rs` — `cancel_rawq_index` 등록.
+- `src/lib/bootstrap/project.ts` — `activeRawqProjectPath` module 변수로 진행 중 path 추적. `teardownPreviousProject()` 가 idempotent cancel invoke. fs-watcher debounce 호출 시에도 path 갱신. 신규 `rawq:cancelled` 이벤트 listener 추가 — 사용자에게 error 가 아니라 `ready` + "indexing cancelled" 메시지로 표시.
+
+# Invariants — 검증
+
+- INV-1 ✅ — `cancel_rawq_index(projectPath)` 가 신규 command 로 노출. `teardownPreviousProject` 가 lifecycle hook 으로 자동 호출.
+- INV-2 ✅ — Cancel 후 부분 인덱스가 남아도 다음 `ensure_index_cancellable` 의 `is_indexed` 체크가 동작하며, false 면 다시 build (rawq DB 자체 idempotent).
+- INV-3 ✅ — `RawqIndexing.cancels` 가 path-keyed HashMap 이라 다른 프로젝트의 build 와 격리. 각 호출이 own `Child` 를 보유.
+
+테스트 커버리지: `agents/rawq.rs::cancel_tests` 5 케이스 (`cancel_is_set` 분기 3 + `ensure_index_cancellable` / `rebuild_index_cancellable` 의 pre-set flag 단축경로 2). 501 cargo lib tests + 344 vitest 통과.
+
 # 후속 — Upstream PR (선택)
 
 Option A 머지 후 안정 운영 검증되면, **Option B/C 로 rawq upstream 에 cancel 신호 PR 제안 가능**. rawq upstream owner (auyelbekov) 가 active 한 maintainer 라 (#12 이슈 응답 1-2 일 내 약속) 협조 가능성 높음.
+
+# 알려진 미구현
+
+- 사용자가 명시적 "cancel" 버튼을 누르는 UI 는 추가하지 않음. plan 우선순위 P3 + 핸드오프의 주된 요구사항(프로젝트 dismiss 시 자동 cancel) 만 충족. RuntimeSection 의 `재빌드 중…` 버튼은 그대로 disabled 유지. 명시적 cancel UI 가 필요하면 별 plan 으로 분리.
 
 # 관련 기록
 
