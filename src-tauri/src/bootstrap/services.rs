@@ -28,9 +28,7 @@ pub fn start_background_services(
 
     // 2. Per-process state registration
     app.manage(commands::pty::PtyState::new());
-    app.manage(commands::projects::RawqIndexing(Arc::new(Mutex::new(
-        HashSet::new(),
-    ))));
+    app.manage(commands::projects::RawqIndexing::new());
 
     // 3. Start rawq daemon in background — pre-loads embedding model for fast
     //    indexing/search.

@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use rusqlite::params;
 use serde::Deserialize;
@@ -7,8 +8,30 @@ use tauri::State;
 use crate::db::{migrations::now_epoch, models::Project, DbState};
 use crate::errors::AppError;
 
-/// Tracks project paths currently being indexed by rawq (prevents duplicate builds).
-pub struct RawqIndexing(pub Arc<parking_lot::Mutex<HashSet<String>>>);
+/// State for rawq indexing.
+///
+/// - `active` — set of project paths currently being indexed (duplicate
+///   guard). Membership is held only for the duration of one build.
+/// - `cancels` — per-path cancel flags shared with the rawq subprocess
+///   poll loop in `agents::rawq::ensure_index_cancellable`. Stored under
+///   the same lock as `active` so insert/remove stays atomic relative to
+///   the duplicate guard.
+///
+/// See `docs/plans/rawqIndexCancelChannelPlan_2026-04-25.md` for the
+/// invariants the cancel channel preserves (INV-1/2/3).
+pub struct RawqIndexing {
+    pub active: Arc<parking_lot::Mutex<HashSet<String>>>,
+    pub cancels: Arc<parking_lot::Mutex<HashMap<String, Arc<AtomicBool>>>>,
+}
+
+impl RawqIndexing {
+    pub fn new() -> Self {
+        Self {
+            active: Arc::new(parking_lot::Mutex::new(HashSet::new())),
+            cancels: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

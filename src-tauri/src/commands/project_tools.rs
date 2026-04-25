@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use tauri::State;
 
 use crate::errors::AppError;
@@ -89,10 +92,30 @@ pub fn ensure_rawq_index(project_path: String) -> Result<RawqStatus, AppError> {
     }
 }
 
+/// Register a cancel flag for `project_path` and insert into the active set.
+/// Returns `Some(flag)` on success, `None` if a build is already in progress
+/// (duplicate guard). Holds a single lock for both operations so a parallel
+/// `start_*`/`rebuild_*` call observes a consistent state.
+fn register_indexing(
+    indexing: &RawqIndexing,
+    project_path: &str,
+) -> Option<Arc<AtomicBool>> {
+    let mut active = indexing.active.lock();
+    if active.contains(project_path) {
+        return None;
+    }
+    active.insert(project_path.to_string());
+
+    let flag = Arc::new(AtomicBool::new(false));
+    indexing.cancels.lock().insert(project_path.to_string(), flag.clone());
+    Some(flag)
+}
+
 /// Start rawq index build in background thread. Emits events:
 /// - `rawq:indexing` — { projectPath, message }
 /// - `rawq:indexed`  — RawqStatus (success)
 /// - `rawq:error`    — RawqStatus (failure)
+/// - `rawq:cancelled` — { projectPath } (user dismissed before completion)
 #[tauri::command]
 pub fn start_rawq_index(
     project_path: String,
@@ -102,16 +125,13 @@ pub fn start_rawq_index(
     use crate::agents::rawq;
     use tauri::Emitter;
 
-    // Duplicate guard — skip if already indexing this path
-    {
-        let mut set = indexing.0.lock();
-        if set.contains(&project_path) {
-            eprintln!("[rawq] already indexing {}, skipping", project_path);
-            return Ok(());
-        }
-        set.insert(project_path.clone());
-    }
-    let guard = indexing.0.clone();
+    // Duplicate guard + cancel flag registration (single lock scope).
+    let Some(cancel) = register_indexing(&indexing, &project_path) else {
+        eprintln!("[rawq] already indexing {}, skipping", project_path);
+        return Ok(());
+    };
+    let active = indexing.active.clone();
+    let cancels = indexing.cancels.clone();
 
     let _ = app.emit("rawq:indexing", serde_json::json!({
         "projectPath": &project_path,
@@ -119,42 +139,52 @@ pub fn start_rawq_index(
     }));
 
     std::thread::spawn(move || {
-        let result = match rawq::ensure_index(&project_path) {
+        let result = match rawq::ensure_index_cancellable(&project_path, Some(cancel.clone())) {
             Ok(0) => {
                 let (files, chunks) = rawq::index_status(&project_path)
                     .ok()
                     .flatten()
                     .map(|i| (Some(i.files), Some(i.chunks)))
                     .unwrap_or((None, None));
-                RawqStatus {
+                Some(RawqStatus {
                     available: true, indexed: true,
                     status: "ready".into(), message: "already indexed".into(),
                     files, chunks,
-                }
+                })
             }
-            Ok(n) => RawqStatus {
+            Ok(n) => Some(RawqStatus {
                 available: true, indexed: true,
                 status: "built".into(), message: format!("indexed {} files", n),
                 files: Some(n), chunks: None,
-            },
+            }),
+            Err(rawq::RawqError::Cancelled) => {
+                eprintln!("[start_rawq_index] cancelled for {}", project_path);
+                let _ = app.emit(
+                    "rawq:cancelled",
+                    serde_json::json!({ "projectPath": &project_path }),
+                );
+                None
+            }
             Err(e) => {
                 eprintln!("[start_rawq_index] {}", e);
                 let available = !matches!(e, rawq::RawqError::NotFound(_));
-                RawqStatus {
+                Some(RawqStatus {
                     available, indexed: false,
                     status: if available { "error" } else { "unavailable" }.into(),
                     message: format!("{}", e),
                     files: None, chunks: None,
-                }
+                })
             }
         };
 
-        let event = if result.indexed { "rawq:indexed" } else { "rawq:error" };
-        let _ = app.emit(event, &result);
+        if let Some(status) = result {
+            let event = if status.indexed { "rawq:indexed" } else { "rawq:error" };
+            let _ = app.emit(event, &status);
+        }
 
-        // Release guard
-        let mut set = guard.lock();
-        set.remove(&project_path);
+        // Release both guards
+        active.lock().remove(&project_path);
+        cancels.lock().remove(&project_path);
     });
 
     Ok(())
@@ -162,7 +192,7 @@ pub fn start_rawq_index(
 
 /// Rebuild rawq index — drops the existing index and rebuilds with the current
 /// hardcoded exclude patterns. #180 hotfix 후 레거시 오염분 정리용.
-/// Emits the same events as start_rawq_index (rawq:indexing / rawq:indexed / rawq:error).
+/// Emits the same events as start_rawq_index (rawq:indexing / rawq:indexed / rawq:error / rawq:cancelled).
 #[tauri::command]
 pub fn rebuild_rawq_index(
     project_path: String,
@@ -172,16 +202,12 @@ pub fn rebuild_rawq_index(
     use crate::agents::rawq;
     use tauri::Emitter;
 
-    // Duplicate guard — reuse start_rawq_index 의 set.
-    {
-        let mut set = indexing.0.lock();
-        if set.contains(&project_path) {
-            eprintln!("[rawq] already indexing {}, skipping rebuild", project_path);
-            return Ok(());
-        }
-        set.insert(project_path.clone());
-    }
-    let guard = indexing.0.clone();
+    let Some(cancel) = register_indexing(&indexing, &project_path) else {
+        eprintln!("[rawq] already indexing {}, skipping rebuild", project_path);
+        return Ok(());
+    };
+    let active = indexing.active.clone();
+    let cancels = indexing.cancels.clone();
 
     let _ = app.emit("rawq:indexing", serde_json::json!({
         "projectPath": &project_path,
@@ -189,32 +215,63 @@ pub fn rebuild_rawq_index(
     }));
 
     std::thread::spawn(move || {
-        let result = match rawq::rebuild_index(&project_path) {
-            Ok(n) => RawqStatus {
+        let result = match rawq::rebuild_index_cancellable(&project_path, Some(cancel.clone())) {
+            Ok(n) => Some(RawqStatus {
                 available: true, indexed: true,
                 status: "built".into(), message: format!("rebuilt: indexed {} files", n),
                 files: Some(n), chunks: None,
-            },
+            }),
+            Err(rawq::RawqError::Cancelled) => {
+                eprintln!("[rebuild_rawq_index] cancelled for {}", project_path);
+                let _ = app.emit(
+                    "rawq:cancelled",
+                    serde_json::json!({ "projectPath": &project_path }),
+                );
+                None
+            }
             Err(e) => {
                 eprintln!("[rebuild_rawq_index] {}", e);
                 let available = !matches!(e, rawq::RawqError::NotFound(_));
-                RawqStatus {
+                Some(RawqStatus {
                     available, indexed: false,
                     status: if available { "error" } else { "unavailable" }.into(),
                     message: format!("{}", e),
                     files: None, chunks: None,
-                }
+                })
             }
         };
 
-        let event = if result.indexed { "rawq:indexed" } else { "rawq:error" };
-        let _ = app.emit(event, &result);
+        if let Some(status) = result {
+            let event = if status.indexed { "rawq:indexed" } else { "rawq:error" };
+            let _ = app.emit(event, &status);
+        }
 
-        let mut set = guard.lock();
-        set.remove(&project_path);
+        active.lock().remove(&project_path);
+        cancels.lock().remove(&project_path);
     });
 
     Ok(())
+}
+
+/// Cancel an in-flight rawq index build for `project_path`.
+///
+/// Idempotent — calling on a path that is not currently indexing is a no-op.
+/// Returns `true` if a cancel flag was actually set, `false` otherwise. The
+/// background thread observes the flag within ~100 ms (next poll tick),
+/// kills the rawq subprocess, and emits `rawq:cancelled`.
+#[tauri::command]
+pub fn cancel_rawq_index(
+    project_path: String,
+    indexing: State<RawqIndexing>,
+) -> Result<bool, AppError> {
+    let cancels = indexing.cancels.lock();
+    if let Some(flag) = cancels.get(&project_path) {
+        flag.store(true, Ordering::Relaxed);
+        eprintln!("[rawq] cancel requested for {}", project_path);
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 /// Git status for a project path.

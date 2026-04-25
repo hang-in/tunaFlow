@@ -82,6 +82,7 @@ pub fn run() {
             commands::project_tools::set_project_cli_permissions,
             commands::project_tools::start_rawq_index,
             commands::project_tools::rebuild_rawq_index,
+            commands::project_tools::cancel_rawq_index,
             commands::project_tools::get_rawq_status,
             commands::project_tools::get_git_status,
             // Conversation
