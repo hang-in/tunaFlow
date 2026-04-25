@@ -13,6 +13,119 @@ pub fn load_project_path(conn: &Connection, project_key: &str) -> Option<String>
     .flatten()
 }
 
+/// brand:* shadow conv 의 root main conversation_id 를 `branches` 테이블에서 조회.
+///
+/// `branches.conversation_id` 컬럼에는 이미 root 가 저장되어 있다
+/// (`commands/branches.rs::create_branch` 의 `root_conv_id` 정규화).
+/// non-branch conv_id 또는 lookup 실패 시 None.
+pub fn lookup_branch_root_conv_id(conn: &Connection, conv_id: &str) -> Option<String> {
+    let branch_id = conv_id.strip_prefix("branch:")?;
+    conn.query_row(
+        "SELECT conversation_id FROM branches WHERE id = ?1",
+        [branch_id],
+        |row| row.get::<_, String>(0),
+    )
+    .ok()
+}
+
+/// brand 가 main 과 같은 엔진을 사용하는지 검사.
+///
+/// 같은 엔진이면 brand send 가 main 의 sdk-url WS 세션을 그대로 이어받아
+/// prior history 가 자동 포함된다 → ContextPack dynamic 섹션 (recent / parent /
+/// compressed / retrieval) 재주입은 토큰 낭비 + 오염원.
+///
+/// 다른 엔진 (예: Claude → Codex) 이면 새 session 이라 ContextPack 정상 빌드 필요.
+///
+/// engine name normalization:
+/// - `claude` / `claude-code` 는 같은 엔진으로 간주 (resume_token_engine 표기 차이)
+/// - 그 외는 문자열 일치
+///
+/// 검사 기준: root main conv 의 가장 최근 assistant 메시지의 `engine` 컬럼.
+/// root 에 메시지가 없으면 (= 처음 brand 진입) `true` 로 본다 — 어차피 첫 send
+/// 라 LAST_DELIVERED 도 비어 있어 ContextPack full 경로가 자연스럽게 동작.
+fn is_engine_continuity(conn: &Connection, root_conv_id: &str, current_engine: &str) -> bool {
+    let last_engine: Option<String> = conn
+        .query_row(
+            "SELECT engine FROM messages
+             WHERE conversation_id = ?1 AND role = 'assistant' AND status = 'done'
+             ORDER BY timestamp DESC LIMIT 1",
+            [root_conv_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    let Some(last) = last_engine else { return true };
+    normalize_engine(&last) == normalize_engine(current_engine)
+}
+
+fn normalize_engine(engine: &str) -> &str {
+    match engine {
+        "claude-code" => "claude",
+        e => e,
+    }
+}
+
+/// Layer B (branchInheritsMainSessionPlan): brand send 가 main 의 sdk-url WS 세션
+/// 을 그대로 이어받을 수 있을 때 ContextPack 의 dynamic 섹션을 비운다.
+///
+/// 조건:
+/// - `data.is_branch == true` (brand:* shadow conv 진입)
+/// - root main 의 마지막 assistant 메시지 engine 이 현재 send 의 engine 과 같다
+///   (= claude_sdk_session 의 SESSIONS / RESUME_IDS 가 root key 로 통합되어 있어
+///    같은 SdkSession 을 재사용)
+///
+/// 효과:
+/// - `is_session_continuation = true` 강제 (assemble_prompt 가 recent_context /
+///   compressed_memory / cross-session 을 skip)
+/// - `parent_messages` / `retrieval_chunks` / `document_chunks` 비움 (brand 만의
+///   "main 으로부터 분기" 이라는 사실은 이미 claude session history 에 들어 있음)
+///
+/// 정적 레이어 (identity / persona / project / agent-role 등) 는 유지 — engine
+/// 이 매 send 마다 system_prompt 를 새로 받으므로 retain.
+///
+/// engine 이 달라지면 (Claude → Codex) 별 session 으로 분리되므로 본 helper 는
+/// no-op (= 정상 ContextPack 빌드, INV-3).
+pub fn apply_branch_session_inheritance(
+    conn: &Connection,
+    data: &mut ContextData,
+    engine: &str,
+) -> bool {
+    if !data.is_branch {
+        return false;
+    }
+    let Some(root_conv) = lookup_branch_root_conv_id(conn, &data.conversation_id) else {
+        return false;
+    };
+    if !is_engine_continuity(conn, &root_conv, engine) {
+        eprintln!(
+            "[branch-session] engine differs (root last engine ≠ {}) for conv={} — keep ContextPack full",
+            engine,
+            &data.conversation_id[..data.conversation_id.len().min(20)]
+        );
+        return false;
+    }
+
+    eprintln!(
+        "[branch-session] brand same-engine continuation conv={} engine={} → \
+         drop dynamic ContextPack sections (rely on main's sdk-url session)",
+        &data.conversation_id[..data.conversation_id.len().min(20)],
+        engine
+    );
+
+    data.is_session_continuation = true;
+    data.parent_messages.clear();
+    data.current_messages.clear();
+    data.retrieval_chunks.clear();
+    data.document_chunks.clear();
+    data.cross_session_data.clear();
+    data.compressed_memory = None;
+    data.compressed_memory_source = None;
+    // thread_inheritance 도 brand 전용 prepend 인데, claude session 이 자체 history
+    // 를 갖고 있으므로 중복. 제거.
+    data.thread_inheritance = None;
+    true
+}
+
 /// Build an enriched prompt with lite context prefix for non-Claude engines.
 /// Retained for roundtable participant paths that don't carry full SendWithClaudeInput.
 #[allow(dead_code)]
@@ -767,4 +880,173 @@ fn search_failure_lessons_for_rework(
         .take(5)
         .map(|(_, l)| l)
         .collect()
+}
+
+// ─── Layer B: branch session inheritance tests ────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn build_db_with_branch(root_conv_id: &str, branch_id: &str) -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE branches (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL
+             );
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'done',
+                engine TEXT
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO branches (id, conversation_id) VALUES (?1, ?2)",
+            rusqlite::params![branch_id, root_conv_id],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_assistant_message(conn: &Connection, conv: &str, engine: &str, ts: i64) {
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine)
+             VALUES (?1, ?2, 'assistant', 'reply', ?3, 'done', ?4)",
+            rusqlite::params![format!("m-{}-{}", conv, ts), conv, ts, engine],
+        )
+        .unwrap();
+    }
+
+    fn empty_data(conv_id: &str, is_branch: bool) -> ContextData {
+        ContextData {
+            conversation_id: conv_id.into(),
+            project_path: None,
+            prompt: "hi".into(),
+            is_branch,
+            has_active_plan: false,
+            current_messages: vec![],
+            parent_messages: vec![],
+            plan_section: None,
+            plan_document: None,
+            findings_section: None,
+            artifacts_section: None,
+            retrieval_chunks: vec![],
+            document_chunks: vec![],
+            compressed_memory: None,
+            compressed_memory_source: None,
+            cross_session_data: vec![],
+            thread_inheritance: None,
+            agent_role_doc: None,
+            previous_impl_status: None,
+            active_skills: vec![],
+            cross_session_ids: vec![],
+            persona_fragment: None,
+            context_mode_override: None,
+            context_budget_cap: None,
+            user_profile: None,
+            conventions_synced: false,
+            is_session_continuation: false,
+            identity_summary_fragment: None,
+        }
+    }
+
+    #[test]
+    fn lookup_branch_root_returns_main_conv_id() {
+        let conn = build_db_with_branch("conv-main", "b1");
+        let got = lookup_branch_root_conv_id(&conn, "branch:b1");
+        assert_eq!(got.as_deref(), Some("conv-main"));
+    }
+
+    #[test]
+    fn lookup_branch_root_returns_none_for_non_branch_conv() {
+        let conn = build_db_with_branch("conv-main", "b1");
+        assert!(lookup_branch_root_conv_id(&conn, "conv-main").is_none());
+        assert!(lookup_branch_root_conv_id(&conn, "branch:unknown").is_none());
+    }
+
+    #[test]
+    fn engine_continuity_treats_claude_and_claude_code_as_same() {
+        let conn = build_db_with_branch("conv-main", "b1");
+        insert_assistant_message(&conn, "conv-main", "claude-code", 1000);
+        assert!(is_engine_continuity(&conn, "conv-main", "claude"));
+        assert!(is_engine_continuity(&conn, "conv-main", "claude-code"));
+    }
+
+    #[test]
+    fn engine_continuity_returns_false_for_different_engine() {
+        let conn = build_db_with_branch("conv-main", "b1");
+        insert_assistant_message(&conn, "conv-main", "claude-code", 1000);
+        assert!(!is_engine_continuity(&conn, "conv-main", "codex"));
+        assert!(!is_engine_continuity(&conn, "conv-main", "gemini"));
+    }
+
+    #[test]
+    fn engine_continuity_returns_true_when_no_prior_messages() {
+        // root 에 메시지가 없으면 첫 send 라 continuation 로 본다 (LAST_DELIVERED 가
+        // 비어 있어 어차피 full ContextPack 으로 흐르지만, dynamic 섹션은 비울 수 있음)
+        let conn = build_db_with_branch("conv-main", "b1");
+        assert!(is_engine_continuity(&conn, "conv-main", "claude"));
+    }
+
+    #[test]
+    fn apply_branch_session_inheritance_same_engine_clears_dynamic_sections() {
+        // INV-2: brand:* same engine 진입 시 dynamic 섹션이 비워지고
+        //        is_session_continuation=true 가 셋팅된다.
+        let conn = build_db_with_branch("conv-main", "b1");
+        insert_assistant_message(&conn, "conv-main", "claude-code", 1000);
+
+        let mut data = empty_data("branch:b1", true);
+        data.parent_messages = vec![("user".into(), "hi".into(), None, None)];
+        data.current_messages = vec![("assistant".into(), "ok".into(), Some("claude".into()), None)];
+        data.compressed_memory = Some("memo".into());
+        data.thread_inheritance = Some("inherit".into());
+
+        let applied = apply_branch_session_inheritance(&conn, &mut data, "claude");
+        assert!(applied, "same-engine brand 면 inheritance 가 적용되어야 함");
+        assert!(data.is_session_continuation);
+        assert!(data.parent_messages.is_empty());
+        assert!(data.current_messages.is_empty());
+        assert!(data.compressed_memory.is_none());
+        assert!(data.thread_inheritance.is_none());
+        assert!(data.retrieval_chunks.is_empty());
+    }
+
+    #[test]
+    fn apply_branch_session_inheritance_different_engine_keeps_full_pack() {
+        // INV-3: engine 변경 시는 별 session 이라 ContextPack 정상 빌드 유지.
+        let conn = build_db_with_branch("conv-main", "b1");
+        insert_assistant_message(&conn, "conv-main", "claude-code", 1000);
+
+        let mut data = empty_data("branch:b1", true);
+        data.parent_messages = vec![("user".into(), "hi".into(), None, None)];
+        data.compressed_memory = Some("memo".into());
+
+        let applied = apply_branch_session_inheritance(&conn, &mut data, "codex");
+        assert!(!applied, "다른 engine 으로 brand 진입 시 inheritance 미적용");
+        assert!(!data.is_session_continuation);
+        assert_eq!(data.parent_messages.len(), 1, "parent 메시지가 보존되어야");
+        assert_eq!(data.compressed_memory.as_deref(), Some("memo"));
+    }
+
+    #[test]
+    fn apply_branch_session_inheritance_skips_non_branch_conv() {
+        // brand 가 아니면 무조건 false (정상 ContextPack).
+        let conn = build_db_with_branch("conv-main", "b1");
+        insert_assistant_message(&conn, "conv-main", "claude-code", 1000);
+
+        let mut data = empty_data("conv-main", false);
+        data.parent_messages = vec![("user".into(), "hi".into(), None, None)];
+
+        let applied = apply_branch_session_inheritance(&conn, &mut data, "claude");
+        assert!(!applied, "non-branch conv 는 inheritance 미적용");
+        assert!(!data.is_session_continuation);
+        assert_eq!(data.parent_messages.len(), 1);
+    }
 }

@@ -367,8 +367,13 @@ pub fn assemble_prompt(
         }
     }
 
-    // Layer 3: Retrieval memory — past conversation chunks, ranked and deduped
-    if ctx_mode >= ContextMode::Standard {
+    // Layer 3: Retrieval memory — past conversation chunks, ranked and deduped.
+    // Session continuation 에서는 drop (Claude/Codex 자체 세션이 prior context 갖고 있음).
+    // brand same-session 진입 시 main 의 retrieval 까지 brand 에 prepend 하면 토큰 낭비
+    // + 모델이 "tunaFlow 가 권위 있는 latest" 로 오인 (Layer B, branchInheritsMainSessionPlan).
+    if data.is_session_continuation {
+        included_sections.push("retrieval:skipped(session-continuation)".into());
+    } else if ctx_mode >= ContextMode::Standard {
         let current_size: usize = sections.iter().map(|s| s.len()).sum();
         let remaining = total_budget.saturating_sub(current_size);
         if remaining > profile.retrieval_min_remaining {

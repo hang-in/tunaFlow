@@ -208,11 +208,20 @@ pub fn prepare_engine_run(
     let (mut data, project_path) = {
         let conn = state.read.lock().map_err(|_| crate::errors::AppError::Lock)?;
         let pp = load_project_path(&conn, &input.project_key);
-        let ctx_data = load_context_data(
+        let mut ctx_data = load_context_data(
             &conn, &input.conversation_id, &input.prompt, pp.as_deref(),
             &input.active_skills, &input.cross_session_ids, identity_frag,
             input.context_mode_override.as_deref(), input.context_budget_cap,
             input.user_profile_json.as_deref(),
+        );
+        // Layer B (branchInheritsMainSessionPlan): brand 가 main 의 sdk-url WS
+        // 세션을 그대로 이어받을 수 있는 조건 (same engine) 이면 dynamic
+        // ContextPack 섹션을 비운다. 정적 레이어 (identity/persona/project) 는
+        // 매 send 마다 system_prompt 로 다시 들어가야 하므로 유지.
+        super::context_loading::apply_branch_session_inheritance(
+            &conn,
+            &mut ctx_data,
+            engine_key,
         );
         (ctx_data, pp)
     };

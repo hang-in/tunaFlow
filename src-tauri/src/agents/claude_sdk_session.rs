@@ -153,7 +153,9 @@ lazy_static::lazy_static! {
 /// 을 잡는 부담을 피하기 위함.
 ///
 /// non-branch conv_id 는 그대로 반환.
-fn session_key_for(conv_id: &str) -> String {
+///
+/// pub: session_freshness 모듈 (LAST_DELIVERED 키 normalize) 에서도 사용.
+pub fn session_key_for(conv_id: &str) -> String {
     if conv_id.starts_with("branch:") {
         if let Some(root) = BRANCH_ROOT_CACHE.lock().get(conv_id).cloned() {
             return root;
