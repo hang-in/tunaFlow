@@ -380,14 +380,25 @@ pub async fn roundtable_followup(
     Ok(all_messages)
 }
 
-/// Cancel a specific thread/conversation by its id.
+/// Stream-abort the in-flight run for a specific conversation/thread.
+///
+/// 의미 (옵션 X, `branchCancelSemanticsPlan_2026-04-25.md`):
+/// - 진행 중 stream 만 abort. session / SESSIONS / RESUME_IDS / process 보존.
+/// - 다음 send 는 동일 session 위에서 history 보존하며 이어진다.
+/// - session kill 이 필요하면 별도 `restart_sdk_session` 호출 (engine/model
+///   변경 등 명시적 시나리오).
+///
+/// brand/main 식별: 호출자가 정확한 conv_id 를 넘겨야 한다 — brand 모드면
+/// `branch:<branch_id>` shadow conv_id, main 모드면 main conv_id. 두 키는
+/// CancelRegistry 안에서 분리 관리된다 (PR #198 의 SESSIONS/RESUME_IDS
+/// normalize 와 다른 정책).
 #[tauri::command]
 pub fn cancel_running(
     conversation_id: String,
     cancel: State<CancelRegistry>,
 ) -> Result<(), AppError> {
     cancel.cancel(&conversation_id);
-    eprintln!("[cancel] registered for {}", conversation_id);
+    eprintln!("[cancel] stream abort registered for {}", conversation_id);
     Ok(())
 }
 

@@ -7,26 +7,40 @@ mod errors;
 mod guardrail;
 mod http_api;
 
-/// Thread-aware cooperative cancellation registry.
-/// Keys are conversation IDs (including branch shadow IDs like "branch:xxx").
-/// A thread checks its own conversation_id; only sees its own cancel flag.
+/// Thread-aware cooperative **stream abort** registry.
+///
+/// 의미 (옵션 X, `docs/plans/branchCancelSemanticsPlan_2026-04-25.md`):
+/// 이 registry 의 flag 는 **진행 중 stream 만 abort** 하는 신호다 — session
+/// kill 이 아니다. agent stream loop 이 자기 conv_id 의 flag 를 체크해서
+/// `Err("cancelled by user")` 로 빠져나오고, session / SESSIONS / RESUME_IDS
+/// / process 는 그대로 살아있어 다음 send 가 history 그대로 이어진다.
+///
+/// 키 = conversation_id (brand 는 `branch:<branch_id>` shadow conv_id).
+/// **PR #198 의 SESSIONS/RESUME_IDS normalize 와 의도가 다름** — 이 registry
+/// 는 brand 와 main 의 cancel 을 의도적으로 분리해 격리한다 (brand 에서
+/// cancel 해도 main 의 다음 send 가 영향 없도록).
+///
+/// session 자체를 죽이는 건 별도 명시적 command
+/// (`restart_sdk_session`, `kill_session_clear_resume`) — UI cancel
+/// 버튼은 이 registry 만 건드린다.
 pub struct CancelRegistry(pub std::sync::Arc<parking_lot::Mutex<std::collections::HashSet<String>>>);
 
 impl CancelRegistry {
-    /// Mark a conversation/thread as cancelled.
+    /// Request stream abort for a conversation/thread.
+    /// 진행 중 stream 만 끊는다 — session 은 유지.
     pub fn cancel(&self, conversation_id: &str) {
         let mut set = self.0.lock();
         set.insert(conversation_id.to_string());
     }
 
-    /// Check and consume the cancel flag for a conversation/thread.
-    /// Returns true if cancelled (and clears the flag).
+    /// Check and consume the stream-abort flag for a conversation/thread.
+    /// Returns true if abort requested (and clears the flag).
     pub fn check_and_consume(&self, conversation_id: &str) -> bool {
         let mut set = self.0.lock();
         set.remove(conversation_id)
     }
 
-    /// Clear cancel flag for a conversation (e.g., on normal completion).
+    /// Clear stream-abort flag for a conversation (e.g., on normal completion).
     pub fn clear(&self, conversation_id: &str) {
         let mut set = self.0.lock();
         set.remove(conversation_id);

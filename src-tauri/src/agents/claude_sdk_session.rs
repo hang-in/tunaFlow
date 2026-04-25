@@ -700,6 +700,19 @@ async fn events_handler(
 /// claude `--sdk-url` 세션을 통해 메시지를 전송하고 스트리밍 응답을 수집한다.
 ///
 /// 기존 `claude::stream_run` 과 동일한 인터페이스.
+///
+/// `is_cancelled` 는 **stream abort token** 이다 (옵션 X, plan
+/// `branchCancelSemanticsPlan_2026-04-25.md`):
+///
+/// - true 반환 시 → 진행 중 stream 만 abort (control_request "interrupt"
+///   전송 후 `Err("cancelled by user")` return)
+/// - **session / SESSIONS / RESUME_IDS / process 는 모두 유지** — 다음
+///   send 가 자연 이어진다 (history 보존)
+/// - session 자체를 죽이려면 별도 `kill_session_clear_resume` 또는
+///   `restart_sdk_session` 명시 호출 (engine/model 변경 시)
+///
+/// brand 와 main 의 cancel 식별: 호출자가 conv_id 단위로 토큰을 분리해
+/// 캡처해야 한다 (PR #198 의 SESSIONS/RESUME_IDS normalize 와 의도가 다름).
 pub async fn stream_run_sdk<F, G, C>(
     conv_id: &str,
     input: RunInput,
@@ -749,6 +762,9 @@ where
                         if is_cancelled() { break; }
                     }
                 } => {
+                    // Stream abort only (옵션 X). control_request "interrupt"
+                    // 로 진행 중 응답만 끊고, session/SESSIONS/RESUME_IDS/process
+                    // 는 모두 보존 — 다음 send 가 history 그대로 이어진다.
                     let interrupt = serde_json::json!({
                         "type": "control_request",
                         "request": { "subtype": "interrupt" }
