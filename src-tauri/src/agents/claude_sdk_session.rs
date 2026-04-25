@@ -127,10 +127,88 @@ impl Drop for SdkSession {
 type SessionRegistry = Arc<PlMutex<HashMap<String, Arc<SdkSession>>>>;
 /// conversation_id → 마지막 result session_id (세션 종료 후에도 --resume용으로 보존)
 type ResumeRegistry = Arc<PlMutex<HashMap<String, String>>>;
+/// `branch:<branch_id>` shadow conv → root main conversation_id 캐시.
+///
+/// **의도** (`docs/plans/branchInheritsMainSessionPlan_2026-04-25.md`):
+/// brand 는 main session 을 공유해야 한다 (사용자 원래 의도, raw log
+/// `037bb82f` 2026-04-17). SESSIONS / RESUME_IDS 는 root main conv_id 로
+/// keying 하여 brand send 가 main 의 claude `--sdk-url` 세션을 그대로
+/// 이어받는다.
+///
+/// 캐시 채우는 시점: `bootstrap_resume_id_from_db` 등 DbState 가 있는 진입점.
+/// cache miss 시엔 fallback 으로 conv_id 자체 사용 (backward-compatible).
+type BranchRootCache = Arc<PlMutex<HashMap<String, String>>>;
 
 lazy_static::lazy_static! {
     static ref SESSIONS: SessionRegistry = Arc::new(PlMutex::new(HashMap::new()));
     static ref RESUME_IDS: ResumeRegistry = Arc::new(PlMutex::new(HashMap::new()));
+    static ref BRANCH_ROOT_CACHE: BranchRootCache = Arc::new(PlMutex::new(HashMap::new()));
+}
+
+/// brand:* conv_id 를 root main conversation_id 로 normalize.
+///
+/// 메모리 캐시 (`BRANCH_ROOT_CACHE`) 만 본다. 캐시가 비어 있으면 conv_id 자체를
+/// 반환 — 호출자는 사전에 `cache_branch_root_from_db` 로 채워두어야 한다.
+/// 이렇게 분리한 이유: 여러 hot path (SESSIONS lookup 등) 에서 매번 DB read lock
+/// 을 잡는 부담을 피하기 위함.
+///
+/// non-branch conv_id 는 그대로 반환.
+fn session_key_for(conv_id: &str) -> String {
+    if conv_id.starts_with("branch:") {
+        if let Some(root) = BRANCH_ROOT_CACHE.lock().get(conv_id).cloned() {
+            return root;
+        }
+    }
+    conv_id.to_string()
+}
+
+/// brand:* conv_id 의 root main conv_id 를 DB 에서 조회해 캐시에 저장.
+///
+/// `branches.conversation_id` 컬럼은 이미 root main conv_id 를 보유한다
+/// (`commands/branches.rs:120-141` 의 `root_conv_id` resolution).
+///
+/// `parent_branch_id` 체인은 nested branch (b1.1, b1.1.1 등) 의 경우에도
+/// 같은 row 의 `conversation_id` 가 root 를 가리키므로 1회 lookup 으로 충분.
+///
+/// 호출 지점: `bootstrap_resume_id_from_db`. non-branch conv 또는 이미
+/// 캐시된 경우 no-op.
+pub fn cache_branch_root_from_db(conv_id: &str, db: &crate::db::DbState) {
+    let Some(branch_id) = conv_id.strip_prefix("branch:") else {
+        return;
+    };
+    if BRANCH_ROOT_CACHE.lock().contains_key(conv_id) {
+        return;
+    }
+    let Ok(conn) = db.read.lock() else { return };
+    let root: Option<String> = conn
+        .query_row(
+            "SELECT conversation_id FROM branches WHERE id = ?1",
+            [branch_id],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+    if let Some(root_id) = root {
+        // branches.conversation_id 가 root 가 아닌 경우는 거의 없지만
+        // (create_branch 가 root 로 정규화함) 방어적으로 다시 strip 한다.
+        let normalized = if let Some(inner) = root_id.strip_prefix("branch:") {
+            // 이론상 도달하지 않는 경로 — fallback 으로 한 단계 더.
+            conn.query_row(
+                "SELECT conversation_id FROM branches WHERE id = ?1",
+                [inner],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap_or(root_id.clone())
+        } else {
+            root_id
+        };
+        BRANCH_ROOT_CACHE
+            .lock()
+            .insert(conv_id.to_string(), normalized.clone());
+        eprintln!(
+            "[sdk-session] branch root cached: {} → {}",
+            conv_id, normalized
+        );
+    }
 }
 
 /// DB 의 `conversations.resume_token` 을 `RESUME_IDS` 메모리 레지스트리로 로드한다.
@@ -148,8 +226,13 @@ lazy_static::lazy_static! {
 ///
 /// sessionContinuityFixPlan.md task-02 (INV-4).
 pub fn bootstrap_resume_id_from_db(conv_id: &str, db: &crate::db::DbState) -> Option<String> {
+    // brand:* 진입점 — root conv 로 normalize 하기 위해 캐시 채움.
+    // (claude session 통합: brand 는 main 의 sdk-url WS 세션을 공유한다.)
+    cache_branch_root_from_db(conv_id, db);
+    let key = session_key_for(conv_id);
+
     // 이미 메모리에 있으면 skip (DB 보다 메모리 값이 최신일 수 있음)
-    if let Some(existing) = RESUME_IDS.lock().get(conv_id).cloned() {
+    if let Some(existing) = RESUME_IDS.lock().get(&key).cloned() {
         return Some(existing);
     }
     let conn = db.read.lock().ok()?;
@@ -159,15 +242,15 @@ pub fn bootstrap_resume_id_from_db(conv_id: &str, db: &crate::db::DbState) -> Op
              WHERE id = ?1 \
                AND resume_token IS NOT NULL \
                AND resume_token_engine IN ('claude','claude-code')",
-            [conv_id],
+            [&key],
             |row| row.get(0),
         )
         .ok();
     if let Some(ref t) = token {
-        RESUME_IDS.lock().insert(conv_id.to_string(), t.clone());
+        RESUME_IDS.lock().insert(key.clone(), t.clone());
         eprintln!(
-            "[sdk-session] bootstrapped RESUME_IDS conv={} from DB resume_token",
-            conv_id
+            "[sdk-session] bootstrapped RESUME_IDS conv={} (key={}) from DB resume_token",
+            conv_id, key
         );
     }
     token
@@ -187,10 +270,13 @@ pub async fn get_or_create_session(
         _ => "claude-sonnet-4-6",
     };
 
+    // brand 가 main 세션을 공유하도록 키 normalize (Layer A).
+    let key = session_key_for(conv_id);
+
     // 기존 세션 확인 (sync lock, await 없음)
     let existing = {
         let sessions = SESSIONS.lock();
-        sessions.get(conv_id).map(|s| Arc::clone(s))
+        sessions.get(&key).map(|s| Arc::clone(s))
     };
 
     if let Some(session) = existing {
@@ -204,15 +290,17 @@ pub async fn get_or_create_session(
         // UI는 무한 streaming 대신 명확한 에러를 받게 된다.
         send_set_model(&session, effective_model)?;
         *session.model.lock() = effective_model.to_string();
-        eprintln!("[sdk-session] model changed via control_request: {} → {} for conv: {}",
-            current_model, effective_model, conv_id);
+        eprintln!("[sdk-session] model changed via control_request: {} → {} for conv: {} (key={})",
+            current_model, effective_model, conv_id, key);
         return Ok(session);
     }
 
     // 기존 세션 없음 — 새로 스폰. RESUME_IDS의 prior session_id로 --resume 가능.
-    let resume_id = RESUME_IDS.lock().get(conv_id).cloned();
-    let session = spawn_session(conv_id, project_path, effective_model, resume_id.as_deref()).await?;
-    SESSIONS.lock().insert(conv_id.to_string(), Arc::clone(&session));
+    let resume_id = RESUME_IDS.lock().get(&key).cloned();
+    // spawn_session 내부의 monitor task 가 SESSIONS 에서 entry 를 제거할 때 같은 key 를
+    // 써야 하므로 key (root main conv) 를 전달.
+    let session = spawn_session(&key, project_path, effective_model, resume_id.as_deref()).await?;
+    SESSIONS.lock().insert(key, Arc::clone(&session));
     Ok(session)
 }
 
@@ -250,19 +338,27 @@ pub fn kill_session_clear_resume(conv_id: &str) {
 }
 
 fn kill_session_with_resume(conv_id: &str, keep_resume: bool) {
-    SESSIONS.lock().remove(conv_id);
+    let key = session_key_for(conv_id);
+    SESSIONS.lock().remove(&key);
     if !keep_resume {
-        RESUME_IDS.lock().remove(conv_id);
+        RESUME_IDS.lock().remove(&key);
     }
-    // ContextPack freshness: 세션이 죽으면 LAST_DELIVERED도 무효화 — 다음 send는 full로 강제
+    // ContextPack freshness: 세션이 죽으면 LAST_DELIVERED도 무효화 — 다음 send는 full로 강제.
+    // brand 와 main 모두 무효화해야 일관성 유지.
     crate::commands::agents_helpers::send_common::session_freshness::clear_delivered_key(conv_id);
+    if key != conv_id {
+        crate::commands::agents_helpers::send_common::session_freshness::clear_delivered_key(&key);
+    }
     // SdkSession Drop → _shutdown_tx 전송 → axum 서버 종료 → _monitor_abort 취소
 }
 
 /// 해당 conversation에 활성 SDK 세션이 있는지 확인한다.
 /// UI send-guard용 (WS 연결 전 send 시도 차단).
+///
+/// brand:* conv 는 main session 을 공유하므로 main 의 활성 여부를 본다 (Layer A).
 pub fn has_active_session(conv_id: &str) -> bool {
-    SESSIONS.lock().contains_key(conv_id)
+    let key = session_key_for(conv_id);
+    SESSIONS.lock().contains_key(&key)
 }
 
 /// ContextPack freshness 판정용 — 현재 활성 세션의 식별 키.
@@ -277,15 +373,18 @@ pub fn has_active_session(conv_id: &str) -> bool {
 /// router UUID 로 떨어지되, 키 prefix 를 `claude-ws:router:` 로 분리해 누수 시
 /// 쉽게 식별. process_alive=false 이면 None — is_session_continuation=false 강제.
 pub fn current_session_key(conv_id: &str) -> Option<String> {
+    // brand:* 는 main session 공유 (Layer A).
+    let key = session_key_for(conv_id);
+
     // (a) Claude 자체 session identity 우선. WS respawn 후에도 유지.
-    if let Some(sid) = RESUME_IDS.lock().get(conv_id).cloned() {
+    if let Some(sid) = RESUME_IDS.lock().get(&key).cloned() {
         return Some(format!("claude-ws:{}", sid));
     }
     // (b) Fallback — 첫 send, RESUME_IDS 미채워짐. router UUID 를 prefix 로 분리.
     //     첫 send 는 어차피 LAST_DELIVERED 가 비어 있어 is_session_continuation=false
     //     로 자연스럽게 흐르므로 이 fallback 이 계속 쓰이는 일은 없다.
     let sessions = SESSIONS.lock();
-    let s = sessions.get(conv_id)?;
+    let s = sessions.get(&key)?;
     if !s.process_alive.load(std::sync::atomic::Ordering::Relaxed) {
         return None;
     }
@@ -302,12 +401,13 @@ pub async fn prewarm_session(
     project_path: Option<&str>,
     model: Option<&str>,
 ) {
-    // 이미 세션이 있으면 스킵
-    let exists = SESSIONS.lock().contains_key(conv_id);
+    // brand:* 는 main session 공유 — main 의 세션이 있으면 prewarm 스킵 (Layer A).
+    let key = session_key_for(conv_id);
+    let exists = SESSIONS.lock().contains_key(&key);
     if exists { return; }
 
     match get_or_create_session(conv_id, project_path, model).await {
-        Ok(_) => eprintln!("[sdk-session] prewarmed conv={}", conv_id),
+        Ok(_) => eprintln!("[sdk-session] prewarmed conv={} (key={})", conv_id, key),
         Err(e) => eprintln!("[sdk-session] prewarm failed conv={}: {}", conv_id, e),
     }
 }
@@ -630,6 +730,8 @@ where
     on_progress("Agent initializing...".into());
 
     let conv_id_owned = conv_id.to_string();
+    // brand:* conv 는 main 의 root key 로 RESUME_IDS / freshness 를 관리한다 (Layer A).
+    let session_key_owned = session_key_for(conv_id);
     let mut accumulated_input_tokens: i64 = 0;
     let mut accumulated_output_tokens: i64 = 0;
 
@@ -785,17 +887,24 @@ where
                 // 않으면 "claude 는 기억 없는데 tunaFlow 는 있다고 착각" 하는 다른
                 // 경로의 맥락 유실이 발생한다.
                 if let Some(sid) = &parsed.session_id {
-                    let prior = RESUME_IDS.lock().insert(conv_id_owned.clone(), sid.clone());
+                    // brand 와 main 은 같은 root key 로 RESUME_IDS 공유 (Layer A).
+                    let prior = RESUME_IDS.lock().insert(session_key_owned.clone(), sid.clone());
                     if let Some(p) = prior {
                         if p != *sid {
                             eprintln!(
                                 "[sdk-session] claude returned new session_id (prior={} new={}) — \
-                                 --resume likely rejected; invalidating LAST_DELIVERED for conv={}",
-                                p, sid, conv_id_owned
+                                 --resume likely rejected; invalidating LAST_DELIVERED for conv={} (key={})",
+                                p, sid, conv_id_owned, session_key_owned
                             );
                             crate::commands::agents_helpers::send_common::session_freshness::clear_delivered_key(
                                 &conv_id_owned,
                             );
+                            // root key 도 invalidate — main 에서 진행 중인 trace 가 있을 수 있음.
+                            if session_key_owned != conv_id_owned {
+                                crate::commands::agents_helpers::send_common::session_freshness::clear_delivered_key(
+                                    &session_key_owned,
+                                );
+                            }
                         }
                     }
                 }
@@ -1177,5 +1286,184 @@ mod tests {
         assert!(last_delivered_key(&conv).is_some());
 
         RESUME_IDS.lock().remove(&conv);
+    }
+
+    // ─── Layer A: brand session inheritance (branchInheritsMainSessionPlan) ─────
+
+    /// `conversations` + `branches` 테이블을 갖춘 in-memory DbState.
+    /// brand:* shadow 와 root main conv 양쪽 row 를 모두 채워준다.
+    fn build_test_db_with_branch(
+        root_conv_id: &str,
+        branch_id: &str,
+        resume_token: Option<&str>,
+        engine: Option<&str>,
+    ) -> crate::db::DbState {
+        use std::sync::{Arc, Mutex};
+        let read = rusqlite::Connection::open_in_memory().unwrap();
+        read.execute_batch(
+            "CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                resume_token TEXT,
+                resume_token_engine TEXT
+             );
+             CREATE TABLE branches (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL
+             );",
+        )
+        .unwrap();
+        // root main conv (resume_token 부모)
+        if let Some(tok) = resume_token {
+            read.execute(
+                "INSERT INTO conversations (id, resume_token, resume_token_engine) VALUES (?1, ?2, ?3)",
+                rusqlite::params![root_conv_id, tok, engine.unwrap_or("claude")],
+            )
+            .unwrap();
+        } else {
+            read.execute(
+                "INSERT INTO conversations (id, resume_token, resume_token_engine) VALUES (?1, NULL, NULL)",
+                rusqlite::params![root_conv_id],
+            )
+            .unwrap();
+        }
+        // branches row — root_conv_id 가 branches.conversation_id 에 들어 있어야
+        // session_key_for(brand:*) 가 root 로 정규화된다.
+        read.execute(
+            "INSERT INTO branches (id, conversation_id) VALUES (?1, ?2)",
+            rusqlite::params![branch_id, root_conv_id],
+        )
+        .unwrap();
+        let write = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::DbState {
+            read: Arc::new(Mutex::new(read)),
+            write: Arc::new(Mutex::new(write)),
+        }
+    }
+
+    fn clear_branch_cache(brand_conv: &str) {
+        BRANCH_ROOT_CACHE.lock().remove(brand_conv);
+    }
+
+    #[test]
+    fn session_key_for_returns_conv_id_unchanged_for_non_branch() {
+        let conv = unique_conv("non-branch");
+        assert_eq!(session_key_for(&conv), conv);
+    }
+
+    #[test]
+    fn session_key_for_returns_root_when_branch_root_cached() {
+        let root = unique_conv("root-A");
+        let branch_id = format!("b-{}", uuid::Uuid::new_v4());
+        let brand_conv = format!("branch:{}", branch_id);
+
+        // 캐시 직접 주입 (DB 없이 helper 단독 검증)
+        BRANCH_ROOT_CACHE.lock().insert(brand_conv.clone(), root.clone());
+
+        assert_eq!(session_key_for(&brand_conv), root);
+
+        clear_branch_cache(&brand_conv);
+    }
+
+    #[test]
+    fn session_key_for_falls_back_to_conv_id_when_cache_miss() {
+        // 잘못된 prefix / DB 미조회 상태 — fallback 으로 conv_id 그대로 반환
+        let brand_conv = format!("branch:{}", uuid::Uuid::new_v4());
+        clear_branch_cache(&brand_conv);
+        assert_eq!(session_key_for(&brand_conv), brand_conv);
+    }
+
+    #[test]
+    fn cache_branch_root_from_db_populates_cache_for_branch() {
+        let root = unique_conv("layerA-root");
+        let branch_id = format!("b-{}", uuid::Uuid::new_v4());
+        let brand_conv = format!("branch:{}", branch_id);
+        clear_branch_cache(&brand_conv);
+
+        let db = build_test_db_with_branch(&root, &branch_id, Some("tok"), Some("claude"));
+        cache_branch_root_from_db(&brand_conv, &db);
+
+        assert_eq!(
+            BRANCH_ROOT_CACHE.lock().get(&brand_conv).cloned(),
+            Some(root.clone())
+        );
+        assert_eq!(session_key_for(&brand_conv), root);
+
+        clear_branch_cache(&brand_conv);
+    }
+
+    #[test]
+    fn cache_branch_root_from_db_is_noop_for_non_branch_conv_id() {
+        // non-branch conv_id 는 캐시에 들어가지 않아야 함 (불필요한 항목 방지).
+        let conv = unique_conv("plain-conv");
+        let db = build_test_db_with_branch(
+            &conv,
+            "some-branch",
+            None,
+            None,
+        );
+        cache_branch_root_from_db(&conv, &db);
+        assert!(BRANCH_ROOT_CACHE.lock().get(&conv).is_none());
+    }
+
+    #[test]
+    fn cache_branch_root_from_db_is_noop_when_already_cached() {
+        let root = unique_conv("already-cached-root");
+        let branch_id = format!("b-{}", uuid::Uuid::new_v4());
+        let brand_conv = format!("branch:{}", branch_id);
+
+        // 캐시 선점
+        BRANCH_ROOT_CACHE
+            .lock()
+            .insert(brand_conv.clone(), "PRE-EXISTING".into());
+
+        // DB 에는 다른 root 가 있어도 캐시는 변하지 않아야 함
+        let db = build_test_db_with_branch(&root, &branch_id, None, None);
+        cache_branch_root_from_db(&brand_conv, &db);
+
+        assert_eq!(
+            BRANCH_ROOT_CACHE.lock().get(&brand_conv).cloned().as_deref(),
+            Some("PRE-EXISTING"),
+            "이미 캐시된 값은 덮어쓰지 않아야 함"
+        );
+
+        clear_branch_cache(&brand_conv);
+    }
+
+    #[test]
+    fn bootstrap_resume_id_for_branch_keys_root_conv() {
+        // INV-1: brand:* 진입 시 RESUME_IDS 는 root key 로 들어가야 한다.
+        let root = unique_conv("inv1-root");
+        let branch_id = format!("b-{}", uuid::Uuid::new_v4());
+        let brand_conv = format!("branch:{}", branch_id);
+
+        RESUME_IDS.lock().remove(&root);
+        RESUME_IDS.lock().remove(&brand_conv);
+        clear_branch_cache(&brand_conv);
+
+        let db = build_test_db_with_branch(&root, &branch_id, Some("ROOT-TOK"), Some("claude"));
+        // brand:* conv 로 진입했지만 DB 에는 root 의 resume_token 만 있다.
+        let got = bootstrap_resume_id_from_db(&brand_conv, &db);
+        assert_eq!(got.as_deref(), Some("ROOT-TOK"));
+
+        // RESUME_IDS 에는 root key 로 저장되어야 함 (brand 키 아님)
+        assert_eq!(
+            RESUME_IDS.lock().get(&root).cloned().as_deref(),
+            Some("ROOT-TOK"),
+            "RESUME_IDS 는 root main conv 키로 저장되어야 함"
+        );
+        assert!(
+            RESUME_IDS.lock().get(&brand_conv).is_none(),
+            "brand:* 키로는 RESUME_IDS 에 entry 가 들어가면 안 됨"
+        );
+
+        // current_session_key 도 brand → root 로 normalize 되어 같은 값 반환
+        let key_from_brand = current_session_key(&brand_conv);
+        let key_from_root = current_session_key(&root);
+        assert_eq!(key_from_brand, key_from_root);
+        assert_eq!(key_from_brand.as_deref(), Some("claude-ws:ROOT-TOK"));
+
+        // cleanup
+        RESUME_IDS.lock().remove(&root);
+        clear_branch_cache(&brand_conv);
     }
 }
