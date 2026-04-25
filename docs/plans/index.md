@@ -57,6 +57,7 @@
 | [tunaflowOutboxArtifactCleanupPlan_2026-04-25](./tunaflowOutboxArtifactCleanupPlan_2026-04-25.md) | **P3 (housekeeping)** — outbox 방식 폐기 (commit 9295062) 후 4 .md 잔재 + .gitignore 누락. git rm + .gitignore 추가. Developer 핸드오프 포함 |
 | [multiDeveloperActivePlanIsolationPlan_2026-04-25](./multiDeveloperActivePlanIsolationPlan_2026-04-25.md) | **P1** — multi-Developer 동시 작업 시 active plan 1자리 충돌 (Codex 가 다른 Developer 의 plan 진행 시도). 자동 sub-conv 격리 (A) + ContextPack sender 명시 (B) 조합. Developer 핸드오프 포함 |
 | [branchCancelSemanticsPlan_2026-04-25](./branchCancelSemanticsPlan_2026-04-25.md) | **P1 (PR #198 follow-up)** — Task A same-session 모델에서 cancel 작동 안 함. stream abort token 도입 + UI cancel 의미 stream-only 로 재정의. Developer 핸드오프 포함 |
+| [selfTrustCiTriggerOptimizationPlan_2026-04-25](./selfTrustCiTriggerOptimizationPlan_2026-04-25.md) | **P1 (applied)** — main 직접 push 시 CI skip. 외부 PR + release tag (build.yml) 만 검증. 인지 부담 fragmenting 해소. Revert 절차 명시 |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
 | [roleAssignmentCoverageUxPlan](./roleAssignmentCoverageUxPlan.md) | P2 — Settings 역할 커버리지 UX (inferred 저장 명시화 + stale ID 자동 정리 + assertRoleReady 원클릭 적용) |
