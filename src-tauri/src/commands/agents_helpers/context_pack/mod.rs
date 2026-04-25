@@ -33,6 +33,7 @@ pub use db_queries::{
     build_lite_context_prompt,
     build_thread_inheritance_section,
     build_rt_inheritance_section,
+    lookup_plan_for_conversation,
     LITE_CONTEXT_MESSAGES_LIMIT,
 };
 

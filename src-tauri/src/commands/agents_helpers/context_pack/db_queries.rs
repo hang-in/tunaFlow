@@ -20,22 +20,68 @@ const RT_PARENT_RECENT: i64 = 2;
 
 // ─── Plan ────────────────────────────────────────────────────────────────────
 
+/// multiDeveloperActivePlanIsolationPlan §Layer A′: brand 진입 시 해당
+/// brand_id 와 매칭되는 plan 을 우선 lookup.
+///
+/// 본 함수는 `build_plan_section` 과 `load_context_data` 가 공유하는 단일
+/// 진입점이다. brand conv 라면:
+///   1) `branches.id` 를 추출
+///   2) `plans.implementation_branch_id` 또는 `plans.review_branch_id` 가 그
+///      brand_id 와 매칭되는 plan 을 가장 최근 갱신 순으로 1건
+/// non-brand 또는 매칭 0건이면 fallback 으로 main conv 의 active plan.
+///
+/// 같은 conv 안에서 multi-Developer 가 동시 작업할 때 한쪽 Developer 의
+/// active plan 이 다른 Developer 의 ContextPack 으로 누출되는 문제를 차단한다.
+/// 매칭이 0건이면 (옛 plan 또는 임시 brand) 기존 동작 (main 의 active) 으로
+/// graceful fallback 하므로 회귀 0.
+pub fn lookup_plan_for_conversation(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+) -> Option<(String, String, Option<String>, String, Option<String>)> {
+    if let Some(branch_id) = conversation_id.strip_prefix("branch:") {
+        // Layer A′: brand 매핑 plan 우선
+        if let Ok(row) = conn.query_row(
+            "SELECT id, title, description, phase, slug FROM plans
+             WHERE (implementation_branch_id = ?1 OR review_branch_id = ?1)
+               AND status NOT IN ('done','abandoned')
+             ORDER BY updated_at DESC LIMIT 1",
+            [branch_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            )),
+        ) {
+            return Some(row);
+        }
+    }
+
+    // Fallback: main conv 의 active plan (비-brand 또는 매칭 0건)
+    let plan_conv_id = resolve_plan_conversation_id(conn, conversation_id);
+    conn.query_row(
+        "SELECT id, title, description, phase, slug FROM plans
+         WHERE conversation_id = ?1 AND status = 'active'
+         ORDER BY updated_at DESC LIMIT 1",
+        [&plan_conv_id],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+        )),
+    ).ok()
+}
+
 /// Build `## Active Plan` section from DB for the given conversation.
 pub fn build_plan_section(
     conn: &rusqlite::Connection,
     conversation_id: &str,
 ) -> Option<String> {
-    let plan: (String, String, Option<String>, String, Option<String>) = conn
-        .query_row(
-            "SELECT id, title, description, phase, slug FROM plans
-             WHERE conversation_id = ?1 AND status = 'active'
-             ORDER BY updated_at DESC LIMIT 1",
-            [conversation_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-        )
-        .ok()?;
-
-    let (plan_id, title, description, phase, slug) = plan;
+    let (plan_id, title, description, phase, slug) =
+        lookup_plan_for_conversation(conn, conversation_id)?;
 
     let mut stmt = conn
         .prepare(
@@ -349,4 +395,120 @@ pub fn build_rt_inheritance_section(
         return None;
     }
     Some(format!("## Roundtable Context\n\n{}", parts.join("\n\n")))
+}
+
+// ─── Layer A′ tests: brand-aware plan lookup ─────────────────────────────────
+
+#[cfg(test)]
+mod plan_isolation_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn build_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                phase TEXT NOT NULL DEFAULT 'design',
+                slug TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                implementation_branch_id TEXT,
+                review_branch_id TEXT,
+                updated_at INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE TABLE branches (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_plan(
+        conn: &Connection,
+        id: &str,
+        conv: &str,
+        title: &str,
+        phase: &str,
+        slug: Option<&str>,
+        status: &str,
+        impl_branch: Option<&str>,
+        review_branch: Option<&str>,
+        ts: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO plans (id, conversation_id, title, description, phase, slug, status, implementation_branch_id, review_branch_id, updated_at)
+             VALUES (?1, ?2, ?3, NULL, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![id, conv, title, phase, slug, status, impl_branch, review_branch, ts],
+        )
+        .unwrap();
+    }
+
+    /// Layer A′ INV-2: brand 진입 시 brand_id 매핑 plan 만 노출. main conv 의
+    /// 다른 active plan 이 누출되지 않는다.
+    #[test]
+    fn brand_lookup_isolates_developer_plan() {
+        let conn = build_db();
+        // main conv 에 두 plan 이 있고, 각각 자기 impl_branch 를 갖는다.
+        // 사용자 보고 케이스: Coder Claude → readme-memento, Codex → role-adapter.
+        // 두 plan 다 status='active' 이지만 main conv 는 plan-A (가장 최근).
+        insert_plan(&conn, "p-readme", "conv-main", "readme-memento", "implementation", Some("readme-memento"), "active", Some("br-readme"), None, 100);
+        insert_plan(&conn, "p-role",   "conv-main", "Role Adapter Phase 1", "implementation", Some("role-adapter"), "active", Some("br-role"), None, 200);
+
+        // brand 진입 시각각의 plan 만 보여야 한다.
+        let r = lookup_plan_for_conversation(&conn, "branch:br-readme").unwrap();
+        assert_eq!(r.1, "readme-memento", "Coder Claude 의 brand 는 readme-memento plan 만 본다");
+
+        let r = lookup_plan_for_conversation(&conn, "branch:br-role").unwrap();
+        assert_eq!(r.1, "Role Adapter Phase 1", "Codex 의 brand 는 role-adapter plan 만 본다");
+    }
+
+    /// Fallback: brand_id 매핑 plan 이 없으면 main conv 의 active plan 으로 graceful fallback.
+    #[test]
+    fn unmapped_brand_falls_back_to_main_active() {
+        let conn = build_db();
+        insert_plan(&conn, "p1", "conv-main", "main-plan", "design", Some("main-plan"), "active", None, None, 100);
+        // branches 테이블에 br-temp 를 main conv 로 매핑 (옛 brand 또는 임시 brand)
+        conn.execute("INSERT INTO branches (id, conversation_id) VALUES (?1, ?2)",
+                    rusqlite::params!["br-temp", "conv-main"]).unwrap();
+
+        let r = lookup_plan_for_conversation(&conn, "branch:br-temp").unwrap();
+        assert_eq!(r.1, "main-plan", "매핑 plan 없을 때 main conv 의 active plan 으로 fallback");
+    }
+
+    /// Reviewer 가 review_branch_id 매핑으로 들어가면 그 plan 만 본다.
+    #[test]
+    fn review_brand_isolates_reviewer_plan() {
+        let conn = build_db();
+        insert_plan(&conn, "p1", "conv-main", "feature-a", "review", Some("feature-a"), "active", Some("br-impl"), Some("br-rev"), 100);
+        insert_plan(&conn, "p2", "conv-main", "feature-b", "implementation", Some("feature-b"), "active", Some("br-other-impl"), None, 200);
+
+        let r = lookup_plan_for_conversation(&conn, "branch:br-rev").unwrap();
+        assert_eq!(r.1, "feature-a", "review brand 는 매핑된 plan 만 본다");
+    }
+
+    /// done/abandoned plan 은 brand 매핑 lookup 에서 제외된다 (휴면 plan 누출 방지).
+    #[test]
+    fn done_plans_excluded_from_brand_lookup() {
+        let conn = build_db();
+        insert_plan(&conn, "p1", "conv-main", "old-feature", "implementation", None, "done", Some("br-old"), None, 100);
+
+        // brand 매핑 lookup 결과 None → fallback 으로 main 도 active 없으므로 None
+        let r = lookup_plan_for_conversation(&conn, "branch:br-old");
+        assert!(r.is_none(), "done plan 은 brand 매핑 lookup 에서 제외");
+    }
+
+    /// 비-brand conv (main conv 또는 일반 chat) 는 기존 동작 — 자기 conv 의 active plan.
+    #[test]
+    fn non_brand_uses_existing_active_lookup() {
+        let conn = build_db();
+        insert_plan(&conn, "p1", "conv-main", "main-plan", "design", None, "active", None, None, 100);
+
+        let r = lookup_plan_for_conversation(&conn, "conv-main").unwrap();
+        assert_eq!(r.1, "main-plan");
+    }
 }
