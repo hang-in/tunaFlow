@@ -1,6 +1,6 @@
 ---
 title: User intent SSOT surfacing — architect 진입 시 사용자 의도 자동 lookup (메타 레벨)
-status: ready-to-implement (Task A 머지 후 진행)
+status: implemented (Layer 1~4 — 2026-04-25)
 priority: P2 (메타 — 같은 mismatch 영구 차단)
 created_at: 2026-04-25
 related:
