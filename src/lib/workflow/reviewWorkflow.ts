@@ -321,6 +321,12 @@ export async function startReviewRT(
     // We intentionally do NOT create a user_message here — sendThreadRoundtable
     // persists the prompt as the user message itself, and pre-seeding it would
     // cause a duplicate prompt in the branch.
+    console.debug("[startReviewRT.stage]", {
+      stage: "complete",
+      planId: plan.id,
+      branchId: branch.id,
+      reused,
+    });
     return { branch, shadowConvId, participants, prompt, mode };
   } catch (err) {
     // Layer A: 어느 stage 에서든 throw → phase rollback + review_entry_failed 기록.
