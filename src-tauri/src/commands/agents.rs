@@ -95,6 +95,12 @@ pub fn get_claude_mode(conversation_id: String) -> String {
     resolve_claude_mode(&conversation_id).to_string()
 }
 
+/// Hard-restart the SDK session — process kill + RESUME_IDS clear.
+///
+/// 이 명령은 **session kill** 의미다. UI cancel 버튼과는 분리된 경로이며,
+/// 명시적 시나리오 (engine/model 변경, 외부 process 망실 복구 등) 에서만
+/// 호출해야 한다. 일반 cancel 은 `cancel_running` (stream abort only) 사용
+/// — `docs/plans/branchCancelSemanticsPlan_2026-04-25.md` 참조.
 #[tauri::command]
 pub fn restart_sdk_session(conversation_id: String) {
     if resolve_claude_mode(&conversation_id) == "sdk-url" {
