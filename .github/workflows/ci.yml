@@ -1,8 +1,11 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # Self-trust 모델: 본인/Developer subagent 의 main 직접 push 는 CI skip.
+  # 661 workflow runs (혼자 개발 누적) — CI wait 가 사용자 working memory fragmenting
+  # → plan 누적/sibling 발견의 진짜 root cause. 외부 contributor PR + release tag
+  # (build.yml: tags v*.*.*) 만 검증. 자세한 의도 + revert 절차:
+  # docs/plans/selfTrustCiTriggerOptimizationPlan_2026-04-25.md
   pull_request:
     branches: [main]
     # Docs-only / markdown-only changes (agent role docs, plans, READMEs) do
