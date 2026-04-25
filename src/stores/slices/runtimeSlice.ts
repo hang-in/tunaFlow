@@ -319,6 +319,10 @@ export const createRuntimeSlice = (set: SetState, get: GetState): RuntimeSlice =
   },
 
   cancelOperation: async (threadId?: string) => {
+    // Stream abort only (옵션 X, branchCancelSemanticsPlan_2026-04-25):
+    // 진행 중 stream 만 끊고 session/SESSIONS/RESUME_IDS/process 는 유지.
+    // brand 모드에선 caller 가 brand:<id> shadow conv_id 를 명시적으로
+    // 넘겨야 한다 (CancelRegistry 는 conv_id 단위로 brand/main 격리).
     const target = threadId ?? get().selectedConversationId;
 
     if (target) {

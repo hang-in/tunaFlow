@@ -578,7 +578,11 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
           <span className="flex-1" />
           {isCurrentThreadRunning && (
             <button
-              onClick={() => cancelOperation(selectedConversationId ?? undefined)}
+              // brand 모드면 effectiveThreadId = threadBranchConvId (branch:<id>),
+              // main 모드면 selectedConversationId. CancelRegistry 는 conv_id
+              // 단위로 brand/main 을 분리 격리하므로 정확한 conv_id 를 넘겨야
+              // brand cancel 이 동작 (`branchCancelSemanticsPlan_2026-04-25.md`).
+              onClick={() => cancelOperation(effectiveThreadId ?? undefined)}
               className="px-2 py-1 rounded text-[11px] font-medium text-destructive/60 hover:text-destructive hover:bg-destructive/8 transition-colors"
             >
               Cancel

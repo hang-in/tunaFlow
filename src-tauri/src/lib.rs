@@ -47,6 +47,59 @@ impl CancelRegistry {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_registry() -> CancelRegistry {
+        CancelRegistry(std::sync::Arc::new(parking_lot::Mutex::new(
+            std::collections::HashSet::new(),
+        )))
+    }
+
+    #[test]
+    fn cancel_inserts_flag_and_check_and_consume_removes_it() {
+        let r = make_registry();
+        r.cancel("conv-1");
+        assert!(r.check_and_consume("conv-1"), "first check returns true");
+        assert!(
+            !r.check_and_consume("conv-1"),
+            "second check returns false (consumed)"
+        );
+    }
+
+    #[test]
+    fn brand_and_main_keys_are_isolated() {
+        // INV-2: brand cancel 이 main 의 stream abort 를 trigger 하면 안 됨.
+        // CancelRegistry 는 PR #198 의 SESSIONS/RESUME_IDS normalize 와 의도가
+        // 다르다 — brand/main 키가 별로 들어가야 하고, brand cancel 이 main
+        // 의 flag 에 영향을 주면 안 된다.
+        let r = make_registry();
+        r.cancel("branch:b20");
+        assert!(
+            !r.check_and_consume("conv-main"),
+            "brand cancel must not bleed into main"
+        );
+        assert!(
+            r.check_and_consume("branch:b20"),
+            "brand cancel must be visible on its own key"
+        );
+    }
+
+    #[test]
+    fn clear_is_idempotent_and_independent() {
+        let r = make_registry();
+        r.cancel("conv-1");
+        r.clear("conv-1");
+        assert!(
+            !r.check_and_consume("conv-1"),
+            "clear removes the flag without consuming"
+        );
+        // clear 가 등록 안 된 키에 호출돼도 panic 안 남
+        r.clear("never-set");
+    }
+}
+
 pub fn run() {
     bootstrap::env::inherit_shell_path();
     bootstrap::crash::install_panic_hook();

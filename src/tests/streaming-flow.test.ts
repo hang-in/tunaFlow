@@ -582,6 +582,28 @@ describe("Streaming flow — cancelOperation", () => {
     expect(get().runningThreadIds).not.toContain("conv-1");
     expect(get().messageQueue.filter((q) => q.threadId === "conv-1").length).toBe(0);
   });
+
+  it("forwards explicit threadId to cancel_running (brand:<id> isolation)", async () => {
+    const { get } = createMockStore();
+    get()._startRun("branch:b20");
+    get()._startRun("conv-1");
+
+    vi.mocked(invoke).mockResolvedValue([]);
+    await get().cancelOperation("branch:b20");
+    await vi.advanceTimersByTimeAsync(100);
+
+    // brand cancel must use branch:<id>, not the parent conv_id.
+    // INV-2: brand cancel 이 main session 에 영향 없도록 격리.
+    const calls = vi.mocked(invoke).mock.calls.filter(
+      ([cmd]) => cmd === "cancel_running",
+    );
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[0]?.[1]).toMatchObject({ conversationId: "branch:b20" });
+
+    expect(get().runningThreadIds).not.toContain("branch:b20");
+    // main thread (conv-1) 는 그대로 살아있어야 함 — INV-2.
+    expect(get().runningThreadIds).toContain("conv-1");
+  });
 });
 
 // ─── _startRun / _endRun ────────────────────────────────────────────────────
