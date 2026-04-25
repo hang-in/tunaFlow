@@ -49,6 +49,9 @@ _util/
 _research/
 _stash_recovery/
 
+# .tunaflow/ — 폐기된 outbox 잔재 + 향후 동적 산출물 차단
+.tunaflow/outbox/
+
 # Eval run artifacts (results emitted at runtime; suite README preserved)
 evals/results/
 
