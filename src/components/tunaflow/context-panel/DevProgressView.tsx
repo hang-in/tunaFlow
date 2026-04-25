@@ -4,11 +4,11 @@ import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
-import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileText } from "lucide-react";
+import { GitBranch, Check, Loader2, Clock, RotateCcw, Plus, ClipboardList, FileText, AlertTriangle } from "lucide-react";
 import type { Plan, PlanPhase, PlanSubtask } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import {
-  getPlanSlug, syncResultReport, startReviewRT, ManualVerificationFailed,
+  getPlanSlug, syncResultReport, startReviewRT, ManualVerificationFailed, ReviewRTEntryFailed,
 } from "@/lib/workflowOrchestration";
 import type {
   ManualVerificationItem,
@@ -35,7 +35,7 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
   const {
     subtasks, completedNums, implComplete, loading,
     testResult, testRunning, reviewVerdict, designReviewSuggested,
-    failCount, doomLoopEscalated,
+    failCount, doomLoopEscalated, reviewEntryFailure,
   } = useSubtaskProgress(plan);
 
   const [busy, setBusy] = useState(false);
@@ -231,6 +231,13 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
         // Rework 경로로 전환됨 — startReviewRT 안에서 phase/artifact 이미 처리.
         // UI 측은 plan 상태 갱신만 하면 rework notice 섹션이 자동 노출.
         onPlanUpdate(plan.id, { phase: "rework" as PlanPhase });
+      } else if (e instanceof ReviewRTEntryFailed) {
+        // Layer A 가 phase=implementation 으로 rollback 했음. UI 동기화하고
+        // useSubtaskProgress 가 review_entry_failed event 를 polling 해서
+        // retry 영역을 자동 노출. 사용자에게는 사유를 toast 로도 알린다 (INV-3).
+        onPlanUpdate(plan.id, { phase: "implementation" as PlanPhase });
+        toast.error(t("progress.review_entry_failed.toast", { stage: e.stage }));
+        console.warn("[startReviewRT entry failure]", e.stage, e.cause);
       } else if (e instanceof Error && e.message.includes("cancelled by user")) {
         toast.info("수동 확인이 취소되었습니다");
       } else {
@@ -238,6 +245,17 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
       }
     }
     setBusy(false);
+  };
+
+  // Layer B: review_entry_failed 이후 사용자가 누르는 재시도 버튼 핸들러.
+  // 마지막 사용 트랙(Quick/Deep) 으로 다시 진입. startReviewRT 자체가
+  // getOrCreateReviewBranch 의 reused 분기로 idempotent.
+  const handleRetryReviewEntry = async () => {
+    if (reviewTrack === "deep") {
+      await handleStartReviewRT();
+    } else {
+      await handleStartReview();
+    }
   };
 
   const handleCreateSubPlan = async (subtask: PlanSubtask, index: number) => {
@@ -541,6 +559,37 @@ export function DevProgressView({ plan, onPlanUpdate }: DevProgressViewProps) {
               <pre className="text-[8px] mt-1 max-h-32 overflow-auto bg-card/50 rounded p-1.5 whitespace-pre-wrap">{testResult.output.slice(0, 2000)}</pre>
             </details>
           )}
+        </div>
+      )}
+
+      {/* Layer B (Plan reviewRTEntryFailureRollbackPlan_2026-04-25):
+         startReviewRT 진입 실패 → phase rollback 직후 retry UI. phase=implementation
+         일 때만, 그리고 가장 최근 review_entry_failed 이후 다른 review 진행 이벤트가
+         없을 때만 노출. INV-3 (사용자에 실패 표면화) 충족. */}
+      {plan.phase === "implementation" && reviewEntryFailure && (
+        <div className="rounded-md border border-status-rejected/30 bg-status-rejected/5 p-2.5 text-[10px] space-y-1.5">
+          <div className="flex items-center gap-1.5 font-medium text-status-rejected">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            <span>{t("progress.review_entry_failed.title")}</span>
+          </div>
+          <p className="text-[9px] text-foreground/60">
+            {t("progress.review_entry_failed.body", {
+              stage: reviewEntryFailure.stage,
+              reason: reviewEntryFailure.reason.slice(0, 240),
+            })}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRetryReviewEntry}
+              disabled={busy}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-40 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              {busy
+                ? t("progress.review_entry_failed.retry_busy")
+                : t("progress.review_entry_failed.retry_button")}
+            </button>
+          </div>
         </div>
       )}
 

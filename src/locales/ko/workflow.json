@@ -197,6 +197,13 @@
       "findings_header": "이전 Review Findings (Re-review #{{round}})",
       "reverify_note": "위 사항이 수정되었는지 중심으로 재검증됩니다."
     },
+    "review_entry_failed": {
+      "title": "Review 진입 실패 — 다시 시도",
+      "body": "Review RT 진입 도중 \"{{stage}}\" 단계에서 실패했습니다. plan phase 는 implementation 으로 복구되었습니다.\n\n사유: {{reason}}",
+      "retry_button": "Review 재시도",
+      "retry_busy": "재시도 중...",
+      "toast": "Review 진입 실패 ({{stage}}). plan phase 가 implementation 으로 복구되었습니다."
+    },
     "summary": {
       "completed_count": "{{done}}/{{total}} 완료",
       "scope_label": "리뷰 대상:",
