@@ -472,19 +472,42 @@ pub async fn adopt_branch(
         if parts.is_empty() { "(no summary available)".to_string() } else { parts.join("\n\n") }
     };
 
-    let updated = conn.execute("UPDATE branches SET status = 'adopted' WHERE id = ?1", [&branch_id]).unwrap_or(0);
-    if updated == 0 {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "branch not found"}))).into_response();
-    }
-
+    // Status flip + summary insert must be atomic — see
+    // docs/reference/branchAdoptFailureAudit_2026-04-25.md (INV-1/INV-2).
+    // Without the wrapping transaction a constraint violation on the
+    // summary INSERT would leave the branch marked 'adopted' with no
+    // summary message in the parent.
     let msg_id = uuid::Uuid::new_v4().to_string();
     let now = crate::db::migrations::now_epoch_ms();
     let capped = if summary.len() > 2000 { format!("{}...", &summary[..2000]) } else { summary };
     let adopt_content = format!("[Branch adopted]\n\n{}", capped);
-    conn.execute(
+
+    let tx = match conn.unchecked_transaction() {
+        Ok(t) => t,
+        Err(e) => return db_error(e),
+    };
+    let updated = match tx.execute(
+        "UPDATE branches SET status = 'adopted' WHERE id = ?1",
+        [&branch_id],
+    ) {
+        Ok(n) => n,
+        Err(e) => return db_error(e),
+    };
+    if updated == 0 {
+        // Drop tx to roll back (no-op since nothing else queued, but explicit).
+        drop(tx);
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "branch not found"}))).into_response();
+    }
+    if let Err(e) = tx.execute(
         "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) VALUES (?1, ?2, 'system', ?3, ?4, 'done')",
         rusqlite::params![msg_id, input.conversation_id, adopt_content, now],
-    ).ok();
+    ) {
+        // Rolls back the status flip on FK violation / parent conv missing.
+        return db_error(e);
+    }
+    if let Err(e) = tx.commit() {
+        return db_error(e);
+    }
     drop(conn);
 
     super::broadcast_event(&state.event_tx, &state.db, serde_json::json!({

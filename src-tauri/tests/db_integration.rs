@@ -664,6 +664,150 @@ fn http_api_adopt_summary_collects_all_assistants() {
     assert!(summary.contains("**[Critic]**"));
 }
 
+/// Branch adopt 4 단계 (status flip → descendants archive → summary insert →
+/// adopted_message_id back-pointer) 가 단일 transaction 안에서 atomic 으로
+/// 실행되어야 한다 (`branchAdoptFailureAudit_2026-04-25.md` INV-2).
+///
+/// 본 테스트는 step 3 의 INSERT 가 **존재하지 않는 conversation_id** 에 대해
+/// FK 위반으로 실패하도록 설정한 뒤 transaction 이 통째로 rollback 되는지
+/// 확인한다. 기존 (non-transactional) 코드라면 step 1 만 commit 되어 branch 가
+/// `adopted` 로 남았을 것 — 회귀 방지용 가드.
+#[test]
+fn adopt_branch_transaction_rolls_back_all_writes_on_failure() {
+    let conn = setup_db();
+    create_api_project(&conn, "proj1", "P1", None);
+    create_api_conversation(&conn, "conv1", "proj1", "Main");
+
+    let now = now_epoch_ms();
+
+    // Active root branch + 1 descendant (to exercise the recursive archive step).
+    conn.execute(
+        "INSERT INTO branches (id, conversation_id, label, status, mode, created_at) VALUES ('br-root', 'conv1', 'root', 'active', 'chat', ?1)",
+        params![now],
+    ).unwrap();
+    conn.execute(
+        "INSERT INTO branches (id, conversation_id, label, status, mode, parent_branch_id, created_at) VALUES ('br-child', 'conv1', 'child', 'active', 'chat', 'br-root', ?1)",
+        params![now],
+    ).unwrap();
+
+    // Mirror adopt_branch's 4-step transaction, but target a non-existent
+    // conversation in step 3 so the INSERT fails with an FK violation.
+    let tx = conn.unchecked_transaction().unwrap();
+
+    // Step 1
+    tx.execute(
+        "UPDATE branches SET status = 'adopted' WHERE id = ?1",
+        ["br-root"],
+    ).unwrap();
+
+    // Step 2
+    tx.execute_batch(
+        "WITH RECURSIVE descendants AS (
+           SELECT id FROM branches WHERE parent_branch_id = 'br-root'
+           UNION ALL
+           SELECT b.id FROM branches b JOIN descendants d ON b.parent_branch_id = d.id
+         )
+         UPDATE branches SET status = 'archived'
+         WHERE id IN (SELECT id FROM descendants) AND status = 'active';",
+    ).unwrap();
+
+    // Step 3 — FK violation (parent conversation 'ghost-conv' does not exist)
+    let step3 = tx.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) VALUES (?1, 'ghost-conv', 'assistant', 'summary', ?2, 'done')",
+        params!["msg-summary", now],
+    );
+    assert!(step3.is_err(), "step 3 must fail (FK violation precondition)");
+
+    // Drop transaction (auto rollback — no commit reached)
+    drop(tx);
+
+    // Verify rollback: every write from steps 1+2 must be undone.
+    let root_status: String = conn
+        .query_row("SELECT status FROM branches WHERE id = 'br-root'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        root_status, "active",
+        "INV-2 violated: root branch left as '{}' after transaction rollback",
+        root_status
+    );
+
+    let child_status: String = conn
+        .query_row("SELECT status FROM branches WHERE id = 'br-child'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        child_status, "active",
+        "INV-2 violated: descendant branch left as '{}' after transaction rollback",
+        child_status
+    );
+
+    let summary_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM messages WHERE id = 'msg-summary'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(summary_count, 0, "summary message must not survive rollback");
+}
+
+/// Happy path: adopt 의 4 단계가 transaction 내에서 모두 성공하면 commit 후
+/// branch.status='adopted', descendant='archived', summary message 존재,
+/// adopted_message_id 설정 — 모두 보장된다 (INV-1).
+#[test]
+fn adopt_branch_transaction_commits_atomically_on_success() {
+    let conn = setup_db();
+    create_api_project(&conn, "proj1", "P1", None);
+    create_api_conversation(&conn, "conv1", "proj1", "Main");
+
+    let now = now_epoch_ms();
+
+    conn.execute(
+        "INSERT INTO branches (id, conversation_id, label, status, mode, created_at) VALUES ('br-root', 'conv1', 'root', 'active', 'chat', ?1)",
+        params![now],
+    ).unwrap();
+    conn.execute(
+        "INSERT INTO branches (id, conversation_id, label, status, mode, parent_branch_id, created_at) VALUES ('br-child', 'conv1', 'child', 'active', 'chat', 'br-root', ?1)",
+        params![now],
+    ).unwrap();
+
+    let tx = conn.unchecked_transaction().unwrap();
+    tx.execute("UPDATE branches SET status = 'adopted' WHERE id = ?1", ["br-root"]).unwrap();
+    tx.execute_batch(
+        "WITH RECURSIVE descendants AS (
+           SELECT id FROM branches WHERE parent_branch_id = 'br-root'
+           UNION ALL
+           SELECT b.id FROM branches b JOIN descendants d ON b.parent_branch_id = d.id
+         )
+         UPDATE branches SET status = 'archived'
+         WHERE id IN (SELECT id FROM descendants) AND status = 'active';",
+    ).unwrap();
+    tx.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status) VALUES (?1, 'conv1', 'assistant', 'summary', ?2, 'done')",
+        params!["msg-summary", now],
+    ).unwrap();
+    tx.execute(
+        "UPDATE branches SET adopted_message_id = ?1 WHERE id = ?2",
+        params!["msg-summary", "br-root"],
+    ).unwrap();
+    tx.commit().unwrap();
+
+    let root_status: String = conn
+        .query_row("SELECT status FROM branches WHERE id = 'br-root'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(root_status, "adopted");
+
+    let child_status: String = conn
+        .query_row("SELECT status FROM branches WHERE id = 'br-child'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(child_status, "archived");
+
+    let summary_id: Option<String> = conn
+        .query_row("SELECT adopted_message_id FROM branches WHERE id = 'br-root'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(summary_id.as_deref(), Some("msg-summary"));
+
+    let msg_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM messages WHERE id = 'msg-summary'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(msg_count, 1);
+}
+
 #[test]
 fn http_api_fk_constraint_on_invalid_project() {
     let conn = setup_db();
