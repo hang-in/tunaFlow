@@ -51,6 +51,39 @@ export class ManualVerificationFailed extends Error {
   }
 }
 
+/**
+ * Review RT entry failure (Plan reviewRTEntryFailureRollbackPlan_2026-04-25).
+ *
+ * startReviewRT 의 phase 전환 이후 어느 stage 에서든 throw 되면 그 직후
+ * Layer A 가 phase 를 implementation 으로 rollback 하고 review_entry_failed
+ * plan_event 를 기록한 뒤 본 에러로 wrap 해서 다시 throw 한다.
+ *
+ * 호출자(DevProgressView)는 instanceof 로 구분해 toast 대신 재시도 UI(Layer B)를
+ * 노출. ManualVerificationFailed / cancel 경로와는 분리된다.
+ */
+export class ReviewRTEntryFailed extends Error {
+  constructor(
+    public readonly stage: string,
+    public readonly cause: unknown,
+  ) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(`startReviewRT failed at stage "${stage}": ${reason}`);
+    this.name = "ReviewRTEntryFailed";
+  }
+}
+
+/**
+ * Layer A 의 stage 식별자. plan_event detail 과 console.debug 에 동일 값 사용.
+ * 매트릭스: docs/reference/reviewRTEntryFailureAudit_2026-04-25.md.
+ */
+export type StartReviewRTStage =
+  | "update_phase_review"
+  | "event_impl_completed"
+  | "test_artifact"
+  | "get_or_create_review_branch"
+  | "build_plan_context"
+  | "save_rt_config";
+
 // ─── Phase D→E: impl-complete → Start Review RT ───────────────────────────
 
 export interface StartReviewRTResult extends CreateBranchResult {
@@ -136,139 +169,182 @@ export async function startReviewRT(
     }
   }
 
-  await planApi.updatePlanPhase(plan.id, "review");
-  await planApi.createPlanEvent(plan.id, "impl_completed", "developer");
+  // ─── Layer A: stage 추적 + 실패 시 phase rollback (Plan ...RollbackPlan_2026-04-25) ───
+  // 각 critical await 직전에 currentStage 를 갱신하고, 외곽 try/catch 가 실패한
+  // stage 를 잡아 phase=implementation 로 rollback + review_entry_failed plan_event 기록.
+  // INV-1/INV-2/INV-3 (audit doc 참고) 준수.
+  let currentStage: StartReviewRTStage = "update_phase_review";
+  // Layer C: 단계 식별 로그 — 디버깅 시 마지막 도달 stage 추적용.
+  console.debug("[startReviewRT.stage]", { stage: currentStage, planId: plan.id });
+  try {
+    await planApi.updatePlanPhase(plan.id, "review");
 
-  syncResultReport(plan.id, implMessages, plan.developerEngine ?? undefined,
-    plan.implementationBranchId ? `dev: ${plan.title}` : undefined);
+    currentStage = "event_impl_completed";
+    console.debug("[startReviewRT.stage]", { stage: currentStage, planId: plan.id });
+    await planApi.createPlanEvent(plan.id, "impl_completed", "developer");
 
-  if (testOutput) {
-    createTestReportArtifact(plan, testOutput);
-  }
+    syncResultReport(plan.id, implMessages, plan.developerEngine ?? undefined,
+      plan.implementationBranchId ? `dev: ${plan.title}` : undefined);
 
-  // 하위호환: string[] 로 들어오면 model 없음으로 normalize.
-  // default 는 claude/gemini — 이 둘은 무료/구독 양쪽에서 model fallback 문제가 없음.
-  const normalized: ReviewerChoice[] = (() => {
-    if (!reviewers || reviewers.length === 0) {
-      return [{ engine: "claude" }, { engine: "gemini" }];
+    if (testOutput) {
+      currentStage = "test_artifact";
+      console.debug("[startReviewRT.stage]", { stage: currentStage, planId: plan.id });
+      createTestReportArtifact(plan, testOutput);
     }
-    return (reviewers as (ReviewerChoice | string)[]).map((r) =>
-      typeof r === "string" ? { engine: r } : r,
+
+    // 하위호환: string[] 로 들어오면 model 없음으로 normalize.
+    // default 는 claude/gemini — 이 둘은 무료/구독 양쪽에서 model fallback 문제가 없음.
+    const normalized: ReviewerChoice[] = (() => {
+      if (!reviewers || reviewers.length === 0) {
+        return [{ engine: "claude" }, { engine: "gemini" }];
+      }
+      return (reviewers as (ReviewerChoice | string)[]).map((r) =>
+        typeof r === "string" ? { engine: r } : r,
+      );
+    })();
+
+    currentStage = "get_or_create_review_branch";
+    console.debug("[startReviewRT.stage]", { stage: currentStage, planId: plan.id });
+    // A안: 같은 roundtable 모드면 기존 리뷰 브랜치 재사용. 모드 달라지거나 없으면 신규.
+    const { branch, shadowConvId, reused } = await getOrCreateReviewBranch(
+      plan, `Review RT: ${plan.title}`, "roundtable",
     );
-  })();
+    if (reused) {
+      console.debug("[startReviewRT] reusing existing review branch:", branch.id);
+    }
 
-  // A안: 같은 roundtable 모드면 기존 리뷰 브랜치 재사용. 모드 달라지거나 없으면 신규.
-  const { branch, shadowConvId, reused } = await getOrCreateReviewBranch(
-    plan, `Review RT: ${plan.title}`, "roundtable",
-  );
-  if (reused) {
-    console.debug("[startReviewRT] reusing existing review branch:", branch.id);
+    currentStage = "build_plan_context";
+    console.debug("[startReviewRT.stage]", { stage: currentStage, planId: plan.id });
+    const planContext = await buildPlanContext(plan);
+    const implSummary = implMessages
+      .filter((m) => m.role === "assistant")
+      .map((m) => m.content.slice(0, 2000))
+      .join("\n---\n");
+
+    const prompt = [
+      `당신은 코드 리뷰어입니다. **코드를 읽어서** 검증하세요. 빌드/테스트 명령을 직접 실행하지 마세요.`,
+      "",
+      `## Plan (원래 요구사항)`,
+      planContext,
+      "",
+      `## Implementation (Developer 구현 결과)`,
+      implSummary.slice(0, 6000),
+      "",
+      testOutput ? `## 테스트 결과\n${testOutput.slice(0, 3000)}\n` : "",
+      `## 리뷰 절차`,
+      ``,
+      `각 subtask의 task 파일(컨텍스트에 포함됨, 또는 \`docs/plans/${getPlanSlug(plan)}-task-*.md\`에서 Read 도구로 열 수 있음)을 참고하여 아래 3가지를 확인하세요:`,
+      ``,
+      `1. **Changed files 확인**: task 파일에 명시된 파일이 실제로 수정/생성되었는가? 변경 내용이 Change description과 일치하는가?`,
+      `2. **Verification 결과 확인**: Developer가 보고한 검증 결과를 확인하세요. 모든 Verification 명령이 통과했는가?`,
+      `3. **결함 검사**: 변경된 코드에 런타임 에러, 논리 버그, 보안 취약점이 있는가? (코드를 읽어서 판단)`,
+      ``,
+      `### Pass 조건`,
+      `위 3가지가 모두 충족되면 **pass**입니다.`,
+      ``,
+      `### Fail 사유가 되지 않는 것`,
+      `- 코드 스타일/구조가 task 파일과 다르지만 결과가 올바른 경우`,
+      `- task 파일에 명시되지 않은 테스트 커버리지 부족`,
+      `- Changed files 밖 파일의 기존 품질 문제`,
+      `- "더 나은 방법이 있다"는 의견 → recommendations에 작성`,
+      ``,
+      `### 판정 형식`,
+      `- verdict: pass / fail / conditional`,
+      `- 다음 5개 차원을 각각 1~5점으로 평가하여 명시:`,
+      `  - **plan_coverage** — 모든 subtask가 task 파일 내용대로 구현되었는가`,
+      `  - **code_quality** — 런타임/논리/보안 결함 정도 (결함 없을수록 5)`,
+      `  - **test_coverage** — 테스트 결과 + Verification 통과 범위 (task 파일에 명시된 부분 기준)`,
+      `  - **doc_quality** — 주석·README·CLAUDE.md 등 문서 업데이트 적절성`,
+      `  - **convention** — 프로젝트 기존 코딩 컨벤션과의 일관성`,
+      `  점수 기준 총점: 22+ → pass / 10 미만 → fail / 그 외 → conditional (단, findings가 있으면 verdict 우선)`,
+      `- fail 시 반드시 **파일:줄번호 + 구체적 결함 설명**을 findings에 포함`,
+      `- fail 시 \`failed_subtask_ids: [N, M]\` 형식으로 해당 subtask 번호 명시`,
+      `- 개선 제안은 findings가 아닌 **recommendations**에 분리`,
+      ``,
+      `### 출력 예시`,
+      "```",
+      `<!-- tunaflow:review-verdict -->`,
+      `verdict: conditional`,
+      `plan_coverage: 4`,
+      `code_quality: 3`,
+      `test_coverage: 2`,
+      `doc_quality: 4`,
+      `convention: 5`,
+      `findings:`,
+      `- [code_quality] src/api/users.ts:42 사용자 입력을 파라미터화 없이 SQL 에 삽입`,
+      `- [test_coverage] 400/404 에러 케이스 테스트 누락`,
+      `recommendations:`,
+      `- prepared statement 사용으로 전환`,
+      `- status-code별 응답 테스트 추가`,
+      `<!-- /tunaflow:review-verdict -->`,
+      "```",
+    ].filter(Boolean).join("\n");
+
+    const participants: RoundtableParticipant[] = normalized.map((r, i) => ({
+      name: r.name ?? `Reviewer-${String.fromCharCode(65 + i)}`,
+      engine: r.engine,
+      model: r.model,
+      role: "reviewer" as const,
+    }));
+
+    const mode = "sequential" as const;
+    const rtConfig = JSON.stringify({ participants, mode });
+
+    currentStage = "save_rt_config";
+    console.debug("[startReviewRT.stage]", { stage: currentStage, planId: plan.id });
+    // Tauri camelCase: Rust 의 `config_json: String` 은 FE 에서 `configJson` 으로 호출.
+    // 이전엔 `config` 로 잘못 보내 invoke 가 실패하며 save_rt_config 가 no-op 되고
+    // Review RT 진입 자체가 throw 되던 버그. s37 재현 로그로 특정.
+    await invoke("save_rt_config", { conversationId: shadowConvId, configJson: rtConfig });
+
+    // 리뷰 브랜치 shadow conv 에도 engine/model 을 기록한다. 사용자가 RT 진행 중
+    // 리뷰 브랜치에 "직접 메시지" 를 보낼 때(handoff, follow-up 등), `resolveModel()`
+    // 이 이 엔트리를 읽어 올바른 model 을 전달할 수 있게 한다. 이전엔 RT 참여자
+    // 기반으로만 실행되고 shadow conv 엔트리가 없어서, 일반 채팅 경로로 빠질 때
+    // engine=codex/model=undefined 가 되어 app-server fallback(gpt-5 등) 이 발동하며
+    // ChatGPT 계정에서 400 에러가 나던 문제를 수정.
+    const first = participants[0];
+    if (first?.engine) {
+      try {
+        const { useChatStore } = await import("@/stores/chatStore");
+        useChatStore.getState().saveConversationEngine(shadowConvId, {
+          profileId: null,
+          engine: first.engine,
+          model: first.model,
+        });
+      } catch (e) { console.warn("[startReviewRT] saveConversationEngine failed:", e); }
+    }
+
+    // NOTE: RT execution is the caller's responsibility.
+    // After this returns, the caller should call openThread(branch.id) then
+    // sendThreadRoundtable(prompt, participants, mode) to actually run the review.
+    // We intentionally do NOT create a user_message here — sendThreadRoundtable
+    // persists the prompt as the user message itself, and pre-seeding it would
+    // cause a duplicate prompt in the branch.
+    return { branch, shadowConvId, participants, prompt, mode };
+  } catch (err) {
+    // Layer A: 어느 stage 에서든 throw → phase rollback + review_entry_failed 기록.
+    // INV-2: phase 를 implementation 으로 복귀 (PlanPhase enum 에 "ready" 가 없어
+    // review 직전 자연스러운 상태인 implementation 사용). plan 본문의 "ready"
+    // 표현은 informal naming.
+    // INV-1: review_entry_failed event 가 plan 에 남아 있어 UI 가 "phase=review 인데
+    // RT 없음" 상태와 "정상 review 진행" 을 구분 가능.
+    // INV-3: ReviewRTEntryFailed 로 wrap 해서 호출자가 instanceof 분기로 재시도 UI 노출.
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn("[startReviewRT] failed at stage", currentStage, ":", reason);
+    await planApi.updatePlanPhase(plan.id, "implementation").catch((rollbackErr) => {
+      console.warn("[startReviewRT] phase rollback failed:", rollbackErr);
+    });
+    await planApi.createPlanEvent(
+      plan.id,
+      "review_entry_failed",
+      "system",
+      JSON.stringify({ stage: currentStage, reason }),
+    ).catch((evErr) => {
+      console.warn("[startReviewRT] review_entry_failed event creation failed:", evErr);
+    });
+    throw new ReviewRTEntryFailed(currentStage, err);
   }
-
-  const planContext = await buildPlanContext(plan);
-  const implSummary = implMessages
-    .filter((m) => m.role === "assistant")
-    .map((m) => m.content.slice(0, 2000))
-    .join("\n---\n");
-
-  const prompt = [
-    `당신은 코드 리뷰어입니다. **코드를 읽어서** 검증하세요. 빌드/테스트 명령을 직접 실행하지 마세요.`,
-    "",
-    `## Plan (원래 요구사항)`,
-    planContext,
-    "",
-    `## Implementation (Developer 구현 결과)`,
-    implSummary.slice(0, 6000),
-    "",
-    testOutput ? `## 테스트 결과\n${testOutput.slice(0, 3000)}\n` : "",
-    `## 리뷰 절차`,
-    ``,
-    `각 subtask의 task 파일(컨텍스트에 포함됨, 또는 \`docs/plans/${getPlanSlug(plan)}-task-*.md\`에서 Read 도구로 열 수 있음)을 참고하여 아래 3가지를 확인하세요:`,
-    ``,
-    `1. **Changed files 확인**: task 파일에 명시된 파일이 실제로 수정/생성되었는가? 변경 내용이 Change description과 일치하는가?`,
-    `2. **Verification 결과 확인**: Developer가 보고한 검증 결과를 확인하세요. 모든 Verification 명령이 통과했는가?`,
-    `3. **결함 검사**: 변경된 코드에 런타임 에러, 논리 버그, 보안 취약점이 있는가? (코드를 읽어서 판단)`,
-    ``,
-    `### Pass 조건`,
-    `위 3가지가 모두 충족되면 **pass**입니다.`,
-    ``,
-    `### Fail 사유가 되지 않는 것`,
-    `- 코드 스타일/구조가 task 파일과 다르지만 결과가 올바른 경우`,
-    `- task 파일에 명시되지 않은 테스트 커버리지 부족`,
-    `- Changed files 밖 파일의 기존 품질 문제`,
-    `- "더 나은 방법이 있다"는 의견 → recommendations에 작성`,
-    ``,
-    `### 판정 형식`,
-    `- verdict: pass / fail / conditional`,
-    `- 다음 5개 차원을 각각 1~5점으로 평가하여 명시:`,
-    `  - **plan_coverage** — 모든 subtask가 task 파일 내용대로 구현되었는가`,
-    `  - **code_quality** — 런타임/논리/보안 결함 정도 (결함 없을수록 5)`,
-    `  - **test_coverage** — 테스트 결과 + Verification 통과 범위 (task 파일에 명시된 부분 기준)`,
-    `  - **doc_quality** — 주석·README·CLAUDE.md 등 문서 업데이트 적절성`,
-    `  - **convention** — 프로젝트 기존 코딩 컨벤션과의 일관성`,
-    `  점수 기준 총점: 22+ → pass / 10 미만 → fail / 그 외 → conditional (단, findings가 있으면 verdict 우선)`,
-    `- fail 시 반드시 **파일:줄번호 + 구체적 결함 설명**을 findings에 포함`,
-    `- fail 시 \`failed_subtask_ids: [N, M]\` 형식으로 해당 subtask 번호 명시`,
-    `- 개선 제안은 findings가 아닌 **recommendations**에 분리`,
-    ``,
-    `### 출력 예시`,
-    "```",
-    `<!-- tunaflow:review-verdict -->`,
-    `verdict: conditional`,
-    `plan_coverage: 4`,
-    `code_quality: 3`,
-    `test_coverage: 2`,
-    `doc_quality: 4`,
-    `convention: 5`,
-    `findings:`,
-    `- [code_quality] src/api/users.ts:42 사용자 입력을 파라미터화 없이 SQL 에 삽입`,
-    `- [test_coverage] 400/404 에러 케이스 테스트 누락`,
-    `recommendations:`,
-    `- prepared statement 사용으로 전환`,
-    `- status-code별 응답 테스트 추가`,
-    `<!-- /tunaflow:review-verdict -->`,
-    "```",
-  ].filter(Boolean).join("\n");
-
-  const participants: RoundtableParticipant[] = normalized.map((r, i) => ({
-    name: r.name ?? `Reviewer-${String.fromCharCode(65 + i)}`,
-    engine: r.engine,
-    model: r.model,
-    role: "reviewer" as const,
-  }));
-
-  const mode = "sequential" as const;
-  const rtConfig = JSON.stringify({ participants, mode });
-  // Tauri camelCase: Rust 의 `config_json: String` 은 FE 에서 `configJson` 으로 호출.
-  // 이전엔 `config` 로 잘못 보내 invoke 가 실패하며 save_rt_config 가 no-op 되고
-  // Review RT 진입 자체가 throw 되던 버그. s37 재현 로그로 특정.
-  await invoke("save_rt_config", { conversationId: shadowConvId, configJson: rtConfig });
-
-  // 리뷰 브랜치 shadow conv 에도 engine/model 을 기록한다. 사용자가 RT 진행 중
-  // 리뷰 브랜치에 "직접 메시지" 를 보낼 때(handoff, follow-up 등), `resolveModel()`
-  // 이 이 엔트리를 읽어 올바른 model 을 전달할 수 있게 한다. 이전엔 RT 참여자
-  // 기반으로만 실행되고 shadow conv 엔트리가 없어서, 일반 채팅 경로로 빠질 때
-  // engine=codex/model=undefined 가 되어 app-server fallback(gpt-5 등) 이 발동하며
-  // ChatGPT 계정에서 400 에러가 나던 문제를 수정.
-  const first = participants[0];
-  if (first?.engine) {
-    try {
-      const { useChatStore } = await import("@/stores/chatStore");
-      useChatStore.getState().saveConversationEngine(shadowConvId, {
-        profileId: null,
-        engine: first.engine,
-        model: first.model,
-      });
-    } catch (e) { console.warn("[startReviewRT] saveConversationEngine failed:", e); }
-  }
-
-  // NOTE: RT execution is the caller's responsibility.
-  // After this returns, the caller should call openThread(branch.id) then
-  // sendThreadRoundtable(prompt, participants, mode) to actually run the review.
-  // We intentionally do NOT create a user_message here — sendThreadRoundtable
-  // persists the prompt as the user message itself, and pre-seeding it would
-  // cause a duplicate prompt in the branch.
-  return { branch, shadowConvId, participants, prompt, mode };
 }
 
 // ─── Phase E: Process review verdict ──────────────────────────────────────

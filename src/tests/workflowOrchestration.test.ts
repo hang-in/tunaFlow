@@ -50,6 +50,7 @@ import {
   startReviewBranch,
   startReviewRT,
   ManualVerificationFailed,
+  ReviewRTEntryFailed,
 } from "@/lib/workflowOrchestration";
 import type { Plan, Message } from "@/types";
 
@@ -492,5 +493,62 @@ describe("startReviewRT — manual verification gate", () => {
     // phase 는 그대로 (INV-5)
     expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "review");
     expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "rework");
+  });
+});
+
+// ─── startReviewRT — Layer A: stage rollback (Plan reviewRTEntryFailureRollbackPlan) ───
+
+describe("startReviewRT — Layer A entry failure rollback", () => {
+  it("rollbacks phase to implementation and emits review_entry_failed when save_rt_config throws", async () => {
+    // get_or_create_review_branch 까지는 성공 → save_rt_config 단계에서 throw 시뮬레이션.
+    (invoke as any).mockImplementation((cmd: string) => {
+      if (cmd === "create_branch") return Promise.resolve({ id: "br-1", conversationId: "conv-1", label: "rev", status: "active", createdAt: 0 });
+      if (cmd === "open_branch_stream") return Promise.resolve("branch:br-1");
+      if (cmd === "save_rt_config") return Promise.reject(new Error("DB write failed"));
+      return Promise.resolve();
+    });
+
+    await expect(startReviewRT(mockPlan, [])).rejects.toBeInstanceOf(ReviewRTEntryFailed);
+    // INV-2: phase rollback to implementation
+    expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "implementation");
+    // INV-1: review_entry_failed event recorded with stage info
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1",
+      "review_entry_failed",
+      "system",
+      expect.stringContaining("save_rt_config"),
+    );
+  });
+
+  it("captures the stage name on the thrown ReviewRTEntryFailed", async () => {
+    (invoke as any).mockImplementation((cmd: string) => {
+      if (cmd === "create_branch") return Promise.reject(new Error("branch creation failed"));
+      return Promise.resolve();
+    });
+
+    let caught: unknown;
+    try {
+      await startReviewRT(mockPlan, []);
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ReviewRTEntryFailed);
+    expect((caught as ReviewRTEntryFailed).stage).toBe("get_or_create_review_branch");
+  });
+
+  it("does NOT rollback when ManualVerificationFailed throws (separate path)", async () => {
+    const runManualGate = vi.fn(async () => [{ status: "fail" as const, reason: "broken" }]);
+    const msgWithManual: Message[] = [{
+      id: "m1", conversationId: "c1", role: "assistant",
+      content: "implemented X\n⚠️ Manual: Click button", timestamp: 0, status: "done",
+    }];
+    await expect(startReviewRT(mockPlan, msgWithManual, undefined, undefined, runManualGate))
+      .rejects.toBeInstanceOf(ManualVerificationFailed);
+    // ManualVerificationFailed 는 phase=rework 자체 처리. Layer A 의 implementation
+    // rollback 경로로 빠지지 않아야 함 (review_entry_failed event 미발생).
+    expect(planApi.createPlanEvent).not.toHaveBeenCalledWith(
+      "p-1", "review_entry_failed", expect.anything(), expect.anything(),
+    );
+    expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "implementation");
   });
 });
