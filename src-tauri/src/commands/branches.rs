@@ -443,7 +443,17 @@ pub fn delete_branch(
 
 /// DATA_MODEL §3.3 Adopt flow (simplified):
 /// 1. Branch.status → 'adopted'
-/// 2. Insert placeholder adopt-summary message in parent Conversation
+/// 2. Archive all descendant branches recursively
+/// 3. Insert adopt-summary message in parent Conversation
+/// 4. Record summary message id on branch.adopted_message_id (v40)
+///
+/// All four writes happen inside a single SQLite transaction so a
+/// failure in any later step rolls back earlier writes (INV-1/INV-2 in
+/// docs/reference/branchAdoptFailureAudit_2026-04-25.md). Without the
+/// transaction wrapper a process crash or constraint violation between
+/// step 1 and step 3/4 leaves the branch marked `adopted` but with no
+/// summary message in the parent — confusing UX + broken
+/// δ-Branch detail (`adopted_message_id` NULL).
 #[tauri::command]
 pub fn adopt_branch(
     input: AdoptBranchInput,
@@ -526,24 +536,6 @@ pub fn adopt_branch(
         return Err(AppError::Agent("empty_branch".into()));
     }
 
-    // Now safe to mark as adopted — content exists
-    conn.execute(
-        "UPDATE branches SET status = 'adopted' WHERE id = ?1",
-        [&input.branch_id],
-    )?;
-
-    // Archive all descendant branches recursively
-    conn.execute_batch(&format!(
-        "WITH RECURSIVE descendants AS (
-           SELECT id FROM branches WHERE parent_branch_id = '{bid}'
-           UNION ALL
-           SELECT b.id FROM branches b JOIN descendants d ON b.parent_branch_id = d.id
-         )
-         UPDATE branches SET status = 'archived'
-         WHERE id IN (SELECT id FROM descendants) AND status = 'active';",
-        bid = input.branch_id,
-    ))?;
-
     // Get engine/model from the last assistant message in the branch
     let (last_engine, last_model): (Option<String>, Option<String>) = conn
         .query_row(
@@ -562,20 +554,48 @@ pub fn adopt_branch(
         "## {} Adopted: {}\n\n{}\n",
         type_label, branch_label, summary_body
     );
-    conn.execute(
+
+    // ─── Atomic write block ────────────────────────────────────────────────
+    // Wrap status flip + descendant archive + summary insert + back-pointer
+    // update in a single transaction. `unchecked_transaction()` works on
+    // `&Connection` so we keep the existing immutable `conn` binding (the
+    // outer mutex guards exclusivity).
+    let tx = conn.unchecked_transaction()?;
+
+    // Step 1 — flip primary branch to 'adopted'
+    tx.execute(
+        "UPDATE branches SET status = 'adopted' WHERE id = ?1",
+        [&input.branch_id],
+    )?;
+
+    // Step 2 — archive descendant branches recursively
+    tx.execute_batch(&format!(
+        "WITH RECURSIVE descendants AS (
+           SELECT id FROM branches WHERE parent_branch_id = '{bid}'
+           UNION ALL
+           SELECT b.id FROM branches b JOIN descendants d ON b.parent_branch_id = d.id
+         )
+         UPDATE branches SET status = 'archived'
+         WHERE id IN (SELECT id FROM descendants) AND status = 'active';",
+        bid = input.branch_id,
+    ))?;
+
+    // Step 3 — insert summary message into parent conversation
+    tx.execute(
         "INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine, model)
          VALUES (?1, ?2, 'assistant', ?3, ?4, 'done', ?5, ?6)",
         params![msg_id, input.conversation_id, content, now, last_engine, last_model],
     )?;
 
-    // v40: record the summary message id on the branch row so mobile
-    // δ-Branch detail can look up "which turn landed in the parent
-    // conversation when this branch was adopted" without re-scanning
-    // messages.
-    conn.execute(
+    // Step 4 — record summary message id on the branch row (v40 mobile
+    // δ-Branch detail support).
+    tx.execute(
         "UPDATE branches SET adopted_message_id = ?1 WHERE id = ?2",
         params![msg_id, input.branch_id],
     )?;
+
+    tx.commit()?;
+    // ─── End atomic block ──────────────────────────────────────────────────
 
     Ok(Message {
         id: msg_id,
