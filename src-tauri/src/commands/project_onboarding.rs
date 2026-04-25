@@ -354,17 +354,41 @@ fn build_prompt(
 }
 
 // ─── Parse output ────────────────────────────────────────────────────────────
+//
+// `parse_output` 는 Codex / Gemini / Claude 의 plain-text 응답 안에서 마커로
+// 감싼 3 섹션 (CLAUDE.md, REF_INDEX, INITIAL_SETUP) 을 추출한다. 모델별 응답
+// 형식 차이를 흡수해야 한다 — 자세한 가설은
+// docs/reference/codexGeminiOnboardingResponseAudit_2026-04-25.md 참조.
+//
+// 강건화 포인트 (Layer A):
+//
+// 1. 마커 자체가 markdown bold (`**[CLAUDE_MD_START]**`) 또는 underscore escape
+//    (`[CLAUDE\_MD\_START]`) 로 변형되어도 통과.
+// 2. 마커 앞뒤로 markdown code fence (` ```markdown ... ``` `) 가 있어도 통과.
+// 3. 마커 좌우 공백 / newline / 마크다운 헤더 prefix 자유.
+// 4. 마커 매칭 실패 시 raw 응답 앞 200자를 에러 메시지에 포함 (디버깅 단서).
+// 5. 추출된 본문에서 wrapping markdown fence 자동 strip.
 
 fn parse_output(text: &str) -> Result<(String, String, Option<serde_json::Value>), String> {
-    let claude_md = extract_between(text, "[CLAUDE_MD_START]", "[CLAUDE_MD_END]")
-        .ok_or("AI 응답에서 CLAUDE.md 섹션을 찾을 수 없습니다")?;
-    let ref_index = extract_between(text, "[REF_INDEX_START]", "[REF_INDEX_END]")
-        .ok_or("AI 응답에서 Reference Index 섹션을 찾을 수 없습니다")?;
+    let claude_md = extract_section(text, "CLAUDE_MD")
+        .ok_or_else(|| {
+            let preview = response_preview(text);
+            format!(
+                "AI 응답에서 CLAUDE.md 섹션을 찾을 수 없습니다 (응답 시작 부분: {preview})"
+            )
+        })?;
+    let ref_index = extract_section(text, "REF_INDEX")
+        .ok_or_else(|| {
+            let preview = response_preview(text);
+            format!(
+                "AI 응답에서 Reference Index 섹션을 찾을 수 없습니다 (응답 시작 부분: {preview})"
+            )
+        })?;
     // Optional — fail-soft per plan §7. Unparseable/empty JSON → None, which
     // causes the FE to skip the Initial Setup section entirely.
-    let initial_setup = extract_between(text, "[INITIAL_SETUP_START]", "[INITIAL_SETUP_END]")
+    let initial_setup = extract_section(text, "INITIAL_SETUP")
         .and_then(|raw| {
-            let trimmed = raw.trim();
+            let trimmed = strip_code_fences(raw.trim());
             if trimmed.is_empty() { return None; }
             match serde_json::from_str::<serde_json::Value>(trimmed) {
                 Ok(v) => {
@@ -377,13 +401,113 @@ fn parse_output(text: &str) -> Result<(String, String, Option<serde_json::Value>
                 }
             }
         });
-    Ok((claude_md.trim().to_string(), ref_index.trim().to_string(), initial_setup))
+    Ok((
+        clean_section(&claude_md),
+        clean_section(&ref_index),
+        initial_setup,
+    ))
 }
 
-fn extract_between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
-    let s = text.find(start)? + start.len();
-    let e = text[s..].find(end)? + s;
-    Some(&text[s..e])
+/// 강건화된 마커 추출. `name` 은 "CLAUDE_MD" 같은 베이스 이름 — 함수가 자동으로
+/// `[<name>_START]` / `[<name>_END]` 마커 변형을 매칭한다.
+///
+/// 받아들이는 변형:
+/// - `[CLAUDE_MD_START]`           — 정상
+/// - `**[CLAUDE_MD_START]**`        — markdown bold (외곽 ** 는 capture 밖)
+/// - `[CLAUDE\_MD\_START]`          — underscore escape (markdown 안전 처리)
+/// - 마커 좌우 공백 / newline 자유
+fn extract_section(text: &str, name: &str) -> Option<String> {
+    use regex::Regex;
+    // 마커 패턴 — 외곽 markdown bold (`**`) 와 underscore escape 를 허용.
+    // `name + "_START"` / `name + "_END"` 전체를 token 화 하여 마지막 underscore 도
+    // escape 허용 안에 들어오게 한다.
+    let start_token = marker_token_pattern(&format!("{name}_START"));
+    let end_token   = marker_token_pattern(&format!("{name}_END"));
+    let pattern = format!(
+        r"(?s)(?:\*\*)?\[\s*{start_token}\s*\](?:\*\*)?(.*?)(?:\*\*)?\[\s*{end_token}\s*\](?:\*\*)?",
+    );
+    let re = Regex::new(&pattern).ok()?;
+    re.captures(text)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// 마커 이름 (`CLAUDE_MD_START` 등) 을 regex 패턴화. 언더스코어가 markdown
+/// escape (`\_`) 로 들어와도 매칭하도록 허용한다.
+fn marker_token_pattern(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() * 4);
+    for ch in name.chars() {
+        if ch == '_' {
+            // 백슬래시 0개 또는 1개 + underscore. regex 입력에서 `\\?_` 는
+            // "literal backslash optional + underscore" 를 의미.
+            out.push_str(r"\\?_");
+        } else {
+            for esc_ch in regex::escape(&ch.to_string()).chars() {
+                out.push(esc_ch);
+            }
+        }
+    }
+    out
+}
+
+/// 추출된 섹션 본문 정리: trim + 양끝 markdown fence strip + 양끝 markdown
+/// emphasis (`**` / `*`) strip.
+fn clean_section(body: &str) -> String {
+    let t = body.trim();
+    let t = strip_code_fences(t);
+    let t = strip_emphasis_edges(t);
+    t.trim().to_string()
+}
+
+/// 본문 양끝에 남은 markdown emphasis 토큰을 제거. 마커가 `**[X_START]**` 식
+/// 으로 둘러싸여 있을 때 lazy regex 매칭이 capture 안에 잔재 emphasis 를 남기는
+/// 케이스를 흡수한다.
+fn strip_emphasis_edges(s: &str) -> &str {
+    let mut t = s.trim();
+    // 시작 emphasis (앞쪽)
+    while let Some(rest) = t.strip_prefix("**").or_else(|| t.strip_prefix('*')) {
+        if rest == t { break; }
+        t = rest.trim_start_matches('\n').trim_start();
+    }
+    // 끝 emphasis (뒤쪽)
+    while let Some(rest) = t.strip_suffix("**").or_else(|| t.strip_suffix('*')) {
+        if rest == t { break; }
+        t = rest.trim_end_matches('\n').trim_end();
+    }
+    t
+}
+
+/// ` ```lang\n...\n``` ` 형태의 markdown fence 가 본문 양끝을 감싸고 있으면 제거.
+/// 한 번만 strip (중첩은 다루지 않음). 닫는 ``` 가 없으면 원본 유지.
+fn strip_code_fences(s: &str) -> &str {
+    let trimmed = s.trim();
+    if !trimmed.starts_with("```") {
+        return trimmed;
+    }
+    // 첫 줄 ``` 또는 ```lang
+    let after_open = match trimmed.find('\n') {
+        Some(i) => &trimmed[i + 1..],
+        None => return trimmed,
+    };
+    // 닫는 ``` 위치
+    if let Some(close_idx) = after_open.rfind("```") {
+        let inner = &after_open[..close_idx];
+        return inner.trim_end_matches('\n');
+    }
+    trimmed
+}
+
+/// 사용자 / 로그용 응답 프리뷰 (앞 200 chars, newline → space).
+fn response_preview(text: &str) -> String {
+    let one_line: String = text.chars().map(|c| if c == '\n' { ' ' } else { c }).collect();
+    let trimmed = one_line.trim();
+    if trimmed.chars().count() > 200 {
+        let mut out: String = trimmed.chars().take(200).collect();
+        out.push_str("...");
+        out
+    } else {
+        trimmed.to_string()
+    }
 }
 
 // ─── AI call (engine-agnostic) ───────────────────────────────────────────────
@@ -710,7 +834,7 @@ pub fn apply_project_onboarding(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_output;
+    use super::{parse_output, strip_code_fences};
 
     #[test]
     fn parse_output_legacy_without_initial_setup() {
@@ -795,5 +919,98 @@ b
     fn parse_output_missing_claude_md_errors() {
         let text = "[REF_INDEX_START]\nx\n[REF_INDEX_END]\n";
         assert!(parse_output(text).is_err());
+    }
+
+    // ─── Layer A 강건화 fixture (codexGeminiOnboardingResponseAudit_2026-04-25) ──
+
+    /// Gemini-style: 마커 앞에 introduction + 응답 전체를 markdown fence 로
+    /// 감싸기. 본문 안에 마커가 그대로 남아 있으면 통과해야 한다.
+    #[test]
+    fn parse_output_gemini_markdown_fence_with_intro() {
+        let text = "다음과 같이 정리했습니다:\n\n```markdown\n[CLAUDE_MD_START]\n# foo\n[CLAUDE_MD_END]\n\n[REF_INDEX_START]\n# bar\n[REF_INDEX_END]\n```\n\n추가 도움이 필요하면 말씀해 주세요.";
+        let (md, idx, init) = parse_output(text).expect("should parse with intro + fence");
+        assert_eq!(md, "# foo");
+        assert_eq!(idx, "# bar");
+        assert!(init.is_none());
+    }
+
+    /// Codex / Claude 가 마커 자체를 markdown bold 로 처리한 케이스.
+    #[test]
+    fn parse_output_marker_with_bold_emphasis() {
+        let text = "**[CLAUDE_MD_START]**\n# foo\n**[CLAUDE_MD_END]**\n\n**[REF_INDEX_START]**\n# bar\n**[REF_INDEX_END]**";
+        let (md, idx, _init) = parse_output(text).expect("bold marker should parse");
+        assert_eq!(md, "# foo");
+        assert_eq!(idx, "# bar");
+    }
+
+    /// 한국어 모델이 underscore 를 markdown escape (`\_`) 로 변환한 케이스.
+    #[test]
+    fn parse_output_marker_with_underscore_escape() {
+        let text = r#"[CLAUDE\_MD\_START]
+# foo
+[CLAUDE\_MD\_END]
+[REF\_INDEX\_START]
+# bar
+[REF\_INDEX\_END]
+"#;
+        let (md, idx, _init) = parse_output(text).expect("escaped underscore should parse");
+        assert_eq!(md, "# foo");
+        assert_eq!(idx, "# bar");
+    }
+
+    /// 마커 양옆에 공백 포함 (`[ CLAUDE_MD_START ]`).
+    #[test]
+    fn parse_output_marker_with_inner_whitespace() {
+        let text = "[ CLAUDE_MD_START ]\n# foo\n[ CLAUDE_MD_END ]\n[ REF_INDEX_START ]\n# bar\n[ REF_INDEX_END ]";
+        let (md, idx, _init) = parse_output(text).expect("padded marker should parse");
+        assert_eq!(md, "# foo");
+        assert_eq!(idx, "# bar");
+    }
+
+    /// 마커 매칭 실패 시 raw 응답의 앞 200자가 에러 메시지에 포함되어야 한다.
+    #[test]
+    fn parse_output_failure_includes_response_preview() {
+        let text = "Sure! Here is the answer to your question:\n\nThe project looks like a Rust app...";
+        let err = parse_output(text).expect_err("should fail without markers");
+        assert!(
+            err.contains("Sure! Here is the answer"),
+            "preview missing in error: {err}"
+        );
+    }
+
+    /// 추출된 INITIAL_SETUP JSON 본문이 ```json fence 안에 들어 있어도 통과해야 한다.
+    #[test]
+    fn parse_output_initial_setup_inside_fence() {
+        let text = r#"[CLAUDE_MD_START]
+a
+[CLAUDE_MD_END]
+[REF_INDEX_START]
+b
+[REF_INDEX_END]
+[INITIAL_SETUP_START]
+```json
+{
+  "agent_profiles": [],
+  "skills": ["rust-review"],
+  "workflow": { "review_track": "deep", "context_mode": "auto", "rt_participants": [] },
+  "rationale": "fence 안에 든 JSON"
+}
+```
+[INITIAL_SETUP_END]
+"#;
+        let (_md, _idx, init) = parse_output(text).expect("fenced JSON should parse");
+        let v = init.expect("initial_setup present");
+        assert_eq!(v["skills"][0], "rust-review");
+        assert_eq!(v["workflow"]["review_track"], "deep");
+    }
+
+    /// `strip_code_fences` 단위 동작.
+    #[test]
+    fn strip_code_fences_basic() {
+        assert_eq!(strip_code_fences("plain"), "plain");
+        assert_eq!(strip_code_fences("```\nhello\n```"), "hello");
+        assert_eq!(strip_code_fences("```json\n{\"a\":1}\n```"), "{\"a\":1}");
+        // 닫는 ``` 가 없으면 원본 유지
+        assert_eq!(strip_code_fences("```\nhello"), "```\nhello");
     }
 }
