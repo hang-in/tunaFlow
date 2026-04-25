@@ -55,6 +55,7 @@
 | [userIntentSsotSurfacingPlan_2026-04-25](./userIntentSsotSurfacingPlan_2026-04-25.md) | **P2 (메타)** — Architect 진입 시 conversation DB(sqlite) 의 사용자 메시지 자동 surface. 같은 mismatch 영구 차단. Task A sibling, 머지 후 진행. Developer 핸드오프 포함 |
 | [chatPanelMinHeightCascadePlan_2026-04-25](./chatPanelMinHeightCascadePlan_2026-04-25.md) | **P1 (#191 후속)** — PR #192 가 AppShell main flex 만 fix → ChatPanel 내부 (3 위치) cascade 누락. plan→dev 전이 시 푸터 밀림 재발. Audit + flexbox invariant SSOT 문서화. Developer 핸드오프 포함 |
 | [tunaflowOutboxArtifactCleanupPlan_2026-04-25](./tunaflowOutboxArtifactCleanupPlan_2026-04-25.md) | **P3 (housekeeping)** — outbox 방식 폐기 (commit 9295062) 후 4 .md 잔재 + .gitignore 누락. git rm + .gitignore 추가. Developer 핸드오프 포함 |
+| [metaFloatingChatPosClampPlan_2026-04-25](./metaFloatingChatPosClampPlan_2026-04-25.md) | **P1 (사용자 가시)** — drawer 열림 시 ChatPanel 0px 압축 race. localStorage `meta-float-pos` stale 값이 부모 bounds 밖 → sibling layout race. mount + ResizeObserver 단일 useEffect 로 clamp + persist. Developer 핸드오프 포함 |
 | [multiDeveloperActivePlanIsolationPlan_2026-04-25](./multiDeveloperActivePlanIsolationPlan_2026-04-25.md) | **P1** — multi-Developer 동시 작업 시 active plan 1자리 충돌 (Codex 가 다른 Developer 의 plan 진행 시도). 자동 sub-conv 격리 (A) + ContextPack sender 명시 (B) 조합. Developer 핸드오프 포함 |
 | [branchCancelSemanticsPlan_2026-04-25](./branchCancelSemanticsPlan_2026-04-25.md) | **P1 (PR #198 follow-up)** — Task A same-session 모델에서 cancel 작동 안 함. stream abort token 도입 + UI cancel 의미 stream-only 로 재정의. Developer 핸드오프 포함 |
 | [selfTrustCiTriggerOptimizationPlan_2026-04-25](./selfTrustCiTriggerOptimizationPlan_2026-04-25.md) | **P1 (applied)** — main 직접 push 시 CI skip. 외부 PR + release tag (build.yml) 만 검증. 인지 부담 fragmenting 해소. Revert 절차 명시 |
@@ -135,9 +136,9 @@
 
 ## 📊 통계
 
-- 진행 예정/진행 중: **29개**
+- 진행 예정/진행 중: **30개**
 - 부분 완료: **26개**
 - 완료 (archive): **70개**
 - 보류 (archive): **13개**
 - IA/검토 (archive): **31개**
-- **합계**: 167개
+- **합계**: 168개
