@@ -187,7 +187,7 @@ export function ChatPanel() {
 
   if (!selectedConversationId) {
     return (
-      <div className="flex flex-col flex-1 min-w-0 bg-background items-center justify-center">
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 bg-background items-center justify-center">
         <p className="text-muted-foreground text-sm">Select a conversation to start</p>
       </div>
     );
@@ -202,7 +202,7 @@ export function ChatPanel() {
   return (
     <div
       data-testid="chat-panel"
-      className="flex flex-col flex-1 min-w-0 overflow-hidden"
+      className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden"
     >
       {/* Error banner */}
       {error && (
@@ -212,7 +212,7 @@ export function ChatPanel() {
       )}
 
       {/* Scrollable message area */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 min-h-0 overflow-hidden relative">
         {view === "roundtable" && isRoundtable ? (
           <div className="h-full overflow-y-auto">
             <RoundtableView
