@@ -183,14 +183,19 @@ export function AppShell() {
         )}
 
         {/* Main area */}
-        <div className="flex-1 min-w-0 h-full relative flex">
+        {/* `min-h-0` 필수 — 누락 시 자식 (BranchThreadPanel 안의 NewMessageInput 등)
+             이 길어지면 flex parent 가 viewport 밖으로 stretch 되어 메인 UI 전체가
+             밀려 올라가는 현상 발생 (#191). */}
+        <div className="flex-1 min-w-0 min-h-0 h-full relative flex">
           {/* Meta floating chat — anchored to top-left of main area */}
           {selectedProjectKey && (
             <MetaFloatingChat projectKey={selectedProjectKey} />
           )}
 
-          {/* CenterPanel — full width when no drawer, or flex-1 when pinned */}
-          <div className={drawerOpen && drawerPinned ? "flex-1 min-w-0 h-full" : "flex-1 min-w-0 h-full"}>
+          {/* CenterPanel — full width when no drawer, or flex-1 when pinned.
+               양쪽 className 이 동일해 삼항 의미 없음 — 단일 string 으로 정리하면서
+               `min-h-0` 추가 (메인 area 와 동일 이유). */}
+          <div className="flex-1 min-w-0 min-h-0 h-full">
             <CenterPanel />
           </div>
 

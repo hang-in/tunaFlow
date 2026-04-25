@@ -290,7 +290,8 @@ export function BranchThreadPanel() {
       )}
 
       {/* Thread messages */}
-      <div className="flex-1 overflow-y-auto">
+      {/* `min-h-0` defensive — flex 자식 grow 가 부모 panel 을 stretch 시키지 않도록. AppShell main flex 와 짝. */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {threadMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-muted-foreground/40 text-[12px] gap-1.5">
             {isRT ? <Users className="w-4 h-4" /> : <GitBranch className="w-4 h-4" />}
