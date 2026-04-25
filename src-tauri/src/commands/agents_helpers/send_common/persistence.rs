@@ -223,6 +223,17 @@ pub fn prepare_engine_run(
             &mut ctx_data,
             engine_key,
         );
+
+        // multiDeveloperActivePlanIsolationPlan §Layer B: sender 정보 inject.
+        // load_context_data 에서 sender_role 은 이미 채웠다 (resolve_agent_role
+        // 결과). 여기서 engine / persona / model 만 추가해 active plan section
+        // 헤더에 inline 되도록 한다. 같은 conv 에서 multi-Developer 가 동시에
+        // 일할 때 LLM 이 "이 메시지 sender + 그 sender 의 plan" 을 inline 으로
+        // 인지 (instruction-following 약점 보강).
+        ctx_data.sender_engine = Some(engine_key.to_string());
+        ctx_data.sender_persona = input.persona_label.clone();
+        ctx_data.sender_model = input.model.clone();
+
         (ctx_data, pp)
     };
 

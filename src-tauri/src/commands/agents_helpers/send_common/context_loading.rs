@@ -484,6 +484,25 @@ pub struct ContextData {
     /// 각 항목: (timestamp_ms, conversation_id, content_excerpt, score, matched_keywords).
     /// `content_excerpt` 는 prompt_assembly 에서 ~200 char cap 하기 전 raw 본문.
     pub intent_lookup: Option<Vec<UserIntentMatch>>,
+
+    /// multiDeveloperActivePlanIsolationPlan §Layer B: 현재 send 의 sender
+    /// 정보를 active plan 섹션 헤더에 inline 한다. 같은 conv 에서 multi-Developer
+    /// 가 동시에 일할 때 LLM 이 "이 메시지가 어떤 Developer 한테 가는지" 와
+    /// "그 Developer 가 진행 중인 plan" 을 inline hint 로 인지 (instruction
+    /// following 약점 보강).
+    ///
+    /// 출처:
+    ///   - `sender_engine`: prepare_engine_run 의 engine_key
+    ///   - `sender_persona`: SendWithClaudeInput.persona_label
+    ///   - `sender_role`: resolve_agent_role(conn, conversation_id)
+    ///   - `sender_model`: SendWithClaudeInput.model
+    ///
+    /// load_context_data 단계에선 None — prepare_engine_run 이 채워서
+    /// assemble_prompt 가 plan section 직전에 prepend 한다.
+    pub sender_engine: Option<String>,
+    pub sender_persona: Option<String>,
+    pub sender_role: Option<String>,
+    pub sender_model: Option<String>,
 }
 
 /// userIntentSsotSurfacingPlan: 과거 사용자 메시지 매칭 결과.
@@ -946,6 +965,11 @@ pub fn load_context_data(
         is_session_continuation: false, // persistence.rs 에서 필요시 true 로 override
         identity_summary_fragment,
         intent_lookup,
+        // §Layer B: persistence.rs::prepare_engine_run 에서 채워준다.
+        sender_engine: None,
+        sender_persona: None,
+        sender_role: Some(agent_role.to_string()),
+        sender_model: None,
     }
 }
 
@@ -1250,6 +1274,10 @@ mod tests {
             is_session_continuation: false,
             identity_summary_fragment: None,
             intent_lookup: None,
+            sender_engine: None,
+            sender_persona: None,
+            sender_role: None,
+            sender_model: None,
         }
     }
 

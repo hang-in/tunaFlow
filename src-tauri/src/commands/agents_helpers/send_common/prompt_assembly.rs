@@ -52,6 +52,40 @@ pub(crate) fn build_user_intent_lookup_section(intents: &[UserIntentMatch]) -> S
     s
 }
 
+/// multiDeveloperActivePlanIsolationPlan §Layer B: 현재 send 의 sender 정보를
+/// active plan 섹션 헤더에 inline 할 한 줄을 만든다.
+///
+/// 형식 (없는 정보는 생략):
+///   `> **Sender**: developer (codex / gpt-5 · persona=Coder)`
+///
+/// 같은 conv 에서 multi-Developer 가 동시에 일할 때 LLM 이 inline 으로
+/// "이 메시지가 누구에게 가는지" 와 "그 sender 가 진행 중인 plan" 정합을
+/// 검증할 수 있도록 한다. sender_engine 이 None 이면 전체 줄 생략 (테스트
+/// fixture / load_context_data 단독 호출 케이스 대응).
+pub(crate) fn build_sender_hint_line(data: &ContextData) -> Option<String> {
+    let engine = data.sender_engine.as_deref()?;
+    let role = data.sender_role.as_deref().unwrap_or("agent");
+    let mut detail_parts: Vec<String> = Vec::new();
+    detail_parts.push(engine.to_string());
+    if let Some(model) = data.sender_model.as_deref() {
+        if !model.is_empty() {
+            detail_parts.push(model.to_string());
+        }
+    }
+    let mut tail = String::new();
+    if let Some(persona) = data.sender_persona.as_deref() {
+        if !persona.is_empty() {
+            tail.push_str(&format!(" · persona={}", persona));
+        }
+    }
+    Some(format!(
+        "> **Sender**: {} ({}){}",
+        role,
+        detail_parts.join(" / "),
+        tail,
+    ))
+}
+
 /// timestamp(ms epoch) → "YYYY-MM-DD" (UTC). chrono 추가 없이 calendar 산출.
 fn format_ymd_utc(ts_ms: i64) -> String {
     // 음수 타임스탬프는 unknown 으로 처리
@@ -414,8 +448,18 @@ pub fn assemble_prompt(
 
     // Layer 2: Structured task memory — highest priority after context window
     if ctx_mode >= ContextMode::Standard {
+        // multiDeveloperActivePlanIsolationPlan §Layer B: plan section 직전에
+        // 한 줄 sender hint 를 inline. 같은 conv 에서 다른 Developer 의 plan 이
+        // 누출돼도 LLM 이 inline 으로 정합 검증할 수 있도록 한다 (instruction
+        // following 약점 보강 — Codex 류).
+        let plan_section_with_sender = data.plan_section.as_ref().map(|s| {
+            let sender_line = build_sender_hint_line(data);
+            if let Some(line) = sender_line {
+                format!("{}\n{}", line, s)
+            } else { s.clone() }
+        });
         if let Some(s) = guardrail::truncate_section(
-            data.plan_section.clone(),
+            plan_section_with_sender,
             dyn_cap("plan"),
         ) {
             sections.push(s);
@@ -800,6 +844,10 @@ mod tests {
             is_session_continuation: false,
             identity_summary_fragment: None,
             intent_lookup: None,
+            sender_engine: None,
+            sender_persona: None,
+            sender_role: None,
+            sender_model: None,
         }
     }
 
@@ -1010,5 +1058,78 @@ mod tests {
     fn format_ymd_handles_negative_or_zero() {
         assert_eq!(format_ymd_utc(0), "unknown");
         assert_eq!(format_ymd_utc(-1), "unknown");
+    }
+
+    // ─── multiDeveloperActivePlanIsolationPlan §Layer B: sender hint ────────
+
+    /// sender_engine 이 채워진 상태에서 plan section 이 있으면 sender 한 줄이
+    /// plan section 헤더 앞에 inline 된다.
+    #[test]
+    fn sender_hint_prepended_to_plan_section() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_section = Some("## Active Plan (phase: implementation)\n\n### Role Adapter".into());
+        data.context_mode_override = Some("standard".into());
+        data.sender_engine = Some("codex".into());
+        data.sender_role = Some("developer".into());
+        data.sender_model = Some("gpt-5".into());
+        data.sender_persona = Some("Coder".into());
+
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        assert!(meta.sections.contains(&"plan".to_string()));
+        assert!(
+            assembled.contains("**Sender**: developer (codex / gpt-5) · persona=Coder"),
+            "Layer B sender 줄이 plan section 헤더에 포함되어야: {}", assembled
+        );
+    }
+
+    /// sender_engine 이 None 이면 sender 줄을 출력하지 않는다 (테스트 fixture
+    /// 또는 load_context_data 단독 호출 케이스 회귀 0).
+    #[test]
+    fn sender_hint_absent_when_engine_none() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_section = Some("## Active Plan\n\n### Some plan".into());
+        data.context_mode_override = Some("standard".into());
+        // sender_engine 명시적으로 None
+        data.sender_engine = None;
+
+        let (assembled, _, _) = assemble_prompt(&data, None);
+        assert!(!assembled.contains("**Sender**"));
+    }
+
+    /// plan section 이 없으면 sender 줄도 미출력 (sender hint 는 plan section
+    /// 안에서만 의미가 있음).
+    #[test]
+    fn sender_hint_absent_without_plan_section() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_section = None;
+        data.sender_engine = Some("codex".into());
+        data.sender_role = Some("developer".into());
+
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        assert!(!meta.sections.contains(&"plan".to_string()));
+        assert!(!assembled.contains("**Sender**"));
+    }
+
+    /// model 이 비어 있어도 engine + role 만으로 sender 줄을 만든다.
+    #[test]
+    fn sender_hint_omits_blank_model_and_persona() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_section = Some("## Active Plan\n\n### Plan".into());
+        data.context_mode_override = Some("standard".into());
+        data.sender_engine = Some("claude".into());
+        data.sender_role = Some("architect".into());
+        data.sender_model = Some("".into());
+        data.sender_persona = None;
+
+        let (assembled, _, _) = assemble_prompt(&data, None);
+        assert!(
+            assembled.contains("**Sender**: architect (claude)"),
+            "engine 만 있는 케이스에도 sender 줄 출력: {}", assembled
+        );
+        assert!(!assembled.contains("persona="));
     }
 }

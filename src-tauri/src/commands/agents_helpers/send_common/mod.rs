@@ -53,6 +53,10 @@ mod tests {
             is_session_continuation: false,
             identity_summary_fragment: None,
             intent_lookup: None,
+            sender_engine: None,
+            sender_persona: None,
+            sender_role: None,
+            sender_model: None,
         }
     }
 
