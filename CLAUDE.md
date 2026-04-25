@@ -153,6 +153,7 @@ cd src-tauri && cargo test --lib  # Rust unit tests (485 tests)
 | `docs/how-to/skills-runtime-policy.md` | Skills snapshot 운영 규칙 |
 | `docs/reference/work-safety.md` | **작업 안전 규칙** — 코드/UI 변경 전 |
 | `docs/reference/coding-convention.md` | **코딩 컨벤션** — 코드 작성 전 |
+| `docs/reference/flexboxConventions.md` | **Tailwind flexbox invariant** — column 자식 `min-h-0` 필수 (#191/#192 사고) |
 | `docs/reference/tool-usage.md` | **개발 도구 (fd/rg/rawq 등)** — 도구 사용 전 |
 
 ---
