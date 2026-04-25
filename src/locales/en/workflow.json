@@ -197,6 +197,13 @@
       "findings_header": "Previous Review Findings (Re-review #{{round}})",
       "reverify_note": "Re-verified with focus on whether the items above were fixed."
     },
+    "review_entry_failed": {
+      "title": "Review entry failed — retry",
+      "body": "Review RT failed while entering at stage \"{{stage}}\". The plan phase has been rolled back to implementation.\n\nReason: {{reason}}",
+      "retry_button": "Retry review",
+      "retry_busy": "Retrying...",
+      "toast": "Review entry failed ({{stage}}). Plan phase rolled back to implementation."
+    },
     "summary": {
       "completed_count": "{{done}}/{{total}} done",
       "scope_label": "Review scope:",
