@@ -53,6 +53,8 @@
 | [codexGeminiOnboardingAnalysisFailureInvestigationPlan_2026-04-25](./codexGeminiOnboardingAnalysisFailureInvestigationPlan_2026-04-25.md) | **P2 (Issue #176 sibling)** — Codex/Gemini 메타 분석 자체 실패 원인 조사 + fix. parse_output 강건화 / build_prompt engine-agnostic / JSON 응답 옵션. Developer 핸드오프 포함 |
 | [branchInheritsMainSessionPlan_2026-04-25](./branchInheritsMainSessionPlan_2026-04-25.md) | **P1** — brand=ws 모드의 session 키 통합 + ContextPack 낭비 제거. s36 PTY→WS 전환 시 미반영된 사용자 원래 의도 회복 (raw log + ptySessionPolicy 인용). 4 Layer fix. Developer 핸드오프 포함 |
 | [userIntentSsotSurfacingPlan_2026-04-25](./userIntentSsotSurfacingPlan_2026-04-25.md) | **P2 (메타)** — Architect 진입 시 conversation DB(sqlite) 의 사용자 메시지 자동 surface. 같은 mismatch 영구 차단. Task A sibling, 머지 후 진행. Developer 핸드오프 포함 |
+| [chatPanelMinHeightCascadePlan_2026-04-25](./chatPanelMinHeightCascadePlan_2026-04-25.md) | **P1 (#191 후속)** — PR #192 가 AppShell main flex 만 fix → ChatPanel 내부 (3 위치) cascade 누락. plan→dev 전이 시 푸터 밀림 재발. Audit + flexbox invariant SSOT 문서화. Developer 핸드오프 포함 |
+| [tunaflowOutboxArtifactCleanupPlan_2026-04-25](./tunaflowOutboxArtifactCleanupPlan_2026-04-25.md) | **P3 (housekeeping)** — outbox 방식 폐기 (commit 9295062) 후 4 .md 잔재 + .gitignore 누락. git rm + .gitignore 추가. Developer 핸드오프 포함 |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
 | [roleAssignmentCoverageUxPlan](./roleAssignmentCoverageUxPlan.md) | P2 — Settings 역할 커버리지 UX (inferred 저장 명시화 + stale ID 자동 정리 + assertRoleReady 원클릭 적용) |
