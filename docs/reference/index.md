@@ -28,3 +28,4 @@
 - [knownIssues_2026-04-15](./knownIssues_2026-04-15.md) — 이번 세션 미해결 이슈 체크리스트 + 베타 공개 차단 여부 판단
 - [bkitReferenceReview_2026-04-24](./bkitReferenceReview_2026-04-24.md) — popup-studio-ai/bkit 계열 레퍼런스 검토, 수직 보완 관계 재프레임 + P1~P3 차용 제안
 - [asyncCancelPipelineAudit_2026-04-25](./asyncCancelPipelineAudit_2026-04-25.md) — long-running async + cancel 경로 5 영역 감사 (onboarding fix 부수 산출물). 4 영역 별 plan 후보로 등재
+- [codexGeminiOnboardingResponseAudit_2026-04-25](./codexGeminiOnboardingResponseAudit_2026-04-25.md) — Codex/Gemini 온보딩 분석 실패 (#176) 응답 형식 audit. 가설 + parse_output 강건화 / prompt 강화 fix 방향
