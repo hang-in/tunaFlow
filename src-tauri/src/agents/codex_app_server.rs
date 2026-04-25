@@ -105,15 +105,22 @@ pub fn is_available() -> bool {
 
 /// ContextPack freshness 판정용 — 현재 활성 thread의 식별 키.
 /// 같은 키 = 같은 codex thread (replay 히스토리 보유). 없으면 None (=> full ContextPack 필요).
+///
+/// brand:* shadow conv 는 root main conv 와 같은 thread 를 공유하도록 키 normalize
+/// (Layer C, branchInheritsMainSessionPlan). main 의 BRANCH_ROOT_CACHE 는
+/// `claude_sdk_session::cache_branch_root_from_db` 가 채우지만 codex 진입 시점에는
+/// 비어 있을 수 있어 cache miss 시 conv_id 그대로 fallback 한다.
 pub fn current_thread_key(conv_id: &str) -> Option<String> {
-    CONV_THREADS.lock().get(conv_id).map(|t| format!("codex-app:{}", t.thread_id))
+    let key = crate::agents::claude_sdk_session::session_key_for(conv_id);
+    CONV_THREADS.lock().get(&key).map(|t| format!("codex-app:{}", t.thread_id))
 }
 
 /// conversation이 제거될 때 해당 thread를 레지스트리에서 제거한다.
 /// 서버 자체는 계속 실행된다.
 #[allow(dead_code)]
 pub fn kill_thread(conv_id: &str) {
-    CONV_THREADS.lock().remove(conv_id);
+    let key = crate::agents::claude_sdk_session::session_key_for(conv_id);
+    CONV_THREADS.lock().remove(&key);
 }
 
 /// app-server 세션을 통해 메시지를 전송하고 스트리밍 응답을 수집한다.
@@ -504,10 +511,13 @@ async fn get_or_create_thread(
     model: &str,
     project_path: Option<&str>,
 ) -> Result<String, AppError> {
+    // brand:* 는 main 의 codex thread 를 공유 (Layer C, branchInheritsMainSessionPlan).
+    let key = crate::agents::claude_sdk_session::session_key_for(conv_id);
+
     // 기존 스레드 확인
     let existing = CONV_THREADS
         .lock()
-        .get(conv_id)
+        .get(&key)
         .map(|t| (t.thread_id.clone(), t.model.clone()));
 
     if let Some((thread_id, current_model)) = existing {
@@ -516,10 +526,10 @@ async fn get_or_create_thread(
         }
         // 모델 변경 — 기존 스레드 폐기, 새 스레드 시작
         eprintln!(
-            "[codex-app-server] model changed ({} → {}), starting new thread for conv={}",
-            current_model, model, conv_id
+            "[codex-app-server] model changed ({} → {}), starting new thread for conv={} (key={})",
+            current_model, model, conv_id, key
         );
-        CONV_THREADS.lock().remove(conv_id);
+        CONV_THREADS.lock().remove(&key);
     }
 
     let cwd = resolve_cwd(project_path);
@@ -550,7 +560,7 @@ async fn get_or_create_thread(
         .to_string();
 
     CONV_THREADS.lock().insert(
-        conv_id.to_string(),
+        key.clone(),
         ConvThread {
             thread_id: thread_id.clone(),
             model: model.to_string(),
@@ -558,8 +568,8 @@ async fn get_or_create_thread(
     );
 
     eprintln!(
-        "[codex-app-server] created thread {} for conv={}",
-        thread_id, conv_id
+        "[codex-app-server] created thread {} for conv={} (key={})",
+        thread_id, conv_id, key
     );
     Ok(thread_id)
 }
