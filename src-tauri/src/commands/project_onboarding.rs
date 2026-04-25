@@ -261,9 +261,16 @@ fn build_prompt(
 
 ---
 
-## 출력 형식
+## 출력 형식 (반드시 준수)
 
-아래 두 섹션을 정확한 마커와 함께 출력하세요. 마커 외에 다른 텍스트는 추가하지 마세요.
+아래 섹션들을 정확한 마커와 함께 출력하세요. 다음 규칙을 어기면 응답을 사용할 수 없습니다.
+
+**출력 규칙**:
+1. 응답의 **첫 줄은 `[CLAUDE_MD_START]`** 로 시작해야 합니다. 인사말, 머리말, "다음과 같이 정리했습니다" 등의 introduction 금지.
+2. 마커는 **영문 ASCII 대괄호** 그대로 출력하세요. `[ CLAUDE_MD_START ]` (공백), `**[CLAUDE_MD_START]**` (볼드), `[CLAUDE\_MD\_START]` (escape), `【CLAUDE_MD_START】` (전각괄호) 모두 금지.
+3. 응답을 markdown code fence (```` ``` ````) 로 감싸지 마세요. 마커 자체가 구분자입니다.
+4. 마커 사이의 본문만 작성하고, 마커 외부에는 어떤 설명/결론/맺음말도 적지 마세요.
+5. 마지막 섹션이 끝난 직후 (`[INITIAL_SETUP_END]` 또는 `[REF_INDEX_END]` 다음) **즉시 응답을 종료**하세요.
 
 [CLAUDE_MD_START]
 # {project_name} — Claude Code Handoff Document
