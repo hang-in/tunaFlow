@@ -154,6 +154,10 @@ export function ProjectOnboardingModal() {
   };
 
   const handleSkip = () => {
+    // analyze_project_for_onboarding 이 아직 진행 중이면 rust 쪽 task 도 정리한다.
+    // preview 단계에서 호출될 때는 이미 task 가 끝났으므로 idempotent 하게 무시되며,
+    // error 단계에서 호출될 때는 orphaned task → 메인창 freeze 를 막는다 (#176 follow-up).
+    invoke("cancel_project_onboarding").catch(() => {});
     cleanupRef.current.forEach((u) => u());
     setModalState("done");
     clearOnboardingProject();
@@ -261,20 +265,15 @@ export function ProjectOnboardingModal() {
 
             <div className="px-6 py-4 border-t border-border flex justify-between items-center">
               {error ? (
-                <>
-                  <button
-                    onClick={() => setModalState("skip_confirm")}
-                    className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {t("onboarding.skip_button")}
-                  </button>
-                  <button
-                    onClick={handleCancel}
-                    className="px-3 py-1.5 text-[11px] font-medium text-destructive/80 hover:text-destructive transition-colors"
-                  >
-                    {t("onboarding.close_button")}
-                  </button>
-                </>
+                // Error 상태에서 "건너뛰기" 와 "닫기" 의 사용자 의도가 동일 ("이 에러 상황 탈출")
+                // 이라 단일 "닫기" 로 통합. handleCancel 이 cancel_project_onboarding 을
+                // 호출해 rust task 까지 안전하게 정리한다.
+                <button
+                  onClick={handleCancel}
+                  className="ml-auto px-3 py-1.5 text-[11px] font-medium text-destructive/80 hover:text-destructive transition-colors"
+                >
+                  {t("onboarding.close_button")}
+                </button>
               ) : (
                 <button
                   onClick={() => setModalState("cancel_confirm")}

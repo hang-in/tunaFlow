@@ -44,6 +44,8 @@
 | [manualVerificationGatePlan_2026-04-24](./manualVerificationGatePlan_2026-04-24.md) | **P1 (ready-to-implement)** — impl-complete 와 Reviewer 사이 사용자 확인 게이트 (B-19 / Issue #176). ⚠️ Manual 파서 + dialog + Rework 경로 재사용. 피드백 반영 (fail 사유 optional 확정). Developer 핸드오프 포함 |
 | [rawqGitignoreIndexFixPlan_2026-04-24](./rawqGitignoreIndexFixPlan_2026-04-24.md) | **P0 (hotfix / Issue #180)** — rawq 가 .gitignore 무시 → target/node_modules 인덱싱 → OOM / 시스템 프리즈. ensure_index 에 빌드 산출물 14개 hardcoded exclude + rebuild UI. Developer 핸드오프 포함 |
 | [claudeDangerouslySkipPermissionsPlan_2026-04-24](./claudeDangerouslySkipPermissionsPlan_2026-04-24.md) | **P0 (hotfix / Issue #178)** — Claude headless permission 플래그 bypassPermissions → dangerously-skip-permissions. 3 call site (claude.rs L162/L380 + claude_sdk_session.rs L381). Developer 핸드오프 포함 |
+| [onboardingCancelLeakFixPlan_2026-04-25](./onboardingCancelLeakFixPlan_2026-04-25.md) | **P1 (Issue #176 follow-up)** — Codex/Gemini 메타 분석 실패 후 "건너뛰기" → 메인창 lock. handleSkip 에 cancel + error state UI 통합 + asyncCancel pipeline audit. Architect 직접 fix |
+| [toolStepsRunningStatusFinalizePlan_2026-04-25](./toolStepsRunningStatusFinalizePlan_2026-04-25.md) | **P1 (Issue #187, MERGED)** — long-doc 후 tool steps spinner 무한 회전. saveToolSteps finalize + ToolStepsView fallback 2 layer. PR #188 머지 완료 |
 | [postParityRuntimeValidationSweepPlan_2026-03-30](./postParityRuntimeValidationSweepPlan_2026-03-30.md) | P1 — parity fix 효과 재검증 |
 | [realWorkflowMemoryQualityValidationPlan_2026-03-30](./realWorkflowMemoryQualityValidationPlan_2026-03-30.md) | P1 — memory/retrieval 응답 품질 검증 |
 | [roleAssignmentCoverageUxPlan](./roleAssignmentCoverageUxPlan.md) | P2 — Settings 역할 커버리지 UX (inferred 저장 명시화 + stale ID 자동 정리 + assertRoleReady 원클릭 적용) |
