@@ -27,7 +27,9 @@
     "pty_clear_failed": "세션 초기화 실패",
     "models_catalog_empty": "(카탈로그가 비어 있습니다)",
     "no_previous_response": "⚠️ **넘길 이전 응답이 없습니다.**\n\n먼저 에이전트에게 질문하고, 응답을 받은 후 handoff를 사용하세요.\n\n입력: `{{prompt}}` → {{engine}}",
-    "rt_config_missing": "⚠️ **RT 설정을 불러오지 못했습니다.** 기본 참가자로 실행합니다.\n\n새 RT를 만들거나 사이드바에서 [+]로 다시 설정하세요."
+    "rt_config_missing": "⚠️ **RT 설정을 불러오지 못했습니다.** 기본 참가자로 실행합니다.\n\n새 RT를 만들거나 사이드바에서 [+]로 다시 설정하세요.",
+    "brand_running_guard": "브랜치에서 진행 중인 작업이 있어 메인 채팅 입력이 비활성화됐습니다",
+    "brand_running_open_drawer": "드로어 열기"
   },
   "message": {
     "role_user": "사용자",

@@ -27,7 +27,9 @@
     "pty_clear_failed": "Session reset failed",
     "models_catalog_empty": "(Catalog is empty)",
     "no_previous_response": "⚠️ **No previous response to forward.**\n\nAsk the agent first, then use handoff after receiving a response.\n\nInput: `{{prompt}}` → {{engine}}",
-    "rt_config_missing": "⚠️ **Failed to load RT config.** Running with default participants.\n\nCreate a new RT or reconfigure from the sidebar [+]."
+    "rt_config_missing": "⚠️ **Failed to load RT config.** Running with default participants.\n\nCreate a new RT or reconfigure from the sidebar [+].",
+    "brand_running_guard": "Branch task running — main chat input disabled",
+    "brand_running_open_drawer": "Open drawer"
   },
   "message": {
     "role_user": "You",
