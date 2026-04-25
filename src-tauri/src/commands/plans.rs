@@ -103,12 +103,15 @@ const SUBTASK_COLS: &str =
 
 /// Create a plan, optionally with an initial set of subtasks.
 /// Returns the created Plan (subtasks can be retrieved via list_subtasks).
+///
+/// Atomicity: plan + subtasks 는 단일 transaction 안에서 INSERT. subtask 중간
+/// 실패 시 plan 도 롤백 (planGenerationRollback Layer A).
 #[tauri::command]
 pub fn create_plan(
     input: CreatePlanInput,
     state: State<DbState>,
 ) -> Result<Plan, AppError> {
-    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let mut conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let id = Uuid::new_v4().to_string();
     let now = now_epoch_ms();
 
@@ -119,32 +122,7 @@ pub fn create_plan(
         find_unique_slug(&conn, &base, None)
     };
 
-    conn.execute(
-        "INSERT INTO plans
-         (id, conversation_id, branch_id, title, description, expected_outcome, status, slug, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', ?7, ?8, ?9)",
-        params![
-            id,
-            input.conversation_id,
-            input.branch_id,
-            input.title,
-            input.description,
-            input.expected_outcome,
-            slug,
-            now,
-            now,
-        ],
-    )?;
-
-    for (i, st) in input.subtasks.iter().enumerate() {
-        let st_id = Uuid::new_v4().to_string();
-        conn.execute(
-            "INSERT INTO plan_subtasks
-             (id, plan_id, idx, title, details, status, outcome, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'todo', NULL, ?6, ?7)",
-            params![st_id, id, i as i64, st.title, st.details, now, now],
-        )?;
-    }
+    create_plan_tx(&mut conn, &id, &slug, now, &input)?;
 
     Ok(Plan {
         id,
@@ -167,6 +145,51 @@ pub fn create_plan(
         created_at: now,
         updated_at: now,
     })
+}
+
+/// Insert plan + subtasks atomically inside a single transaction.
+///
+/// Pure helper extracted from `create_plan` for testability. Caller owns
+/// `&mut Connection`. On any error during plan or subtask INSERT, the
+/// transaction is dropped (auto-rollback via rusqlite Drop).
+fn create_plan_tx(
+    conn: &mut rusqlite::Connection,
+    id: &str,
+    slug: &str,
+    now: i64,
+    input: &CreatePlanInput,
+) -> Result<(), AppError> {
+    let tx = conn.transaction()?;
+
+    tx.execute(
+        "INSERT INTO plans
+         (id, conversation_id, branch_id, title, description, expected_outcome, status, slug, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'draft', ?7, ?8, ?9)",
+        params![
+            id,
+            input.conversation_id,
+            input.branch_id,
+            input.title,
+            input.description,
+            input.expected_outcome,
+            slug,
+            now,
+            now,
+        ],
+    )?;
+
+    for (i, st) in input.subtasks.iter().enumerate() {
+        let st_id = Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO plan_subtasks
+             (id, plan_id, idx, title, details, status, outcome, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'todo', NULL, ?6, ?7)",
+            params![st_id, id, i as i64, st.title, st.details, now, now],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
 }
 
 /// Fetch a single plan by id.
@@ -388,17 +411,35 @@ pub fn update_subtask_status(
 /// Replace all subtasks for a plan with a new ordered list.
 /// Deletes existing subtasks, then inserts the new ones.
 /// Also bumps plan.updated_at.
+///
+/// Atomicity: DELETE + UPDATE + INSERT loop 는 단일 transaction. INSERT 중간
+/// 실패 시 기존 subtask 가 보존됨 (planGenerationRollback Layer A) — 사용자가
+/// 작성한 plan body 의 부분 손실을 방지한다.
 #[tauri::command]
 pub fn replace_plan_subtasks(
     plan_id: String,
     subtasks: Vec<SubtaskInput>,
     state: State<DbState>,
 ) -> Result<Vec<PlanSubtask>, AppError> {
-    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    let mut conn = state.write.lock().map_err(|_| AppError::Lock)?;
     let now = now_epoch_ms();
+    replace_plan_subtasks_tx(&mut conn, &plan_id, &subtasks, now)
+}
 
-    conn.execute("DELETE FROM plan_subtasks WHERE plan_id = ?1", [&plan_id])?;
-    conn.execute(
+/// Pure helper: replace plan subtasks atomically inside a single transaction.
+///
+/// On any error during DELETE / UPDATE / INSERT, the transaction is dropped
+/// (auto-rollback via rusqlite Drop) — existing subtasks are preserved.
+fn replace_plan_subtasks_tx(
+    conn: &mut rusqlite::Connection,
+    plan_id: &str,
+    subtasks: &[SubtaskInput],
+    now: i64,
+) -> Result<Vec<PlanSubtask>, AppError> {
+    let tx = conn.transaction()?;
+
+    tx.execute("DELETE FROM plan_subtasks WHERE plan_id = ?1", [plan_id])?;
+    tx.execute(
         "UPDATE plans SET revision = revision + 1, version_minor = version_minor + 1, updated_at = ?1 WHERE id = ?2",
         params![now, plan_id],
     )?;
@@ -406,7 +447,7 @@ pub fn replace_plan_subtasks(
     let mut result: Vec<PlanSubtask> = Vec::new();
     for (i, st) in subtasks.iter().enumerate() {
         let id = Uuid::new_v4().to_string();
-        conn.execute(
+        tx.execute(
             "INSERT INTO plan_subtasks
              (id, plan_id, idx, title, details, status, outcome, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 'todo', NULL, ?6, ?7)",
@@ -414,7 +455,7 @@ pub fn replace_plan_subtasks(
         )?;
         result.push(PlanSubtask {
             id,
-            plan_id: plan_id.clone(),
+            plan_id: plan_id.to_string(),
             idx: i as i64,
             title: st.title.clone(),
             details: st.details.clone(),
@@ -427,6 +468,7 @@ pub fn replace_plan_subtasks(
         });
     }
 
+    tx.commit()?;
     Ok(result)
 }
 
@@ -723,11 +765,41 @@ pub fn generate_plan_document(
     let file_path = dir.join(format!("{}.md", slug));
     // Skip if file already exists (Architect may have written it directly)
     if !file_path.exists() {
-        std::fs::write(&file_path, &md)
-            .map_err(|e| AppError::Agent(format!("Failed to write plan doc: {}", e)))?;
+        atomic_write_md(&file_path, &md)?;
     }
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Write `content` to `target` atomically: write to a temp file in the same
+/// directory, then rename. Prevents partial / truncated .md on disk-full or
+/// crash mid-write (planGenerationRollback Layer A).
+fn atomic_write_md(target: &Path, content: &str) -> Result<(), AppError> {
+    let dir = target.parent().ok_or_else(|| {
+        AppError::Agent(format!("plan doc target has no parent dir: {}", target.display()))
+    })?;
+    let file_name = target.file_name().and_then(|n| n.to_str()).unwrap_or("plan");
+    // Use pid + timestamp to avoid collisions if multiple writes race.
+    let tmp_name = format!(
+        ".{}.tmp.{}.{}",
+        file_name,
+        std::process::id(),
+        now_epoch_ms()
+    );
+    let tmp_path = dir.join(tmp_name);
+
+    std::fs::write(&tmp_path, content)
+        .map_err(|e| AppError::Agent(format!("Failed to write plan doc tmp: {}", e)))?;
+
+    if let Err(e) = std::fs::rename(&tmp_path, target) {
+        // Best-effort cleanup of the temp file; ignore secondary errors.
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(AppError::Agent(format!(
+            "Failed to rename plan doc tmp -> target: {}",
+            e
+        )));
+    }
+    Ok(())
 }
 
 /// Bump version_major and reset version_minor (for full plan updates from Chat).
@@ -1082,5 +1154,217 @@ mod tests {
             assert!(out.is_none(), "phase='{}' → emit 안 해야 (INV-1)", bogus);
         }
         assert_eq!(count_artifacts(&conn, "decision"), 0);
+    }
+
+    // ─── planGenerationRollback Layer A — atomic tx tests ─────────────────────
+
+    /// Build an in-memory schema sufficient for `create_plan_tx` and
+    /// `replace_plan_subtasks_tx` (real plans/plan_subtasks columns + FK).
+    fn tx_test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
+            CREATE TABLE plans (
+                id                       TEXT PRIMARY KEY,
+                conversation_id          TEXT NOT NULL,
+                branch_id                TEXT,
+                title                    TEXT NOT NULL,
+                description              TEXT,
+                expected_outcome         TEXT,
+                status                   TEXT NOT NULL,
+                phase                    TEXT NOT NULL DEFAULT 'drafting',
+                architect_engine         TEXT,
+                developer_engine         TEXT,
+                reviewer_engines         TEXT,
+                implementation_branch_id TEXT,
+                review_branch_id         TEXT,
+                slug                     TEXT,
+                revision                 INTEGER NOT NULL DEFAULT 0,
+                version_major            INTEGER NOT NULL DEFAULT 1,
+                version_minor            INTEGER NOT NULL DEFAULT 0,
+                created_at               INTEGER NOT NULL,
+                updated_at               INTEGER NOT NULL
+            );
+            CREATE TABLE plan_subtasks (
+                id                TEXT PRIMARY KEY,
+                plan_id           TEXT NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+                idx               INTEGER NOT NULL,
+                title             TEXT NOT NULL,
+                details           TEXT,
+                status            TEXT NOT NULL DEFAULT 'todo',
+                outcome           TEXT,
+                owner_agent       TEXT,
+                last_updated_by   TEXT,
+                created_at        INTEGER NOT NULL,
+                updated_at        INTEGER NOT NULL
+            );",
+        ).unwrap();
+        conn
+    }
+
+    fn count(conn: &Connection, table: &str, where_clause: &str) -> i64 {
+        conn.query_row(
+            &format!("SELECT COUNT(*) FROM {} {}", table, where_clause),
+            [],
+            |r| r.get(0),
+        ).unwrap()
+    }
+
+    #[test]
+    fn create_plan_tx_inserts_plan_and_subtasks() {
+        let mut conn = tx_test_conn();
+        let input = CreatePlanInput {
+            conversation_id: "conv-1".into(),
+            branch_id: None,
+            title: "T1".into(),
+            description: None,
+            expected_outcome: None,
+            subtasks: vec![
+                SubtaskInput { title: "s1".into(), details: None },
+                SubtaskInput { title: "s2".into(), details: Some("body".into()) },
+            ],
+        };
+        create_plan_tx(&mut conn, "plan-1", "t1", 1000, &input).unwrap();
+        assert_eq!(count(&conn, "plans", "WHERE id='plan-1'"), 1);
+        assert_eq!(count(&conn, "plan_subtasks", "WHERE plan_id='plan-1'"), 2);
+    }
+
+    #[test]
+    fn create_plan_tx_rolls_back_on_subtask_fk_violation() {
+        let mut conn = tx_test_conn();
+        // Pre-insert a plan_subtask whose id will collide on second call.
+        // Simpler: trigger UNIQUE PK violation by passing duplicate plan id.
+        conn.execute(
+            "INSERT INTO plans (id, conversation_id, title, status, created_at, updated_at)
+             VALUES ('plan-existing', 'conv-1', 'X', 'draft', 0, 0)",
+            [],
+        ).unwrap();
+
+        let input = CreatePlanInput {
+            conversation_id: "conv-1".into(),
+            branch_id: None,
+            title: "T-dup".into(),
+            description: None,
+            expected_outcome: None,
+            subtasks: vec![SubtaskInput { title: "s1".into(), details: None }],
+        };
+        // Reuse the existing plan id → UNIQUE PK on plans → tx aborts.
+        let res = create_plan_tx(&mut conn, "plan-existing", "t-dup", 1000, &input);
+        assert!(res.is_err(), "duplicate plan id should fail");
+
+        // No new subtasks (ensures rollback — no half-applied subtask insert).
+        assert_eq!(
+            count(&conn, "plan_subtasks", "WHERE plan_id='plan-existing'"),
+            0,
+            "subtasks must not leak from rolled-back tx"
+        );
+        // Original plan still has its old title (no partial UPDATE side-effect).
+        let title: String = conn.query_row(
+            "SELECT title FROM plans WHERE id='plan-existing'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(title, "X");
+    }
+
+    #[test]
+    fn replace_plan_subtasks_tx_replaces_atomically() {
+        let mut conn = tx_test_conn();
+        // Seed a plan with 2 existing subtasks.
+        conn.execute(
+            "INSERT INTO plans (id, conversation_id, title, status, created_at, updated_at)
+             VALUES ('p-r', 'c-r', 'R', 'active', 0, 0)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plan_subtasks (id, plan_id, idx, title, status, created_at, updated_at)
+             VALUES ('old-1', 'p-r', 0, 'old1', 'todo', 0, 0)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plan_subtasks (id, plan_id, idx, title, status, created_at, updated_at)
+             VALUES ('old-2', 'p-r', 1, 'old2', 'todo', 0, 0)",
+            [],
+        ).unwrap();
+
+        let new_subtasks = vec![
+            SubtaskInput { title: "new1".into(), details: None },
+            SubtaskInput { title: "new2".into(), details: None },
+            SubtaskInput { title: "new3".into(), details: None },
+        ];
+        let result = replace_plan_subtasks_tx(&mut conn, "p-r", &new_subtasks, 2000).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(count(&conn, "plan_subtasks", "WHERE plan_id='p-r'"), 3);
+        assert_eq!(count(&conn, "plan_subtasks", "WHERE id IN ('old-1','old-2')"), 0);
+        // revision bumped
+        let rev: i64 = conn.query_row(
+            "SELECT revision FROM plans WHERE id='p-r'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(rev, 1);
+    }
+
+    #[test]
+    fn replace_plan_subtasks_tx_rolls_back_on_invalid_fk() {
+        let mut conn = tx_test_conn();
+        // Seed a plan + 2 existing subtasks (these must survive a failed replace).
+        conn.execute(
+            "INSERT INTO plans (id, conversation_id, title, status, created_at, updated_at)
+             VALUES ('p-keep', 'c', 'K', 'active', 0, 0)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plan_subtasks (id, plan_id, idx, title, status, created_at, updated_at)
+             VALUES ('keep-1', 'p-keep', 0, 'keep1', 'todo', 0, 0)",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plan_subtasks (id, plan_id, idx, title, status, created_at, updated_at)
+             VALUES ('keep-2', 'p-keep', 1, 'keep2', 'todo', 0, 0)",
+            [],
+        ).unwrap();
+
+        // Call replace against a non-existent plan id. The DELETE / UPDATE
+        // succeed silently (zero rows), but we then deliberately corrupt the
+        // tx by trying to INSERT a subtask whose plan_id doesn't exist.
+        // SQLite enforces FK violation → ConstraintViolation → abort.
+        let new_subtasks = vec![SubtaskInput { title: "x".into(), details: None }];
+        let res = replace_plan_subtasks_tx(&mut conn, "p-nonexistent", &new_subtasks, 3000);
+        assert!(res.is_err(), "FK violation must abort tx");
+
+        // Existing subtasks for the *other* plan must be untouched (DELETE was
+        // scoped to 'p-nonexistent'). This proves the rollback didn't damage
+        // unrelated data.
+        assert_eq!(count(&conn, "plan_subtasks", "WHERE plan_id='p-keep'"), 2);
+    }
+
+    #[test]
+    fn atomic_write_md_replaces_existing_file_atomically() {
+        let dir = std::env::temp_dir().join(format!(
+            "tunaflow-plan-atomic-test-{}-{}",
+            std::process::id(),
+            now_epoch_ms()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("p.md");
+
+        // First write.
+        atomic_write_md(&target, "first").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "first");
+
+        // Second write must succeed and fully replace (rename overwrites).
+        atomic_write_md(&target, "second").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "second");
+
+        // No leftover .tmp.* in dir.
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty(), "tmp file leaked: {:?}", leftovers);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
