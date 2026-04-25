@@ -132,7 +132,13 @@ export async function saveToolSteps(messageId: string): Promise<void> {
   const tsStore = useToolStepsStore.getState();
   const steps = tsStore.getSteps(messageId);
   if (steps.length > 0) {
-    invoke("save_progress_content", { messageId, progressContent: serializeSteps(steps) })
+    // agent:completed 가 도달한 시점에 stream 은 종료된 것이므로 남은
+    // "running" step 은 race/누락 케이스로 정의상 마무리된 상태. done 으로
+    // finalize 해서 멈춘 spinner 가 progressContent 에 굳지 않게 한다.
+    const finalized = steps.map((s) =>
+      s.status === "running" ? { ...s, status: "done" as const } : s,
+    );
+    invoke("save_progress_content", { messageId, progressContent: serializeSteps(finalized) })
       .catch((e) => console.debug("[save-steps]", e));
     tsStore.clear(messageId);
   }

@@ -38,7 +38,13 @@ export function ToolStepsView({ steps, isStreaming, durationMs }: ToolStepsViewP
 
   // Completed — show last step, expandable
   if (!isStreaming) {
-    const lastStep = steps[steps.length - 1];
+    // Defensive: progressContent 가 과거 race/누락으로 status="running" 인
+    // step 을 포함할 수 있다. 비-스트리밍 시점에서는 정의상 모든 step 이
+    // 완료 상태이므로 표시상 done 으로 fallback (마이그레이션 불요).
+    const displaySteps = steps.map((s) =>
+      s.status === "running" ? { ...s, status: "done" as const } : s,
+    );
+    const lastStep = displaySteps[displaySteps.length - 1];
 
     return (
       <div className="mb-1.5">
@@ -48,13 +54,13 @@ export function ToolStepsView({ steps, isStreaming, durationMs }: ToolStepsViewP
         >
           {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           {!expanded && lastStep && (
-            <span className="truncate">{stepIcon(lastStep)} {formatStep(lastStep)} <span className="ml-1 opacity-60">+{steps.length - 1}</span></span>
+            <span className="truncate">{stepIcon(lastStep)} {formatStep(lastStep)} <span className="ml-1 opacity-60">+{displaySteps.length - 1}</span></span>
           )}
-          {expanded && <span>{steps.length} steps</span>}
+          {expanded && <span>{displaySteps.length} steps</span>}
         </button>
         {expanded && (
           <div className="mt-1 pl-4 space-y-0.5 max-h-40 overflow-y-auto">
-            {steps.map((step, i) => (
+            {displaySteps.map((step, i) => (
               <StepLine key={i} step={step} showOutput />
             ))}
           </div>
