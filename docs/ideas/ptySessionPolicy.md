@@ -1,9 +1,19 @@
 # PTY 세션 정책 — 채팅=세션 1:1 매핑
 
-> Status: draft
+> Status: archived (superseded by `docs/reference/branchSessionPolicy.md`)
 > Created: 2026-04-11
+> Archived: 2026-04-25 (s40, sdk-url WS 전환 후 일반화)
 > Branch: `feature/pty-interactive`
 > 연관: `ptyFullIntegrationPlan.md`, `ptyInteractiveIdea.md`
+> Superseded by: `docs/reference/branchSessionPolicy.md` — PTY 의존 제거하고
+> "interactive session backbone (PTY → sdk-url WS / codex app-server)" 로
+> 일반화한 SSOT.
+
+> **본 문서의 원래 의도 (`Branch | 부모 채팅의 PTY 세션 공유`, line 164) 는
+> branchSessionPolicy.md 의 INV-1~INV-5 로 옮겨졌다.** PTY → WS 전환 후
+> 6 세션 (s36~s40) 동안 의도가 task 파이프라인으로 surface 되지 못해 코드와
+> divergence 가 발생했고, `docs/plans/branchInheritsMainSessionPlan_2026-04-25.md`
+> 가 회복 작업을 추적한다.
 
 ---
 

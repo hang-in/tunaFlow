@@ -142,6 +142,7 @@ cd src-tauri && cargo test --lib  # Rust unit tests (485 tests)
 | `docs/reference/sessionHistory.md` | **세션 이력 전체** — 새 세션 시작 시 또는 과거 결정 맥락 필요 시 읽기 |
 | `docs/reference/dataModelRevised.md` | 도메인 모델 SSOT |
 | `docs/reference/implementationStatus.md` | 기능별 구현 현황 + Provider 비교 테이블 |
+| `docs/reference/branchSessionPolicy.md` | **brand session = main session 공유 원칙** (interactive session backbone, INV-1~5) |
 | `docs/plans/index.md` | 40+개 plan 상태 인덱스 |
 | `docs/prompts/index.md` | 실행 프롬프트 인덱스 |
 | `docs/plans/threadModelRoundtableRedesign.md` | RT/Branch 통합 설계 |

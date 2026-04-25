@@ -5,6 +5,7 @@
 - [GLOSSARY](./GLOSSARY.md)
 - [currentStateReview](./currentStateReview.md)
 - [dataModelRevised](./dataModelRevised.md)
+- [branchSessionPolicy](./branchSessionPolicy.md) — brand 가 main interactive session 을 공유한다는 SSOT (INV-1~5). Layer A/B/C 코드 회복은 `docs/plans/branchInheritsMainSessionPlan_2026-04-25.md`
 - [frontendArchitecture](./frontendArchitecture.md)
 - [implementationStatus](./implementationStatus.md)
 - [modelDiscoveryNotes](./modelDiscoveryNotes.md)
