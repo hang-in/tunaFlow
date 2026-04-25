@@ -4,7 +4,7 @@
 //! WebSocket 클라이언트로 연결해 멀티턴 대화를 유지한다.
 //!
 //! 프로토콜: JSON-RPC 2.0 over WebSocket
-//! 소스 참조: `_util/codex/codex-rs/app-server-protocol/src/`
+//! 소스 참조: `_research/_util/codex/codex-rs/app-server-protocol/src/`
 //!
 //! # 구조
 //! - **글로벌 AppServer**: 하나의 codex 프로세스 + 하나의 WS 연결

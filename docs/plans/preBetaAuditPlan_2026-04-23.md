@@ -69,7 +69,7 @@ Apache 2.0 배포 의무 + MIT 호환 파생 저작물 고지.
 
 **필수 attribution 대상**:
 - `rawq` (MIT, github.com/auyelbekov/rawq) — code search sidecar, 로컬 patch 적용
-- `codex` (Apache 2.0, OpenAI) — `_util/codex/` archive (publicReadiness Phase 1 에서 제거됐는지 재확인)
+- `codex` (Apache 2.0, OpenAI) — `_research/_util/codex/` archive (소스 참조용, gitignore 제외, 배포 번들 미포함)
 - `xterm.js` — PTY 터미널
 - `react-markdown` / `remark-gfm` / `react-syntax-highlighter`
 - `D2Coding` fonts (OFL, 8MB tracked)

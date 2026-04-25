@@ -46,6 +46,7 @@ screenshot-*.png
 
 # External tool clones / scratch (not part of tunaFlow source)
 _util/
+_research/
 _stash_recovery/
 
 # Eval run artifacts (results emitted at runtime; suite README preserved)

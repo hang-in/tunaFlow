@@ -156,9 +156,9 @@ bkit 세 레포 모두 **Apache License 2.0**. Copyright POPUP STUDIO PTE. LTD. 
 
 ## 참고 자료 경로
 
-- `/Users/d9ng/privateProject/tunaFlow/_util/bkit-claude-code/` (39 skills + 36 agents + 128 lib)
-- `/Users/d9ng/privateProject/tunaFlow/_util/bkit-codex/` (Codex 이식, 간소)
-- `/Users/d9ng/privateProject/tunaFlow/_util/bkit-gemini/` (Gemini 이식)
+- `/Users/d9ng/privateProject/tunaFlow/_research/_util/bkit-claude-code/` (39 skills + 36 agents + 128 lib)
+- `/Users/d9ng/privateProject/tunaFlow/_research/_util/bkit-codex/` (Codex 이식, 간소)
+- `/Users/d9ng/privateProject/tunaFlow/_research/_util/bkit-gemini/` (Gemini 이식)
 
 `_util/` 은 gitignore 됨. 본 문서 이후 불필요하면 제거해도 됨.
 
