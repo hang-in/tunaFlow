@@ -126,6 +126,260 @@ pub fn apply_branch_session_inheritance(
     true
 }
 
+/// userIntentSsotSurfacingPlan: agent role 판정. context_loading 안에서 두 번
+/// 사용된다 — (1) `agent_role_doc` 로딩, (2) intent_lookup 활성 여부.
+/// 단일 SSOT 로 분리해 두 경로가 어긋나지 않도록 한다.
+pub(crate) fn resolve_agent_role(conn: &Connection, conversation_id: &str) -> &'static str {
+    let is_branch = conversation_id.starts_with("branch:");
+    if !is_branch {
+        return "architect";
+    }
+    let branch_id = conversation_id.strip_prefix("branch:").unwrap_or("");
+    let is_impl: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM plans WHERE implementation_branch_id = ?1",
+            [branch_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if is_impl {
+        return "developer";
+    }
+    let is_review: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM plans WHERE review_branch_id = ?1",
+            [branch_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if is_review {
+        "reviewer"
+    } else {
+        "architect"
+    }
+}
+
+/// userIntentSsotSurfacingPlan §Layer 2: 작업 주제로부터 검색 키워드 추출 +
+/// synonym expansion (한/영 mix).
+///
+/// 입력은 현재 prompt + active plan title (있으면). 출력은 dedup·소문자 키워드
+/// 리스트로, 길이 ≥ 2 이고 stopword 가 아닌 토큰만 남긴다. 매핑 대상이 없으면
+/// 빈 Vec — 호출 측에서 매칭 skip.
+pub(crate) fn extract_intent_keywords(prompt: &str, plan_title: Option<&str>) -> Vec<String> {
+    use std::collections::HashSet;
+
+    // 사용자 의도 신호로 자주 함께 묶이는 한/영 동의어 페어. 한 쪽이 등장하면
+    // 다른 쪽도 함께 검색해 cross-language 매칭을 보강한다. 양방향이라 키 순서
+    // 무관.
+    const SYNONYMS: &[(&str, &[&str])] = &[
+        ("session", &["세션", "resume", "continuation", "ws"]),
+        ("세션", &["session", "resume"]),
+        ("branch", &["브랜치", "brand"]),
+        ("브랜치", &["branch", "brand"]),
+        ("context", &["컨텍스트", "contextpack", "context-pack"]),
+        ("컨텍스트", &["context", "contextpack"]),
+        ("contextpack", &["context", "컨텍스트"]),
+        ("context-pack", &["contextpack", "컨텍스트"]),
+        ("memory", &["메모리", "기억", "compressed"]),
+        ("메모리", &["memory", "기억"]),
+        ("intent", &["의도", "purpose"]),
+        ("의도", &["intent"]),
+        ("ssot", &["sst", "source-of-truth", "단일소스"]),
+        ("retrieval", &["검색", "lookup", "조회"]),
+        ("검색", &["retrieval", "lookup"]),
+        ("plan", &["플랜", "계획", "설계"]),
+        ("플랜", &["plan", "계획"]),
+        ("계획", &["plan", "설계"]),
+        ("review", &["리뷰", "verdict"]),
+        ("리뷰", &["review"]),
+        ("rt", &["roundtable", "라운드테이블"]),
+        ("roundtable", &["rt", "라운드테이블"]),
+        ("brand", &["branch", "브랜치"]),
+        ("storage", &["저장소", "저장"]),
+        ("저장소", &["storage", "저장"]),
+    ];
+
+    // 한국어 짧은 stopword (두 글자 조사/접속어) — extract_intent_keywords 전용
+    // (FTS5 build_fts_query 의 STOPWORDS 와 별개).
+    const KO_STOPWORDS: &[&str] = &[
+        "그리고", "하지만", "그래서", "지금", "여기", "이거", "그거", "저거",
+        "있는", "있어", "없는", "없어", "라는", "이라는", "처럼", "에서", "에게",
+        "이미", "다시", "정말", "조금", "많이", "어떤", "그런", "이런", "저런",
+    ];
+    const EN_STOPWORDS: &[&str] = &[
+        "the", "and", "for", "with", "that", "this", "from", "have", "has", "had",
+        "you", "your", "are", "was", "were", "what", "when", "where", "which",
+        "should", "could", "would", "can", "may", "must", "will", "into", "about",
+        "but", "not", "yes", "no", "ok", "okay", "very", "much", "more", "some",
+        "any", "all", "each", "every", "let", "lets", "just", "only", "also",
+    ];
+
+    let mut bucket: HashSet<String> = HashSet::new();
+
+    let feed = |s: &str, out: &mut HashSet<String>| {
+        let cleaned: String = s
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '_' || c == '가' || (c >= '\u{AC00}' && c <= '\u{D7A3}') { c } else { ' ' })
+            .collect();
+        for raw in cleaned.split_whitespace() {
+            let lower = raw.to_lowercase();
+            if lower.chars().count() < 2 {
+                continue;
+            }
+            if EN_STOPWORDS.contains(&lower.as_str()) || KO_STOPWORDS.contains(&lower.as_str()) {
+                continue;
+            }
+            // 너무 긴 토큰 (URL 등) 스킵
+            if lower.len() > 40 {
+                continue;
+            }
+            out.insert(lower.clone());
+            // synonym expansion
+            for (key, syns) in SYNONYMS {
+                if *key == lower.as_str() || lower.contains(*key) {
+                    for syn in *syns {
+                        out.insert((*syn).to_string());
+                    }
+                }
+            }
+        }
+    };
+
+    feed(prompt, &mut bucket);
+    if let Some(title) = plan_title {
+        feed(title, &mut bucket);
+    }
+
+    let mut out: Vec<String> = bucket.into_iter().collect();
+    out.sort();
+    // 너무 많은 키워드는 매칭을 noisy 하게 만든다 — 상한 24개.
+    if out.len() > 24 {
+        out.truncate(24);
+    }
+    out
+}
+
+/// userIntentSsotSurfacingPlan §Layer 2: project 내 모든 conversation 의
+/// `role='user'` 메시지에서 키워드 매칭 + recency boost. INV-2/3/4/5.
+///
+/// 가중치:
+///   score = matched_unique_keywords / total_keywords * 0.7 + recency_score * 0.3
+/// recency_score = 1 / (1 + age_days / 14) — 2주 반감기.
+///
+/// 반환은 score DESC, 동률이면 timestamp DESC. top_n 으로 truncate.
+pub(crate) fn lookup_user_intent_messages(
+    conn: &Connection,
+    project_key: &str,
+    keywords: &[String],
+    top_n: usize,
+) -> Vec<UserIntentMatch> {
+    if keywords.is_empty() || top_n == 0 {
+        return Vec::new();
+    }
+
+    // INV-2: role='user' 만 매칭. INV-3: messages 테이블 raw content 그대로 (truncate
+    // 없이). INV-4: 같은 project 의 모든 conversation 대상 (cross-conversation).
+    //
+    // SQLite LIKE 는 case-insensitive ASCII 만이라 lower(content) 에 적용한다.
+    // 키워드 → OR 절. 너무 많으면 SQL 길이가 커지므로 상한 24개 (extract 단계에서
+    // 이미 trim).
+    let now_ms = crate::db::migrations::now_epoch_ms();
+
+    let mut sql = String::from(
+        "SELECT m.id, m.conversation_id, m.content, m.timestamp \
+         FROM messages m \
+         JOIN conversations c ON c.id = m.conversation_id \
+         WHERE m.role = 'user' \
+           AND c.project_key = ?1 \
+           AND (",
+    );
+    let mut params: Vec<rusqlite::types::Value> = vec![project_key.to_string().into()];
+    let mut first = true;
+    for (i, _kw) in keywords.iter().enumerate() {
+        if !first {
+            sql.push_str(" OR ");
+        }
+        first = false;
+        sql.push_str(&format!("lower(m.content) LIKE ?{}", i + 2));
+    }
+    sql.push_str(") ORDER BY m.timestamp DESC LIMIT 200");
+
+    for kw in keywords {
+        let pat = format!("%{}%", kw.to_lowercase());
+        params.push(pat.into());
+    }
+
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return Vec::new();
+    };
+    let rows: Vec<(String, String, String, i64)> = match stmt.query_map(
+        rusqlite::params_from_iter(params.iter()),
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+        )),
+    ) {
+        Ok(mapped) => mapped.filter_map(|r| r.ok()).collect(),
+        Err(_) => return Vec::new(),
+    };
+
+    let total_kw = keywords.len() as f64;
+
+    let mut scored: Vec<UserIntentMatch> = rows
+        .into_iter()
+        .map(|(_id, conv_id, content, ts)| {
+            let lower = content.to_lowercase();
+            let mut hit_kws: Vec<String> = Vec::new();
+            for kw in keywords {
+                if lower.contains(&kw.to_lowercase()) {
+                    hit_kws.push(kw.clone());
+                }
+            }
+            let coverage = if total_kw > 0.0 {
+                hit_kws.len() as f64 / total_kw
+            } else {
+                0.0
+            };
+            let age_days = ((now_ms - ts).max(0) as f64 / 86_400_000.0).max(0.0);
+            // INV-5: 같은 키워드 매칭이라도 최근 메시지가 우위. 14d 반감기.
+            let recency = 1.0 / (1.0 + age_days / 14.0);
+            let score = coverage * 0.7 + recency * 0.3;
+            UserIntentMatch {
+                timestamp_ms: ts,
+                conversation_id: conv_id,
+                content,
+                score,
+                matched_keywords: hit_kws,
+            }
+        })
+        .filter(|m| !m.matched_keywords.is_empty())
+        .collect();
+
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(b.timestamp_ms.cmp(&a.timestamp_ms))
+    });
+
+    // 같은 raw content 가 (서로 다른 conversation 에 paste 된 경우) 중복으로
+    // 잡힐 수 있다. 앞 80자 prefix 로 dedup.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut deduped: Vec<UserIntentMatch> = Vec::new();
+    for m in scored {
+        let key: String = m.content.chars().take(80).collect();
+        if seen.insert(key) {
+            deduped.push(m);
+            if deduped.len() >= top_n {
+                break;
+            }
+        }
+    }
+    deduped
+}
+
 /// Build an enriched prompt with lite context prefix for non-Claude engines.
 /// Retained for roundtable participant paths that don't carry full SendWithClaudeInput.
 #[allow(dead_code)]
@@ -221,6 +475,27 @@ pub struct ContextData {
     /// artifact 의 body (frontmatter strip 후). ContextPack 주입 시 worldview 뒤 /
     /// identity 앞 위치. 없으면 None.
     pub identity_summary_fragment: Option<String>,
+
+    /// userIntentSsotSurfacingPlan: ContextPack 의 [USER_INTENT_LOOKUP] 섹션에
+    /// 주입할 과거 사용자 메시지 후보. architect persona 진입 시에만 빌드되며
+    /// (다른 role 은 None), 매칭이 0건이어도 architect 면 빈 Vec 으로 채워서
+    /// INV-1 의 "항상 섹션 출력" 을 보장한다.
+    ///
+    /// 각 항목: (timestamp_ms, conversation_id, content_excerpt, score, matched_keywords).
+    /// `content_excerpt` 는 prompt_assembly 에서 ~200 char cap 하기 전 raw 본문.
+    pub intent_lookup: Option<Vec<UserIntentMatch>>,
+}
+
+/// userIntentSsotSurfacingPlan: 과거 사용자 메시지 매칭 결과.
+/// `prompt_assembly` 에서 inline 형태로 직렬화된다.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct UserIntentMatch {
+    pub timestamp_ms: i64,
+    pub conversation_id: String,
+    pub content: String,
+    pub score: f64,
+    pub matched_keywords: Vec<String>,
 }
 
 /// Phase A: Load all data needed for ContextPack assembly from DB.
@@ -566,29 +841,17 @@ pub fn load_context_data(
         })
         .collect();
 
+    // userIntentSsotSurfacingPlan: 본 conversation 의 agent role 을 미리 한번
+    // 결정해 두 곳 (agent_role_doc 로딩 + intent_lookup 활성화) 에서 공유한다.
+    // resolve_agent_role 은 plans.implementation_branch_id / review_branch_id 를
+    // 조회하므로 비-architect 일 때만 짧게 read query.
+    let agent_role = resolve_agent_role(conn, conversation_id);
+
     // Load agent role document from project docs/agents/
     let agent_role_doc: Option<String> = project_path.and_then(|pp| {
         let agents_dir = std::path::Path::new(pp).join("docs").join("agents");
         if !agents_dir.is_dir() { return None; }
-
-        // Determine role:
-        // - Implementation branch (linked to plan) → developer
-        // - Review branch → reviewer
-        // - Everything else (main chat, subtask discussion branch) → architect
-        let role = if is_branch {
-            let branch_id = conversation_id.strip_prefix("branch:").unwrap_or("");
-            let is_impl: bool = conn.query_row(
-                "SELECT COUNT(*) > 0 FROM plans WHERE implementation_branch_id = ?1",
-                [branch_id], |row| row.get(0),
-            ).unwrap_or(false);
-            let is_review: bool = conn.query_row(
-                "SELECT COUNT(*) > 0 FROM plans WHERE review_branch_id = ?1",
-                [branch_id], |row| row.get(0),
-            ).unwrap_or(false);
-            if is_impl { "developer" } else if is_review { "reviewer" } else { "architect" }
-        } else { "architect" };
-
-        let role_file = agents_dir.join(format!("{}.md", role));
+        let role_file = agents_dir.join(format!("{}.md", agent_role));
         std::fs::read_to_string(&role_file).ok()
     });
 
@@ -622,6 +885,35 @@ pub fn load_context_data(
         })
         .map(|a| crate::agents::identity_analyzer::strip_frontmatter(&a.content).to_string());
 
+    // userIntentSsotSurfacingPlan: architect persona 진입 시 사용자 의도 SSOT
+    // (project 내 모든 conversation 의 role='user' 메시지) 에서 현재 작업 주제와
+    // 관련된 과거 메시지를 자동 surface. 매칭 0건이어도 architect 면 빈 Vec 으로
+    // 채워서 INV-1 (항상 섹션 출력) 을 보장한다. developer/reviewer 는 None →
+    // prompt_assembly 에서 섹션 생략.
+    let intent_lookup: Option<Vec<UserIntentMatch>> = if agent_role == "architect" {
+        if let Some(pk) = project_key.as_deref() {
+            // Active plan title 을 키워드 보강에 사용
+            let active_plan_title: Option<String> = conn
+                .query_row(
+                    "SELECT title FROM plans WHERE conversation_id = ?1 AND status = 'active' LIMIT 1",
+                    [plan_lookup_conv.as_deref().unwrap_or(conversation_id)],
+                    |row| row.get(0),
+                )
+                .ok();
+            let keywords = extract_intent_keywords(prompt, active_plan_title.as_deref());
+            if keywords.is_empty() {
+                Some(Vec::new())
+            } else {
+                Some(lookup_user_intent_messages(conn, pk, &keywords, 5))
+            }
+        } else {
+            // project_key 가 없으면 cross-conv 검색 자체가 불가 — 빈 섹션
+            Some(Vec::new())
+        }
+    } else {
+        None
+    };
+
     ContextData {
         conversation_id: conversation_id.to_string(),
         project_path: project_path.map(|s| s.to_string()),
@@ -651,6 +943,7 @@ pub fn load_context_data(
         conventions_synced,
         is_session_continuation: false, // persistence.rs 에서 필요시 true 로 override
         identity_summary_fragment,
+        intent_lookup,
     }
 }
 
@@ -954,6 +1247,7 @@ mod tests {
             conventions_synced: false,
             is_session_continuation: false,
             identity_summary_fragment: None,
+            intent_lookup: None,
         }
     }
 
@@ -1048,5 +1342,216 @@ mod tests {
         assert!(!applied, "non-branch conv 는 inheritance 미적용");
         assert!(!data.is_session_continuation);
         assert_eq!(data.parent_messages.len(), 1);
+    }
+
+    // ─── userIntentSsotSurfacingPlan tests ──────────────────────────────────
+
+    fn build_intent_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE conversations (
+                id TEXT PRIMARY KEY,
+                project_key TEXT NOT NULL,
+                type TEXT
+             );
+             CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'done',
+                engine TEXT
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn add_conv(conn: &Connection, conv_id: &str, project_key: &str) {
+        conn.execute(
+            "INSERT INTO conversations (id, project_key, type) VALUES (?1, ?2, 'main')",
+            rusqlite::params![conv_id, project_key],
+        )
+        .unwrap();
+    }
+
+    fn add_user_msg(conn: &Connection, conv_id: &str, content: &str, ts: i64) {
+        let id = format!("u-{}-{}", conv_id, ts);
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
+             VALUES (?1, ?2, 'user', ?3, ?4, 'done')",
+            rusqlite::params![id, conv_id, content, ts],
+        )
+        .unwrap();
+    }
+
+    fn add_assistant_msg(conn: &Connection, conv_id: &str, content: &str, ts: i64) {
+        let id = format!("a-{}-{}", conv_id, ts);
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
+             VALUES (?1, ?2, 'assistant', ?3, ?4, 'done')",
+            rusqlite::params![id, conv_id, content, ts],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn extract_keywords_drops_stopwords_and_short_tokens() {
+        let kws = extract_intent_keywords("you are the architect for branch session", None);
+        // 'you', 'are', 'the', 'for' 는 stopword → 제외
+        assert!(!kws.contains(&"you".into()));
+        assert!(!kws.contains(&"the".into()));
+        assert!(kws.contains(&"branch".into()));
+        assert!(kws.contains(&"session".into()));
+        // synonym expansion 으로 한국어 동의어 추가
+        assert!(kws.contains(&"세션".into()) || kws.contains(&"resume".into()),
+            "session 의 한국어 동의어 또는 resume 가 expanded: {:?}", kws);
+    }
+
+    #[test]
+    fn extract_keywords_handles_korean_input() {
+        let kws = extract_intent_keywords("브랜치 세션을 메인에서 이어받자", None);
+        assert!(kws.contains(&"브랜치".into()));
+        assert!(kws.contains(&"세션을".into()) || kws.contains(&"세션".into()),
+            "한국어 토큰 추출: {:?}", kws);
+    }
+
+    #[test]
+    fn extract_keywords_with_plan_title_combines_sources() {
+        let kws = extract_intent_keywords("rev.1 설계", Some("Branch session inheritance"));
+        assert!(kws.contains(&"branch".into()));
+        assert!(kws.contains(&"session".into()));
+        assert!(kws.contains(&"inheritance".into()));
+    }
+
+    #[test]
+    fn lookup_user_intent_filters_by_role_user_only() {
+        // INV-2: role='user' 만 매칭 — assistant 메시지는 무시.
+        let conn = build_intent_db();
+        add_conv(&conn, "c1", "proj-A");
+        add_user_msg(&conn, "c1", "branch session 을 ws 모드로 입장한다", 1_700_000_000_000);
+        add_assistant_msg(&conn, "c1", "branch session ws 작업 결과", 1_700_000_001_000);
+
+        let kws = vec!["branch".to_string(), "session".to_string(), "ws".to_string()];
+        let hits = lookup_user_intent_messages(&conn, "proj-A", &kws, 5);
+        assert_eq!(hits.len(), 1, "user 메시지 1건만 잡혀야: {:?}", hits);
+        assert!(hits[0].content.contains("입장한다"));
+    }
+
+    #[test]
+    fn lookup_user_intent_searches_across_conversations() {
+        // INV-4: 같은 project 의 다른 conversation 의 user 메시지도 매칭.
+        let conn = build_intent_db();
+        add_conv(&conn, "c1", "proj-A");
+        add_conv(&conn, "c2", "proj-A");
+        add_conv(&conn, "c3", "proj-B"); // 다른 project — 매칭 제외
+        add_user_msg(&conn, "c1", "branch session 작업 1", 1_700_000_000_000);
+        add_user_msg(&conn, "c2", "branch session 작업 2", 1_700_000_001_000);
+        add_user_msg(&conn, "c3", "branch session 다른 프로젝트", 1_700_000_002_000);
+
+        let kws = vec!["branch".to_string()];
+        let hits = lookup_user_intent_messages(&conn, "proj-A", &kws, 10);
+        let conv_ids: std::collections::HashSet<&str> = hits.iter().map(|m| m.conversation_id.as_str()).collect();
+        assert!(conv_ids.contains("c1") && conv_ids.contains("c2"),
+            "proj-A 의 두 conv 모두 매칭: {:?}", conv_ids);
+        assert!(!conv_ids.contains("c3"), "다른 project 의 메시지는 제외");
+    }
+
+    #[test]
+    fn lookup_user_intent_recency_boost_orders_recent_first() {
+        // INV-5: 같은 키워드 매칭 시 최근 메시지가 우위.
+        let conn = build_intent_db();
+        add_conv(&conn, "c1", "proj-A");
+        let old_ts: i64 = 1_500_000_000_000; // 2017
+        let recent_ts = crate::db::migrations::now_epoch_ms() - 3600_000; // 1시간 전
+        add_user_msg(&conn, "c1", "branch session old", old_ts);
+        add_user_msg(&conn, "c1", "branch session recent", recent_ts);
+
+        let kws = vec!["branch".to_string(), "session".to_string()];
+        let hits = lookup_user_intent_messages(&conn, "proj-A", &kws, 5);
+        assert_eq!(hits.len(), 2);
+        assert!(hits[0].content.contains("recent"),
+            "최근 메시지가 첫번째: {:?}", hits[0].content);
+        assert!(hits[0].score > hits[1].score, "최근 score 우위");
+    }
+
+    #[test]
+    fn lookup_user_intent_returns_empty_for_no_keywords() {
+        let conn = build_intent_db();
+        add_conv(&conn, "c1", "proj-A");
+        add_user_msg(&conn, "c1", "branch session", 1_700_000_000_000);
+        let hits = lookup_user_intent_messages(&conn, "proj-A", &[], 5);
+        assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn lookup_user_intent_dedupes_by_content_prefix() {
+        // 같은 prefix(80자) 의 메시지는 한 번만 surface.
+        let conn = build_intent_db();
+        add_conv(&conn, "c1", "proj-A");
+        add_conv(&conn, "c2", "proj-A");
+        let prefix = "동일한 사용자 의도 페이스트 — branch session ws 작업 정리, 메인 세션 통합 필요";
+        add_user_msg(&conn, "c1", prefix, 1_700_000_000_000);
+        add_user_msg(&conn, "c2", prefix, 1_700_000_001_000);
+        let kws = vec!["branch".to_string()];
+        let hits = lookup_user_intent_messages(&conn, "proj-A", &kws, 5);
+        assert_eq!(hits.len(), 1, "동일 prefix 는 dedup: {:?}", hits);
+    }
+
+    #[test]
+    fn lookup_user_intent_respects_top_n() {
+        let conn = build_intent_db();
+        add_conv(&conn, "c1", "proj-A");
+        for i in 0..10 {
+            add_user_msg(&conn, "c1", &format!("branch session iteration {}", i), 1_700_000_000_000 + i);
+        }
+        let kws = vec!["branch".to_string()];
+        let hits = lookup_user_intent_messages(&conn, "proj-A", &kws, 3);
+        assert_eq!(hits.len(), 3);
+    }
+
+    #[test]
+    fn resolve_agent_role_returns_architect_for_main_chat() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                implementation_branch_id TEXT,
+                review_branch_id TEXT
+             );",
+        ).unwrap();
+        assert_eq!(resolve_agent_role(&conn, "conv-main"), "architect");
+    }
+
+    #[test]
+    fn resolve_agent_role_returns_developer_for_impl_branch() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                implementation_branch_id TEXT,
+                review_branch_id TEXT
+             );",
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plans (implementation_branch_id) VALUES ('b-impl')",
+            [],
+        ).unwrap();
+        assert_eq!(resolve_agent_role(&conn, "branch:b-impl"), "developer");
+    }
+
+    #[test]
+    fn resolve_agent_role_returns_reviewer_for_review_branch() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                implementation_branch_id TEXT,
+                review_branch_id TEXT
+             );",
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plans (review_branch_id) VALUES ('b-rev')",
+            [],
+        ).unwrap();
+        assert_eq!(resolve_agent_role(&conn, "branch:b-rev"), "reviewer");
     }
 }

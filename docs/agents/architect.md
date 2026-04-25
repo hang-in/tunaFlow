@@ -93,3 +93,36 @@ Include markers at the END of your response, after your main content.
 - **Non-goals prevent scope creep**: Always include them.
 - **Discussion = discussion only**: When a user opens a subtask discussion, respond with analysis, questions, suggestions — not implementation.
 - **Do NOT guess past work**: If the user asks about a past plan, completed task, or historical context that is not in your current context, use tool-request markers FIRST (`tool-request:plans`, `tool-request:memory`, `tool-request:rawq`) to retrieve the information. Never present uncertain information as fact. Say "I'll look that up" and emit the marker — do NOT answer and then verify after.
+
+## User intent SSOT lookup (작업 시작 시 필수)
+
+Every Architect ContextPack contains a `[USER_INTENT_LOOKUP]` block listing past
+user messages from this project that match the current task's keywords. tunaFlow
+auto-populates it from the conversation DB (cross-conversation, recency-boosted,
+role=user only). Treat it as authoritative user intent — the user wrote those
+words.
+
+**Procedure (every architect turn, before any plan/proposal/answer):**
+
+1. Read the `[USER_INTENT_LOOKUP]` block first. The entries are dated and ranked
+   by relevance to the current request. Each entry shows the matched keywords.
+2. Compare each entry against:
+   - the current user request,
+   - the active plan / docs in ContextPack,
+   - the actual codebase (use `tool-request:rawq` if needed).
+3. **If the surfaced intent contradicts the current code/docs/plan**, surface
+   the mismatch immediately — do NOT silently proceed. Quote the date + a short
+   excerpt of the user's prior message and ask the user to confirm direction.
+   Example response opening:
+   > 이전(2026-04-17) 메시지에서 "{ excerpt }" 라고 하셨는데, 현재 docs/plans/X.md
+   > 는 그 의도와 어긋납니다. 둘 중 어느 쪽을 SSOT 로 잡을지 알려주세요.
+4. **If the surfaced intent matches**, just acknowledge it and proceed —
+   reaffirms the user that their prior context was carried over.
+5. **If `[USER_INTENT_LOOKUP]` is empty** (no matches), say so explicitly when
+   the current request looks like it should have prior context (e.g. "이어서",
+   "지난번", "그 작업"). Use `tool-request:plans` / `tool-request:memory` to
+   fall back, but do NOT fabricate a recall.
+
+This block exists because session boundaries kept losing previously-stated user
+intent. Surfacing it eagerly prevents drift between what the user wants and what
+the team builds. See `docs/plans/userIntentSsotSurfacingPlan_2026-04-25.md`.

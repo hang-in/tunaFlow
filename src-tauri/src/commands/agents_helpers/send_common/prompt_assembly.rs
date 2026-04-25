@@ -1,9 +1,80 @@
 use rusqlite::Connection;
 
-use super::context_loading::{ContextData, load_context_data};
+use super::context_loading::{ContextData, UserIntentMatch, load_context_data};
 use super::super::trace_log::ContextPackMeta;
 use super::super::identity::{parse_identity_and_persona, PLATFORM_TIER0};
 use super::super::context_pack::ContextMode;
+
+/// userIntentSsotSurfacingPlan §Layer 1: ContextPack 의 [USER_INTENT_LOOKUP]
+/// 섹션을 직렬화한다. 매칭 0건이어도 빈 섹션을 출력 (INV-1 — architect 진입 시
+/// 항상 surface). 각 항목은 `(YYYY-MM-DD) excerpt` 형태로 ~200 char cap.
+pub(crate) fn build_user_intent_lookup_section(intents: &[UserIntentMatch]) -> String {
+    let mut s = String::from(
+        "[USER_INTENT_LOOKUP]\n\
+         사용자가 과거 대화에서 명시한 의도 중 현재 작업과 관련된 메시지입니다.\n\
+         코드/문서가 의도와 어긋난다고 판단되면 사용자에게 즉시 보고하세요.\n",
+    );
+    if intents.is_empty() {
+        s.push_str("- (관련 사용자 의도 매칭 없음)\n");
+    } else {
+        for m in intents {
+            // ts_ms → "YYYY-MM-DD" (UTC). chrono 의존을 피하기 위해 std 만 사용.
+            let date = format_ymd_utc(m.timestamp_ms);
+            // ~200 char cap (char 기준, byte 아님). 줄바꿈은 공백으로 정규화.
+            let collapsed: String = m
+                .content
+                .chars()
+                .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+                .collect::<String>();
+            let mut excerpt: String = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
+            let cap = 200;
+            if excerpt.chars().count() > cap {
+                let trimmed: String = excerpt.chars().take(cap).collect();
+                excerpt = format!("{}…", trimmed);
+            }
+            // matched keywords 는 trace 에 보존되지만 섹션 본문은 짧게 유지하기
+            // 위해 처음 3개만 inline. 빈 리스트면 표시 생략.
+            let kw_str = if m.matched_keywords.is_empty() {
+                String::new()
+            } else {
+                let preview: Vec<&String> = m.matched_keywords.iter().take(3).collect();
+                let joined = preview
+                    .iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(" [keywords: {}]", joined)
+            };
+            s.push_str(&format!("- ({}) {}{}\n", date, excerpt, kw_str));
+        }
+    }
+    s.push_str("[/USER_INTENT_LOOKUP]");
+    s
+}
+
+/// timestamp(ms epoch) → "YYYY-MM-DD" (UTC). chrono 추가 없이 calendar 산출.
+fn format_ymd_utc(ts_ms: i64) -> String {
+    // 음수 타임스탬프는 unknown 으로 처리
+    if ts_ms <= 0 {
+        return "unknown".into();
+    }
+    let secs = ts_ms / 1_000;
+    let days = secs / 86_400;
+
+    // Unix epoch 1970-01-01 (Thu) 부터의 일수 → (Y, M, D)
+    // Howard Hinnant's "days_from_civil" 의 역함수.
+    let z = days + 719_468;
+    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+    format!("{:04}-{:02}-{:02}", year, m, d)
+}
 
 /// Build a normalized enriched prompt for non-Claude engines.
 ///
@@ -173,6 +244,16 @@ pub fn assemble_prompt(
     if let Some(identity_text) = &data.identity_summary_fragment {
         sections.push(format!("## Project Identity\n\n{}", identity_text));
         included_sections.push("project-identity".into());
+    }
+
+    // User intent lookup — userIntentSsotSurfacingPlan §Layer 1.
+    // architect persona 진입 시에만 빌드되며 (developer/reviewer 는 None →
+    // 본 블록 skip), 매칭이 0건이어도 빈 섹션을 inline 해 INV-1 을 만족.
+    // 위치: project-identity 직후, identity/persona 직전 — agent 가 자기 정체성
+    // /역할을 인지하기 직전에 사용자의 명시 의도를 먼저 본다.
+    if let Some(intents) = &data.intent_lookup {
+        sections.push(build_user_intent_lookup_section(intents));
+        included_sections.push("intent-lookup".into());
     }
 
     // Identity + Persona section
@@ -718,6 +799,7 @@ mod tests {
             conventions_synced: false,
             is_session_continuation: false,
             identity_summary_fragment: None,
+            intent_lookup: None,
         }
     }
 
@@ -802,5 +884,131 @@ mod tests {
             // worldview 없으면 identity 는 여전히 존재
             assert!(meta.sections.iter().any(|s| s == "identity"));
         }
+    }
+
+    // ─── userIntentSsotSurfacingPlan: [USER_INTENT_LOOKUP] 섹션 ─────────────
+
+    #[test]
+    fn intent_lookup_section_present_for_architect_even_with_zero_matches() {
+        // INV-1: architect 진입 시 매칭 0건이어도 빈 섹션이 항상 inline.
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.intent_lookup = Some(Vec::new());
+
+        let (assembled, _, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+        assert!(meta.sections.iter().any(|s| s == "intent-lookup"),
+            "architect 면 intent-lookup 섹션이 항상 출현: {:?}", meta.sections);
+        assert!(assembled.contains("[USER_INTENT_LOOKUP]"));
+        assert!(assembled.contains("[/USER_INTENT_LOOKUP]"));
+        assert!(assembled.contains("관련 사용자 의도 매칭 없음"),
+            "0건이면 '매칭 없음' 메시지");
+    }
+
+    #[test]
+    fn intent_lookup_section_absent_for_developer_or_reviewer() {
+        // INV-1 보완: architect 가 아닌 role (intent_lookup=None) 은 섹션 미출력.
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.intent_lookup = None;
+
+        let (_, _, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+        assert!(!meta.sections.iter().any(|s| s == "intent-lookup"),
+            "developer/reviewer 면 섹션 없음: {:?}", meta.sections);
+    }
+
+    #[test]
+    fn intent_lookup_section_renders_matches_and_caps_excerpt_at_200_chars() {
+        use super::super::context_loading::UserIntentMatch;
+
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        // 길이 400 의 본문 — 200 char cap 검증
+        let long_body: String = "가".repeat(400);
+        data.intent_lookup = Some(vec![
+            UserIntentMatch {
+                timestamp_ms: 1_700_000_000_000, // 2023-11-14 UTC
+                conversation_id: "c-old".into(),
+                content: long_body.clone(),
+                score: 0.9,
+                matched_keywords: vec!["session".into(), "branch".into(), "context".into(), "extra".into()],
+            },
+        ]);
+
+        let (assembled, _, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+        assert!(meta.sections.iter().any(|s| s == "intent-lookup"));
+        assert!(assembled.contains("(2023-11-14)"));
+        // truncate marker (…) 가 본문에 보여야 함
+        assert!(assembled.contains("…"));
+        // keywords preview 는 최대 3개
+        assert!(assembled.contains("session, branch, context"));
+        assert!(!assembled.contains("extra"));
+        // 한 줄 길이 검증: '- (date) ' 헤더 (+12) + 200 char + '… [keywords: …]' 정도
+        // 총합 길이가 350 미만 (cap 이 효과적으로 작동하면)
+        let line = assembled.lines()
+            .find(|l| l.contains("(2023-11-14)"))
+            .expect("intent line 존재");
+        // 200 char excerpt 만 포함되어야 → 전체 400 char 가 전부 들어가지 않아야
+        let body_chars = line.matches('가').count();
+        assert_eq!(body_chars, 200, "본문 cap = 200 char (한글 포함)");
+    }
+
+    #[test]
+    fn intent_lookup_section_position_between_project_identity_and_identity() {
+        // 위치 INV: project-identity 직후, identity 직전 (페르소나 인지 전 의도 surface).
+        use super::super::context_loading::UserIntentMatch;
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.identity_summary_fragment = Some("### Project identity\nbody".into());
+        data.intent_lookup = Some(vec![UserIntentMatch {
+            timestamp_ms: 1_700_000_000_000,
+            conversation_id: "c".into(),
+            content: "branch session 이슈 정리".into(),
+            score: 0.8,
+            matched_keywords: vec!["branch".into()],
+        }]);
+
+        let (_, _, meta) = assemble_prompt(&data, Some("## Identity\n\ntest"));
+        let idx_pi = meta.sections.iter().position(|s| s == "project-identity")
+            .expect("project-identity 존재");
+        let idx_il = meta.sections.iter().position(|s| s == "intent-lookup")
+            .expect("intent-lookup 존재");
+        let idx_id = meta.sections.iter().position(|s| s == "identity")
+            .expect("identity 존재");
+        assert!(idx_pi < idx_il, "intent-lookup 은 project-identity 뒤");
+        assert!(idx_il < idx_id, "intent-lookup 은 identity 앞");
+    }
+
+    #[test]
+    fn intent_lookup_meta_sections_json_is_valid() {
+        // INV-1 보완: trace_log.ctx_sections 에 intent-lookup 이 그대로 들어가야.
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.intent_lookup = Some(Vec::new());
+
+        let (_, _, meta) = assemble_prompt(&data, None);
+        let json = meta.sections_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let arr = parsed.as_array().unwrap();
+        assert!(arr.iter().any(|v| v.as_str() == Some("intent-lookup")),
+            "sections_json 에 intent-lookup 포함: {}", json);
+    }
+
+    // ─── format_ymd_utc helper ─────────────────────────────────────────────
+
+    #[test]
+    fn format_ymd_handles_known_dates() {
+        // 1970-01-01 00:00 UTC = 0 → unknown 으로 취급 (음수/0 은 의미 없는 값)
+        assert_eq!(format_ymd_utc(0), "unknown");
+        assert_eq!(format_ymd_utc(1), "1970-01-01");
+        // 2023-11-14 22:13:20 UTC = 1_700_000_000 sec
+        assert_eq!(format_ymd_utc(1_700_000_000_000), "2023-11-14");
+        // 2026-05-02 00:00:00 UTC = 1_777_680_000 sec
+        assert_eq!(format_ymd_utc(1_777_680_000_000), "2026-05-02");
+    }
+
+    #[test]
+    fn format_ymd_handles_negative_or_zero() {
+        assert_eq!(format_ymd_utc(0), "unknown");
+        assert_eq!(format_ymd_utc(-1), "unknown");
     }
 }

@@ -52,6 +52,7 @@ mod tests {
             conventions_synced: false,
             is_session_continuation: false,
             identity_summary_fragment: None,
+            intent_lookup: None,
         }
     }
 
