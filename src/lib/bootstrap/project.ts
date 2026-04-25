@@ -33,6 +33,11 @@ export class ProjectBootstrapError extends Error {
 let rawqListenerCleanup: (() => void) | null = null;
 let ptyListenerCleanup: (() => void) | null = null;
 let fsWatcherCleanup: (() => void) | null = null;
+// Path of the project whose rawq build was started by the most recent
+// `bootstrapRawq` call. Tracked at module scope so `teardownPreviousProject`
+// can ask the rust side to cancel the in-flight build before swapping
+// projects (plan rawqIndexCancelChannelPlan_2026-04-25.md INV-1/INV-2).
+let activeRawqProjectPath: string | null = null;
 
 // ─── Callback contract ─────────────────────────────────────────────────
 
@@ -63,11 +68,23 @@ export interface BootstrapCallbacks {
 
 // ─── Individual steps ─────────────────────────────────────────────────
 
-/** Step 1. Release previous-project subscriptions. Idempotent. */
+/** Step 1. Release previous-project subscriptions. Idempotent.
+ *
+ * Also asks the rust side to cancel any in-flight rawq index build for the
+ * previous project. The cancel is fire-and-forget — the backend treats an
+ * unknown path as a no-op (see `cancel_rawq_index`), so this is safe to
+ * call when no build is running. */
 export function teardownPreviousProject(): void {
   if (rawqListenerCleanup) { rawqListenerCleanup(); rawqListenerCleanup = null; }
   if (ptyListenerCleanup) { ptyListenerCleanup(); ptyListenerCleanup = null; }
   if (fsWatcherCleanup) { fsWatcherCleanup(); fsWatcherCleanup = null; }
+
+  if (activeRawqProjectPath) {
+    const prevPath = activeRawqProjectPath;
+    activeRawqProjectPath = null;
+    invoke("cancel_rawq_index", { projectPath: prevPath })
+      .catch((e) => console.debug("[bootstrap/project] cancel rawq:", e));
+  }
 }
 
 /** Step 2. Reset transient state + remember the selection for next launch. */
@@ -196,13 +213,37 @@ export async function bootstrapRawq(
         if (cb.getSelectedProjectKey() === key) cb.setState({ rawqStatus: e.payload });
         cleanup();
       });
+      const ulCancelled = await listen<{ projectPath: string }>(
+        "rawq:cancelled",
+        (e) => {
+          // Surface a non-error idle state — the user dismissed the
+          // project before the build completed. We do NOT clear listeners
+          // here because the same project could still be the selected one
+          // (rebuild_rawq_index path); the success/error listener will
+          // clean up on the next attempt.
+          if (cb.getSelectedProjectKey() === key) {
+            cb.setState({
+              rawqStatus: {
+                available: true,
+                indexed: false,
+                status: "ready",
+                message: "indexing cancelled",
+              },
+            });
+          }
+          console.debug(`[bootstrap/project] rawq cancelled for ${e.payload.projectPath}`);
+          cleanup();
+        },
+      );
       const cleanup = () => {
         ulDone();
         ulErr();
+        ulCancelled();
         if (rawqListenerCleanup === cleanup) rawqListenerCleanup = null;
       };
       rawqListenerCleanup = cleanup;
 
+      activeRawqProjectPath = projectPath;
       await invoke("start_rawq_index", { projectPath });
     }
     return projectPath;
@@ -237,6 +278,9 @@ export async function bootstrapFileWatcher(
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
           if (cb.getSelectedProjectKey() === key) {
+            // Track the path so a subsequent project switch can cancel
+            // this fs-watcher-triggered build, not just the initial one.
+            activeRawqProjectPath = projectPath;
             invoke("start_rawq_index", { projectPath })
               .catch((e) => console.debug("[bootstrap/project] rawq-reindex:", e));
           }
