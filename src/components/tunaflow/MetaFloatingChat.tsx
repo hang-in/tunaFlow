@@ -98,6 +98,33 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
     return () => { alive = false; };
   }, [projectKey]);
 
+  // Stale pos clamp: localStorage 복원값이 현재 부모 bounds 밖이면 sibling
+  // layout race (ChatPanel 0px 압축) 발생. mount 시 + viewport/parent resize
+  // 시 부모 안으로 clamp + persist. SSOT: docs/plans/metaFloatingChatPosClampPlan_2026-04-25.md
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    const parent = wrapper?.parentElement;
+    if (!parent) return;
+
+    const clamp = () => {
+      const pw = parent.clientWidth;
+      const ph = parent.clientHeight;
+      if (pw === 0 || ph === 0) return; // not laid out yet
+      setPos((cur) => {
+        const x = Math.max(0, Math.min(cur.x, pw - BUTTON_SIZE));
+        const y = Math.max(0, Math.min(cur.y, ph - BUTTON_SIZE));
+        if (x === cur.x && y === cur.y) return cur;
+        localStorage.setItem("meta-float-pos", JSON.stringify({ x, y }));
+        return { x, y };
+      });
+    };
+
+    clamp(); // initial
+    const ro = new ResizeObserver(clamp);
+    ro.observe(parent);
+    return () => ro.disconnect();
+  }, []);
+
   // Listen for meta task assignments — payload 기반 inbox 누적 + localStorage 보존.
   useEffect(() => {
     const handler = (e: Event) => {
