@@ -620,7 +620,7 @@ function InsightFindingsTab() {
               <FindingDetail finding={activeFinding} onSendToArchitect={(f) => handleSendToArchitect([f])} />
             ) : (
               /* Progress log — streaming style */
-              <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3">
                 <p className="text-[9px] font-semibold uppercase tracking-wider text-prose-disabled mb-2">
                   {running ? t("panel.running_log") : t("panel.last_log")}
                 </p>

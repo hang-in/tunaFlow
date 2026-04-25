@@ -194,7 +194,7 @@ function ReviewDetailPanel({
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
         {parsed && cfg ? (
           <>
             <div className={cn("inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[13px] font-semibold", cfg.cls)}>
