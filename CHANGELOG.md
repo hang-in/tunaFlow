@@ -4,6 +4,71 @@ All notable changes to tunaFlow are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2-beta] - 2026-04-26
+
+Windows build support + fragility audit hardening. First Windows release
+(NSIS installer for x64). Followup audit on yesterday's UTF-8 panic cascade
+yields atomic-transaction wraps for `delete_branch` / `update_plan_status` /
+`delete_conversation`, plus production-path panic / unwrap audit confirming
+zero remaining fragility in the same category.
+
+### Added
+
+- **Windows x64 build** via NSIS installer (`tunaFlow_*_x64-setup.exe`).
+  CI matrix extended to `windows-latest` for `rawq` sidecar + Tauri Lite
+  bundle. Same `v*.*.*` Release as macOS — single asset listing per release.
+  Plan: `docs/plans/windowsBuildPlan_2026-04-24.md`.
+- **`basename(path, fallback)` utility** (`src/lib/utils.ts`) — supports both
+  `/` (Unix) and `\` (Windows) separators. Replaces 5 hardcoded
+  `path.split("/").pop()` sites.
+- **`scripts/build-rawq.ps1`** — PowerShell mirror of `build-rawq.sh` for
+  Windows local sidecar builds.
+
+### Changed
+
+- **`bundle.targets`** narrowed from `"all"` to explicit list `["app", "dmg",
+  "appimage", "deb", "rpm", "nsis"]` — MSI excluded. MSI rejects prerelease
+  identifiers (`-beta`); NSIS has no such restriction. Beta-window decision;
+  may revisit MSI when `-beta` is dropped.
+- **`bundle.macOS.signingIdentity = "-"`** moved from CI `--config` override
+  to permanent `tauri.conf.json` setting. Windows shell-escape of multiline
+  `--config '{...}'` JSON kept breaking; permanent config sidesteps it.
+- **CI workflow_dispatch behavior** — version falls back to `package.json`
+  default (smoke-test mode), `tagName=''` so no draft release is generated.
+  Tag-push path unchanged — release flow identical to v0.1.1-beta.
+- **Tauri icons regenerated** via `npx tauri icon` — old `icon.ico` was
+  actually a PNG with `.ico` extension, which Windows `RC.EXE` rejected. New
+  ICO is proper multi-resolution Windows icon resource.
+
+### Fixed
+
+- **UTF-8 char boundary panic** (`identity_analyzer.rs:96`) — `i + 1` byte
+  index split a multi-byte CJK character (`'지'` mid-bytes) → panic →
+  `Lock poisoned` cascade across `bg-worker` / vector indexing until app
+  restart. Replaced with `i + c.len_utf8()` and proper char-count tracking.
+  Same fix applied to `project_onboarding.rs:203` (`&content[..3000]`).
+- **`delete_branch`** (`branches.rs:387`) — 8 sequential DELETE/UPDATE
+  statements wrapped in a single transaction. Mid-statement failure (FK
+  constraint, lock contention) no longer leaves partial state with child
+  branches deleted but parent intact.
+- **`update_plan_status`** (`plans.rs:319`) — status / phase / branch-archive
+  3 statements wrapped in a transaction. Removes the "status='done' but
+  phase='active' stuck" partial-commit window.
+- **`delete_conversation`** (`conversations.rs:127`) — 4 + N×5 + 1 statements
+  (including shadow-branch conversations) wrapped in a transaction.
+
+### Removed
+
+- **MSI bundle target** (Windows) — see Changed.
+
+### Notes
+
+- Production unwrap / expect / panic / unreachable / todo / unimplemented
+  audit: zero remaining in non-test paths after this release.
+- `failure_lessons.rs:63 create_failure_lessons_batch` loop multi-execute
+  is intentional partial-commit (failed lesson skipped, others kept) —
+  out of scope.
+
 ## [0.1.1-beta] - 2026-04-25
 
 First post-launch maintenance release. Triages public-beta community reports
@@ -96,5 +161,6 @@ multi-Developer collisions, brand cancel semantics, and layout cascading bugs.
 Public beta launch. See README and `docs/reference/sessionHistory.md` for the
 full backstory; this entry only marks the cut.
 
+[0.1.2-beta]: https://github.com/hang-in/tunaFlow/compare/v0.1.1-beta...v0.1.2-beta
 [0.1.1-beta]: https://github.com/hang-in/tunaFlow/compare/v0.1.0-beta...v0.1.1-beta
 [0.1.0-beta]: https://github.com/hang-in/tunaFlow/releases/tag/v0.1.0-beta
