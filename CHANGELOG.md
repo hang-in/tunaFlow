@@ -23,6 +23,15 @@ zero remaining fragility in the same category.
   `path.split("/").pop()` sites.
 - **`scripts/build-rawq.ps1`** — PowerShell mirror of `build-rawq.sh` for
   Windows local sidecar builds.
+- **`NoConsole` trait** (`src-tauri/src/no_console.rs`) — Windows
+  `CREATE_NO_WINDOW` flag applied to all subprocess spawns. Stops the cmd
+  window flicker that was happening on every CLI agent / git / model
+  discovery call (50 spawn sites across 17 files patched).
+- **Splash UI on app init** (`AppShell.tsx`) — spinner + stepwise loading
+  text ("환경 설정 로드 중..." / "프로젝트 목록 로드 중..." / "엔진 / 모델
+  감지 중..." / "프로젝트 열기: {name}..."). Replaces the blank sidebar-color
+  box that left users wondering if the app had hung. `setLoaded(true)` moved
+  to `finally` so `selectProject` failure no longer traps users on the splash.
 
 ### Changed
 
@@ -39,6 +48,9 @@ zero remaining fragility in the same category.
 - **Tauri icons regenerated** via `npx tauri icon` — old `icon.ico` was
   actually a PNG with `.ico` extension, which Windows `RC.EXE` rejected. New
   ICO is proper multi-resolution Windows icon resource.
+- **`INSTALL.md`** — Windows installation section + Gatekeeper / SmartScreen /
+  antivirus guidance split into 3 axes. VirusTotal verification note added.
+  Release body in `build.yml` mirrors the same 3-axis structure.
 
 ### Fixed
 
