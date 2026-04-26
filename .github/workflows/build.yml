@@ -207,7 +207,14 @@ jobs:
       - name: Extract version from tag
         shell: bash
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          # tag push 면 ref_name 은 v0.1.x-beta, prefix v 제거.
+          # workflow_dispatch 면 ref_name = main → tauri 가 semver reject 하므로
+          # package.json 의 default version 사용 (smoke test 용도).
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Build & release (Lite)
@@ -215,7 +222,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
+          # workflow_dispatch 시 tagName 빈 값 → tauri-action 이 release 생성 skip,
+          # artifact 빌드만 (smoke test 용). tag push 만 release upload.
+          tagName: ${{ github.event_name == 'push' && github.ref_name || '' }}
           releaseName: 'tunaFlow ${{ github.ref_name }}'
           releaseBody: |
             ## Lite 트랙 (rawq 번들)
