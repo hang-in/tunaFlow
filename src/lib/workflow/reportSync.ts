@@ -7,6 +7,21 @@ import type { ParsedReviewVerdict } from "../planProposalParser";
 import { getProjectPath, createTestReportArtifact } from "./helpers";
 import { stripTunaflowMarkers } from "./markerScrub";
 
+/**
+ * UTF-8 boundary-safe truncation by code points.
+ * 잘렸을 때 [...truncated, original N chars] 마커를 붙여 다운스트림(reviewer 등)이
+ * 잘림 사실을 인지할 수 있게 한다. surrogate pair 안전 (Array.from 사용).
+ */
+export function truncateSafe(text: string, limit: number): string {
+  if (typeof text !== "string" || text.length === 0) return text ?? "";
+  // 빠른 경로: byte length 가 limit 보다 충분히 작으면 코드포인트 길이도 작음
+  if (text.length <= limit) return text;
+  const codePoints = Array.from(text);
+  if (codePoints.length <= limit) return text;
+  const head = codePoints.slice(0, limit).join("");
+  return `${head}\n\n[…truncated, original ${codePoints.length} chars]`;
+}
+
 /** Generate/update plan document in project directory. Fire-and-forget. */
 export async function syncPlanDocument(planId: string): Promise<void> {
   try {
@@ -61,14 +76,14 @@ export async function syncResultReport(
       : implMessages;
     const assistantMsgs = relevantMessages.filter((m) => m.role === "assistant");
     const summary = assistantMsgs.length > 0
-      ? stripTunaflowMarkers(assistantMsgs[assistantMsgs.length - 1].content.slice(0, 2000))
+      ? stripTunaflowMarkers(truncateSafe(assistantMsgs[assistantMsgs.length - 1].content, 8000))
       : "(No implementation output)";
 
     const { scanCompletedSubtasks } = await import("../planProposalParser");
     const completedNums = scanCompletedSubtasks(implMessages);
     const subtaskResults = assistantMsgs
       .slice(-10)
-      .map((m) => stripTunaflowMarkers(m.content.slice(0, 500)))
+      .map((m) => stripTunaflowMarkers(truncateSafe(m.content, 2000)))
       .filter((c) => c.trim().length > 0);
 
     const knownIssues: string[] = [];
