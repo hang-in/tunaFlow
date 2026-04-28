@@ -228,10 +228,6 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
   }, [engine, currentModels.length, selectedConversationId]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // CJK IME composition guard — React controlled textarea 가 composition mid-state
-  // 에서 setState 하면 IME 가 자모 분리로 깨짐 (한글 'ㅇㅣㄹㅓㄴㅅㅣㄱ' 패턴).
-  // composition 중엔 setText skip, onCompositionEnd 시점에 finalized 값 한 번만 반영.
-  const composingRef = useRef(false);
 
   const { handleSend, handleKeyDown, isRoundtable, hasRtMessages } = useSendActions({
     text, setText, engine, selectedModel, rtMode,
@@ -546,16 +542,7 @@ export function NewMessageInput({ threadMode = false, onCreateRT }: NewMessageIn
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => {
-            // CJK IME composition mid-state 우회 — composition 중 setState 하면 자모 분리
-            if (composingRef.current) return;
-            setText(e.target.value);
-          }}
-          onCompositionStart={() => { composingRef.current = true; }}
-          onCompositionEnd={(e) => {
-            composingRef.current = false;
-            setText((e.target as HTMLTextAreaElement).value);
-          }}
+          onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             // brand running 가드: Enter / Cmd+Enter 모두 차단해 같은 SDK
             // process 에 main 메시지가 끼어들지 않게 함. handleSend 자체에는
