@@ -667,13 +667,7 @@ pub fn load_context_data(
                     }
                 }
 
-                // Result report (review/rework phase — Reviewer needs implementation context)
-                if phase == "review" || phase == "rework" {
-                    if let Ok(doc) = std::fs::read_to_string(plans_dir.join(format!("{}-result.md", slug))) {
-                        combined.push_str("\n\n---\n\n");
-                        combined.push_str(&doc);
-                    }
-                }
+                // 2026-04-29: result.md is auto-generated; injecting it into reviewer ContextPack created policy-violation verdict pattern. Reviewer must judge from task specs + code only.
 
                 // Latest review report (rework phase — Developer needs review feedback)
                 if phase == "rework" {

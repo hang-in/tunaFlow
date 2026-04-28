@@ -230,7 +230,7 @@
       "prev_findings_header": "**Previous Review Findings (focus area)**:",
       "prev_findings_footer": "> Verify whether the items above were resolved.",
       "scope_note": "**Review scope**: review only Task {{ids}}. The other subtasks passed in the previous review.",
-      "body": "### 🔍 {{roundLabel}} request\n\n**Plan**: \"{{title}}\"\n\n**Verification documents**:\n- Plan: `docs/plans/{{slug}}.md`\n- Result: `docs/plans/{{slug}}-result.md`\n{{taskScope}}{{scopeNote}}{{prevFindings}}\n\nValidate the implementation against each task file's **Change description** and **Verification**.\nCode style not specified in the Plan, or existing issues in files outside scope, are not fail reasons.\n\n> Submit the review verdict when done."
+      "body": "### 🔍 {{roundLabel}} request\n\n**Plan**: \"{{title}}\"\n\n**Verification documents**:\n- Plan: `docs/plans/{{slug}}.md`\n{{taskScope}}{{scopeNote}}{{prevFindings}}\n\nValidate the implementation against each task file's **Change description** and **Verification**.\nCode style not specified in the Plan, or existing issues in files outside scope, are not fail reasons.\n\n> Submit the review verdict when done."
     },
     "sub_plan_prompt": {
       "header": "[Sub-plan request] Plan \"{{plan}}\" → Subtask {{num}} \"{{title}}\"",
