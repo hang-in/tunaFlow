@@ -60,10 +60,15 @@ curl -fsSL https://raw.githubusercontent.com/hang-in/tunaFlow/main/install.sh | 
 
 1. [GitHub Releases](https://github.com/hang-in/tunaFlow/releases)에서 `.dmg` 다운로드
 2. dmg 마운트 → tunaFlow.app을 /Applications로 복사
-3. Gatekeeper 우회:
+3. **Gatekeeper 우회 (필수)** — drag-install 만 한 경우 `.app` 에 quarantine
+   속성이 부착되어 번들 안 sidecar (rawq) 실행이 차단됩니다 (exit 137,
+   `Console.app` 에 "rejected"). 반드시 다음을 실행:
    ```bash
    xattr -cr /Applications/tunaFlow.app
    ```
+   증상: 앱은 열리지만 footer 의 rawq 상태가 "unavailable" / "rawq sidecar
+   없음" 으로 표시되거나, 코드 검색이 동작 안 함.
+   설치 스크립트 (`install.sh`) 사용 시 자동 처리되므로 이 단계 불필요.
 
 ### 방법 3: Windows 설치
 
@@ -145,6 +150,26 @@ open -a tunaFlow
 # 로그 확인
 open ~/Library/Logs/tunaFlow/
 ```
+
+### rawq 가 인식 안 될 때 (footer "rawq sidecar 없음")
+
+원인 별 분기:
+
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| 앱은 열리지만 rawq footer 가 "unavailable" / "rawq sidecar 없음" | macOS quarantine — drag-install 직후 `.app` 의 child 실행이 Gatekeeper 차단 | `xattr -cr /Applications/tunaFlow.app` 후 앱 재실행 |
+| `cargo install rawq` 했는데도 인식 안 됨 | tunaFlow 는 시스템 PATH 의 rawq 가 아니라 앱 번들 내부 sidecar 만 사용 (의도된 디자인) | 시스템 rawq 영향 없음. 위의 quarantine 항목으로 분기 |
+| 직접 빌드 시 `binaries/rawq-aarch64-apple-darwin doesn't exist` 로 중단 | `npm run tauri build` 직접 실행 시 사이드카 사전 빌드가 필요 | `./scripts/build.sh` (wrapper) 또는 빌드 전 `./scripts/build-rawq.sh` 실행 |
+| 위 셋 모두 해결 후에도 unavailable | 코드측 sidecar resolution 실패 — `Console.app` 에서 `[get_rawq_status] rawq sidecar unavailable —` 로 시작하는 라인의 진단(triple, candidate count, PATH fallback) 확인 후 [Issue 등록](https://github.com/hang-in/tunaFlow/issues) | — |
+
+### Smoke checklist (release 회귀 방지)
+
+새 release DMG 검증 시 다음 4단계 모두 확인:
+
+1. fresh DMG 다운로드 → /Applications drag → install.sh 우회 → 앱 실행 → Settings → Runtime 의 rawq 상태가 `ready` 또는 `built`
+2. install.sh curl 경로 → 동일하게 `ready`
+3. `./scripts/build.sh` 로 로컬 빌드 → /Applications 설치 → `ready`
+4. (B 케이스) `cargo install rawq` 한 환경에서도 sidecar-only 동작 + footer 메시지가 안내성 있는지 확인
 
 ---
 
