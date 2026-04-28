@@ -22,6 +22,20 @@ export function truncateSafe(text: string, limit: number): string {
   return `${head}\n\n[…truncated, original ${codePoints.length} chars]`;
 }
 
+/**
+ * Sentinel guard: prior result.md echo 인지 식별.
+ * `# Implementation Result:` 헤더와 `> Plan Revision:` 헤더가 본문 첫 200자 안에
+ * **둘 다** 출현하면 result.md echo 로 간주. 한쪽만 매칭하면 false positive 위험이
+ * 있어 거부. 이 함수는 syncResultReport 안에서만 사용.
+ */
+export function isResultMdEcho(content: string): boolean {
+  if (typeof content !== "string" || content.length === 0) return false;
+  const head = content.slice(0, 200);
+  const hasImplHeader = /^#\s*Implementation Result:/m.test(head);
+  const hasRevisionHeader = /^>\s*Plan Revision:/m.test(head);
+  return hasImplHeader && hasRevisionHeader;
+}
+
 /** Generate/update plan document in project directory. Fire-and-forget. */
 export async function syncPlanDocument(planId: string): Promise<void> {
   try {
@@ -74,7 +88,13 @@ export async function syncResultReport(
     const relevantMessages = lastReworkIdx >= 0
       ? implMessages.slice(lastReworkIdx + 1)
       : implMessages;
-    const assistantMsgs = relevantMessages.filter((m) => m.role === "assistant");
+    const rawAssistantMsgs = relevantMessages.filter((m) => m.role === "assistant");
+    // self-include guard: prior result.md 인용 메시지 제외 (두 헤더 동시 매칭만)
+    const assistantMsgs = rawAssistantMsgs.filter((m) => !isResultMdEcho(m.content));
+    const excludedEchoCount = rawAssistantMsgs.length - assistantMsgs.length;
+    if (excludedEchoCount > 0) {
+      console.debug(`[syncResultReport] excluded ${excludedEchoCount} echoed result.md messages`);
+    }
     const summary = assistantMsgs.length > 0
       ? stripTunaflowMarkers(truncateSafe(assistantMsgs[assistantMsgs.length - 1].content, 8000))
       : "(No implementation output)";
