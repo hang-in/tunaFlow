@@ -9,7 +9,7 @@ import { getOrCreateMetaConversation } from "@/lib/metaConversation";
 import type { Message } from "@/types";
 import type { MetaNotification } from "@/lib/metaNotifications";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { vizMarkersAll } from "@/lib/vizMarkers";
 
 const NOTIF_LS_KEY = "meta-notifications-v1";
@@ -689,7 +689,7 @@ function MetaMessage({ message, isStreaming }: { message: Message; isStreaming: 
             "[&_ul]:my-1 [&_li]:my-0 [&_code]:text-[11px]",
             "[&_pre]:my-2 [&_pre]:text-[11px]",
           )}>
-            <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
               {vizMarkersAll(message.content) || (isStreaming ? "▋" : "")}
             </ReactMarkdown>
           </div>

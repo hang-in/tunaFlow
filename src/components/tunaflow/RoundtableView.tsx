@@ -4,13 +4,10 @@ import { Users, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useChatStore } from "@/stores/chatStore";
 import type { RtParticipantStatus } from "@/stores/slices/threadSlice";
 import { markdownComponents } from "./chat/MarkdownComponents";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 
 /** RT topic 렌더러 — Review RT 프롬프트는 마크다운 + HTML 주석 마커를 포함하므로
  *  raw text 로 출력하면 가독성 급락. 채팅과 동일한 마크다운 파이프라인 재사용. */

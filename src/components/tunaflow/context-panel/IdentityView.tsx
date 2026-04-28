@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { RefreshCw, Clock, AlertTriangle, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -269,7 +269,7 @@ function Section({ title, content }: { title: string; content: string }) {
     <div>
       <h4 className="text-[11px] font-semibold text-foreground/80 mb-1">{title}</h4>
       <div className="text-[11px] leading-relaxed prose-tf prose-invert">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>{content}</ReactMarkdown>
       </div>
     </div>
   );

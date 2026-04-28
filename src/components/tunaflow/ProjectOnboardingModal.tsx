@@ -3,9 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, Circle, Loader2, AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { useChatStore } from "@/stores/chatStore";
 import { MetaAgentSelector } from "./MetaAgentSelector";
 import { markdownComponents } from "./chat/MarkdownComponents";
@@ -15,9 +15,6 @@ import {
   type InitialSetupPayload,
   type InitialSetupSelection,
 } from "@/lib/initialSetupApply";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
