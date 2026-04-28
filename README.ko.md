@@ -206,7 +206,8 @@ tunaFlow 를 만들면서 Claude Opus 가 쓴 개발기입니다. 설계 결정 
 
 ### 설계상 / Beta 단계
 
-- **ad-hoc 서명** — Beta 에서는 Apple Developer ID 서명 없음. Gatekeeper 경고 해제 필요 (`xattr -cr /Applications/tunaFlow.app`).
+- **ad-hoc 서명** — Beta 에서는 Apple Developer ID 서명 없음. Gatekeeper 경고 해제 필요 (`xattr -cr /Applications/tunaFlow.app`). DMG 를 drag-install 만 하면 `.app` 에 quarantine 속성이 붙어 번들 안 사이드카 (rawq) 가 조용히 차단됩니다 — 증상/원인 표는 [INSTALL.md → "rawq 가 인식 안 될 때"](./INSTALL.md#rawq-가-인식-안-될-때-footer-rawq-sidecar-없음) 참조.
+- **rawq 는 번들 sidecar 전용 (PATH 가 아님)** — tunaFlow 는 로컬 패치된 rawq 빌드를 `.app` 번들 안 (`Contents/MacOS/rawq`) 에 포함하고, 그 경로에서만 호출합니다. `cargo install rawq` 로 시스템 PATH 에 깔아도 tunaFlow 동작에는 영향 없습니다 (의도적 — 버전 드리프트 방지). 직접 빌드 시 `./scripts/build.sh` (사이드카 자동 빌드 wrapper) 사용 권장. `npm run tauri build` 직접 실행 시에는 `./scripts/build-rawq.sh` 가 사전 필요하며 (`binaries/rawq-aarch64-apple-darwin doesn't exist` 에러 회피), upstream 은 https://github.com/auyelbekov/rawq.
 - **RT 라운드 중간 개입 어려움** — 참가자 별 토큰 스트리밍 자체는 실시간으로 나오지만, 라운드가 진행 중일 때 사용자가 방향을 틀기는 어렵습니다. 라운드 사이에 피드백을 주는 방식으로 운영합니다.
 - **최초 인덱싱 지연** — 대규모 프로젝트 최초 1회 수 분 소요 (ONNX 스레드 제한 + 세마포어 + 점진적 인덱싱 적용 후 CPU 스파이크는 완화됨).
 

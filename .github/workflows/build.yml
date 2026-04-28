@@ -201,6 +201,24 @@ jobs:
         if: matrix.runner != 'windows-latest'
         run: chmod +x src-tauri/binaries/rawq-${{ matrix.triple }}${{ matrix.ext }}
 
+      # rawqSidecarReleaseGapPlan_2026-04-26 Layer C1: tauri-action 직전에
+      # download-artifact 결과를 확인. artifact 누락 / 권한 누락 시 즉시 실패
+      # → release upload 이전 단계에서 회귀 차단.
+      - name: Verify rawq sidecar staged for tauri-action
+        shell: bash
+        run: |
+          ls -la src-tauri/binaries
+          SIDECAR="src-tauri/binaries/rawq-${{ matrix.triple }}${{ matrix.ext }}"
+          if [[ ! -f "$SIDECAR" ]]; then
+            echo "::error::rawq sidecar missing: $SIDECAR"
+            exit 1
+          fi
+          if [[ "${{ matrix.runner }}" != "windows-latest" && ! -x "$SIDECAR" ]]; then
+            echo "::error::rawq sidecar not executable: $SIDECAR"
+            exit 1
+          fi
+          echo "rawq sidecar staged OK: $SIDECAR"
+
       - name: npm install
         run: npm install --no-audit --no-fund
 
@@ -256,6 +274,32 @@ jobs:
             ```
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+
+      # rawqSidecarReleaseGapPlan_2026-04-26 Layer C1: 빌드 산출물 (.app) 안의
+      # sidecar 가 실제로 들어갔는지 검증. Tauri 가 externalBin staging 을
+      # 무시하거나 strip 동작이 회귀하면 즉시 실패. macOS 만 — Windows
+      # NSIS installer 는 별도 layout (`%LOCALAPPDATA%\tunaFlow\rawq.exe`)
+      # 이라 같은 식으로 검사하지 않는다.
+      - name: Verify rawq sidecar in built bundle (macOS)
+        if: matrix.runner == 'macos-latest'
+        shell: bash
+        run: |
+          APP_PATH=$(find src-tauri/target -type d -name 'tunaFlow.app' | head -1)
+          if [[ -z "$APP_PATH" ]]; then
+            echo "::error::tunaFlow.app not found under src-tauri/target"
+            exit 1
+          fi
+          echo "Found .app: $APP_PATH"
+          find "$APP_PATH" -name 'rawq*' -ls
+          # 번들 안 sidecar 는 Tauri 가 strip 한 'rawq' (no triple suffix) 또는
+          # triple 그대로 — 둘 중 하나는 반드시 존재 + 실행권한.
+          MATCHES=$(find "$APP_PATH" \( -name 'rawq' -o -name 'rawq-*' \) -perm -u+x)
+          if [[ -z "$MATCHES" ]]; then
+            echo "::error::rawq sidecar missing in built .app bundle"
+            exit 1
+          fi
+          echo "rawq sidecar verified in bundle:"
+          echo "$MATCHES"
 
   # ── 5. Tauri Full build ───────────────────────────────────────────────────────
   build-tauri-full:

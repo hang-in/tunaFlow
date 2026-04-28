@@ -123,17 +123,39 @@ fn sidecar_file_name() -> String {
     format!("rawq-{}{}", host_triple(), ext)
 }
 
+/// Tauri build 가 externalBin 등록된 sidecar 를 번들에 넣을 때 triple suffix
+/// (`rawq-aarch64-apple-darwin` → `rawq`) 를 strip 한다. 이 이름이 release
+/// `.app/Contents/MacOS/` 안에 들어가는 실제 파일명이다.
+///
+/// Audit (`docs/reference/rawqSidecarReleaseAudit_2026-04-26.md`) 에서
+/// `rawq-{triple}` 만 검색하던 기존 후보 셋이 release 번들에서 영구 mismatch
+/// 를 일으키는 회귀를 발견 — strip-name 후보를 추가해 `is_available()` 가
+/// 번들 sidecar 를 실제로 인식하도록 한다.
+fn sidecar_strip_name() -> String {
+    let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    format!("rawq{}", ext)
+}
+
 fn sidecar_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     let sidecar = sidecar_file_name();
+    let stripped = sidecar_strip_name();
 
     if let Ok(cwd) = std::env::current_dir() {
+        // Dev 빌드 시 staging 위치 (build.yml 의 download-artifact 결과 + scripts/build-rawq.sh 출력)
         candidates.push(cwd.join("src-tauri").join("binaries").join(&sidecar));
         candidates.push(cwd.join("binaries").join(&sidecar));
     }
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_dir) = exe.parent() {
+            // Release 번들 (Tauri 가 strip 해서 넣은 이름) — macOS .app/Contents/MacOS/rawq
+            candidates.push(exe_dir.join(&stripped));
+            candidates.push(exe_dir.join("binaries").join(&stripped));
+            candidates.push(exe_dir.join("../Resources").join(&stripped));
+            candidates.push(exe_dir.join("../Resources/binaries").join(&stripped));
+
+            // Dev 빌드에서는 triple-suffix 이름 그대로 staging 됨 → 두 형태 모두 후보
             candidates.push(exe_dir.join(&sidecar));
             candidates.push(exe_dir.join("binaries").join(&sidecar));
             candidates.push(exe_dir.join("../Resources").join(&sidecar));
@@ -176,6 +198,42 @@ fn known_local_builds() -> Vec<PathBuf> {
 /// Check if rawq binary is available (any resolution path).
 pub fn is_available() -> bool {
     resolve_rawq_bin().is_ok()
+}
+
+/// Backend stderr 진단용 — `is_available()` 가 false 일 때 어느 후보가
+/// 검사됐는지/PATH fallback 결과까지 한 줄 요약. release 빌드에서도
+/// `Console.app` 으로 추적 가능하도록 사용자 환경 파일명(Tauri strip 후 `rawq`)
+/// 과 dev 환경 파일명(triple suffix) 을 모두 출력한다.
+pub fn resolve_diagnostics() -> String {
+    let mut parts = Vec::new();
+    parts.push(format!("triple={}", host_triple()));
+    parts.push(format!("strip_name={}", sidecar_strip_name()));
+    parts.push(format!("triple_name={}", sidecar_file_name()));
+
+    let env_override = std::env::var("RAWQ_BIN").ok();
+    parts.push(format!("RAWQ_BIN={:?}", env_override));
+
+    let candidates = sidecar_candidates();
+    let existing: Vec<_> = candidates.iter().filter(|p| p.is_file()).collect();
+    parts.push(format!(
+        "sidecar_candidates={} (existing={})",
+        candidates.len(),
+        existing.len()
+    ));
+    if let Some(p) = candidates.first() {
+        parts.push(format!("first={}", p.display()));
+    }
+
+    let path_ok = Command::new("rawq").no_console()
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    parts.push(format!("PATH_rawq={}", path_ok));
+
+    parts.join(" | ")
 }
 
 // ─── Daemon management ──────────────────────────────────────────────────────

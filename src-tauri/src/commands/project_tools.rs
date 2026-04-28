@@ -27,9 +27,16 @@ pub fn get_rawq_status(project_path: String) -> Result<RawqStatus, AppError> {
     // Check binary availability
     let bin_ok = rawq::is_available();
     if !bin_ok {
+        // 사용자 가시 메시지에 다음 단계 액션을 포함. RuntimeStatusBar 에서
+        // 120px 로 truncate 되므로 핵심만 (Settings → Runtime 의 풀 메시지가 SSOT).
+        // 자세한 진단은 backend stderr 에 한 번만 기록하여 release 빌드에서
+        // `Console.app` 으로 추적 가능하게 한다.
+        let detail = rawq::resolve_diagnostics();
+        eprintln!("[get_rawq_status] rawq sidecar unavailable — {}", detail);
         return Ok(RawqStatus {
             available: false, indexed: false,
-            status: "unavailable".into(), message: "rawq not found".into(),
+            status: "unavailable".into(),
+            message: "rawq sidecar 없음 — INSTALL.md 의 'rawq 인식 안 됨' 섹션 참조".into(),
             files: None, chunks: None,
         });
     }
