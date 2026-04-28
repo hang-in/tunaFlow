@@ -76,14 +76,18 @@ fn identity_fragment(input: &SendWithClaudeInput, engine: &str) -> Option<String
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// 현재 conversation에 적용될 claude 전송 모드를 반환한다.
-/// - "sdk-url" : --sdk-url WS 세션 (기본)
-/// - "cli"     : -p stream-json (TUNAFLOW_DISABLE_SDK_URL=1 시)
+/// - "cli"     : `-p --session-id`/`--resume` stream-json (기본, claude 2.1.121+ 정책 호환)
+/// - "sdk-url" : --sdk-url WS 세션 (TUNAFLOW_USE_SDK_URL=1 명시 시만, Anthropic 차단됨)
 /// - "sdk"     : Anthropic SDK 직접 (API 키 + branch)
+///
+/// 2026-04-29 default flip — claude CLI 2.1.121 의 `--sdk-url` localhost reject
+/// 정책으로 sdk-session 영구 차단. CLI -p `--resume` 가 동등 stateful path
+/// (`docs/plans/claudeResumeSessionTransitionPlan_2026-04-29.md`).
 fn resolve_claude_mode(conversation_id: &str) -> &'static str {
     let is_branch = conversation_id.starts_with("branch:");
     if anthropic_sdk::is_available() && is_branch {
         "sdk"
-    } else if std::env::var("TUNAFLOW_DISABLE_SDK_URL").as_deref() != Ok("1") {
+    } else if std::env::var("TUNAFLOW_USE_SDK_URL").as_deref() == Ok("1") {
         "sdk-url"
     } else {
         "cli"
@@ -95,16 +99,34 @@ pub fn get_claude_mode(conversation_id: String) -> String {
     resolve_claude_mode(&conversation_id).to_string()
 }
 
-/// Hard-restart the SDK session — process kill + RESUME_IDS clear.
+/// Hard-restart the claude session — process kill + resume_token DB clear.
 ///
 /// 이 명령은 **session kill** 의미다. UI cancel 버튼과는 분리된 경로이며,
 /// 명시적 시나리오 (engine/model 변경, 외부 process 망실 복구 등) 에서만
 /// 호출해야 한다. 일반 cancel 은 `cancel_running` (stream abort only) 사용
 /// — `docs/plans/branchCancelSemanticsPlan_2026-04-25.md` 참조.
+///
+/// 2026-04-29 — resume-session path 에서도 DB resume_token NULL 처리. CLI -p
+/// path 는 process 가 매 message spawn 이라 *kill* 의미는 DB clear 만으로 충분
+/// (다음 send 가 신규 session 으로 시작).
 #[tauri::command]
-pub fn restart_sdk_session(conversation_id: String) {
-    if resolve_claude_mode(&conversation_id) == "sdk-url" {
+pub fn restart_sdk_session(conversation_id: String, state: State<DbState>) {
+    let mode = resolve_claude_mode(&conversation_id);
+    if mode == "sdk-url" {
+        // Legacy sdk-session — 메모리 RESUME_IDS clear + process kill + DB clear
         claude_sdk_session::kill_session_clear_resume(&conversation_id);
+    } else if mode == "cli" {
+        // resume-session path — DB resume_token NULL. 다음 send 시 RunInput.resume_token=None
+        // → claude 가 신규 session_id 생성 → finalize_engine_run 이 새로 DB 저장.
+        // 메모리 RESUME_IDS 도 clear (CLI path 가 사용 안 하지만 sdk-url 와 공유 cache).
+        claude_sdk_session::kill_session_clear_resume(&conversation_id);
+        if let Ok(conn) = state.write.lock() {
+            let _ = conn.execute(
+                "UPDATE conversations SET resume_token = NULL \
+                 WHERE id = ?1 AND resume_token_engine IN ('claude','claude-code')",
+                [&conversation_id],
+            );
+        }
     }
 }
 
@@ -191,12 +213,16 @@ pub async fn start_claude_stream(
     let PreparedRun { msg_id, job_id, project_path, ctx_meta, audit_session_id, .. } = prep;
     let plen = pr.len() + system_prompt.as_ref().map_or(0, |s| s.len());
 
-    // Claude 실행 경로 선택:
+    // Claude 실행 경로 선택 (2026-04-29 default flip):
     // 1. ANTHROPIC_API_KEY + branch → Anthropic SDK 직접 호출
-    // 2. 기본 → --sdk-url WS 세션 (슬래시 커맨드 + 구조화 JSON)
-    // 3. TUNAFLOW_DISABLE_SDK_URL=1 → CLI -p stream-json (fallback)
+    // 2. 기본 → CLI -p `--session-id`/`--resume` stream-json (정책 호환 stateful)
+    // 3. TUNAFLOW_USE_SDK_URL=1 → --sdk-url WS 세션 (Anthropic 차단됨, 명시 활성화 시만)
+    //
+    // 2.1.121 의 --sdk-url localhost reject 로 sdk-session 영구 차단 →
+    // CLI -p path 가 default. resume_token DB 에서 읽어 conversation
+    // continuity 유지. SSOT: claudeResumeSessionTransitionPlan_2026-04-29.md
     let use_sdk = anthropic_sdk::is_available() && cid.starts_with("branch:");
-    let use_sdk_url = !use_sdk && std::env::var("TUNAFLOW_DISABLE_SDK_URL").as_deref() != Ok("1");
+    let use_sdk_url = !use_sdk && std::env::var("TUNAFLOW_USE_SDK_URL").as_deref() == Ok("1");
 
     if use_sdk {
         let sp = system_prompt;
@@ -252,20 +278,25 @@ pub async fn start_claude_stream(
             if rr.is_ok() { spawn_post_completion_tasks(db_p, cid); }
         });
     } else {
-        // CLI -p fallback (TUNAFLOW_DISABLE_SDK_URL=1)
+        // CLI -p path (default 2026-04-29) — `--resume <id>` stateful conversation.
+        // DB 의 resume_token 읽어 RunInput 에 전달 → claude internal session store
+        // 가 prior history reload + 응답 + finalize_engine_run 이 새 session_id 를
+        // DB 에 다시 저장 (persistence.rs:356-359).
+        // 첫 send 면 resume_token=None → claude 가 신규 session 생성.
+        let resume_token = claude_sdk_session::bootstrap_resume_id_from_db(&cid, &db_post);
         let aid = audit_session_id.clone();
         std::thread::spawn(move || {
             let pa = app.clone(); let pi = msg_id.clone(); let pc = cid.clone();
             let c2 = app.clone(); let ci = msg_id.clone(); let cc = cid.clone();
             let t0 = std::time::Instant::now();
             let rr = claude::stream_run(
-                claude::RunInput { prompt: pr, model: mo.clone(), system_prompt, resume_token: None, project_path, image_paths: Vec::new() },
+                claude::RunInput { prompt: pr, model: mo.clone(), system_prompt, resume_token, project_path, image_paths: Vec::new() },
                 move |t| { let _ = pa.emit("claude:progress", ChunkPayload { message_id: pi.clone(), conversation_id: pc.clone(), text: t }); },
                 move |t| { let _ = c2.emit("claude:chunk", ChunkPayload { message_id: ci.clone(), conversation_id: cc.clone(), text: t }); },
                 { let c = cid.clone(); let r = cancel_arc; move || { r.lock().remove(&c) } },
             );
             let dur = t0.elapsed().as_millis();
-            guardrail::log_run("claude-bg", mo.as_deref(), dur, plen, rr.is_ok());
+            guardrail::log_run("claude-resume", mo.as_deref(), dur, plen, rr.is_ok());
             if let Ok(conn) = write_arc.lock() {
                 finalize_engine_run(&conn, "claude-code", &msg_id, &cid, &job_id, &rr, dur, &ctx_meta, &app, aid.as_deref());
             }

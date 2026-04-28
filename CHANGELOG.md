@@ -4,6 +4,46 @@ All notable changes to tunaFlow are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4-beta] - 2026-04-29
+
+🚨 **긴급 패치** — claude CLI 2.1.121 (2026-04-28 자동 update) 의 `--sdk-url`
+정책 변경으로 tunaFlow sdk-session 모드 영구 차단. 모든 사용자 환경에서 claude
+응답이 30s timeout 으로 중단되는 회귀 발생. CLI `-p --resume` path 로 transport
+전환 (Anthropic 공식 사용자 path).
+
+### Fixed
+
+- **claude transport 영구 차단 회귀** (claude CLI 2.1.121 정책 변경):
+  - claude 2.1.121 가 `--sdk-url` 의 host 를 `api.anthropic.com` 등 5 도메인만
+    허용하도록 hardcoded whitelist 도입. tunaFlow 의 localhost WS 서버 차단
+    → 모든 send 가 30s timeout. 사용자 가시 메시지 "claude did not connect within 30s"
+  - **fix**: dispatch default 를 `-p --session-id`/`--resume` path 로 flip.
+    claude internal session store 가 history 보관, 매 send 마다 fresh spawn
+    (~2.5s) + cache hit 으로 빠른 reload (cache_read_input_tokens ~36k 확인)
+  - manual 검증: Step 1 `--session-id "remember 42"` → "OK" / Step 2
+    `--resume "what number?"` → "42" (stateful conversation 정상)
+  - SSOT: `docs/plans/claudeResumeSessionTransitionPlan_2026-04-29.md`
+
+### Changed
+
+- **`resolve_claude_mode` default flip** — `cli` (resume-session) 가 default,
+  `sdk-url` 은 `TUNAFLOW_USE_SDK_URL=1` 환경변수 명시 시만 활성화 (Anthropic 정책
+  우회 path 발견 시 즉시 재활성화 가능). 기존 `TUNAFLOW_DISABLE_SDK_URL` env 는
+  의미 반대 변경됨 — 사용자 환경에 set 됐다면 unset 또는 새 변수로 마이그레이션.
+- **`restart_sdk_session` 명령 의미 확장** — sdk-url path 는 기존대로 process
+  kill + RESUME_IDS clear + DB clear, cli (resume-session) path 는 DB resume_token
+  NULL 처리 (다음 send 가 신규 session 으로 시작). engine / model 변경 시 같은
+  명령으로 통일.
+
+### Notes
+
+- **sdk-session 코드 유지** (`src-tauri/src/agents/claude_sdk_session.rs`) —
+  Anthropic 정책 우회 path 발견 시 `TUNAFLOW_USE_SDK_URL=1` 으로 즉시 재활성화.
+  본 release 에서 deprecate 만, 코드는 그대로.
+- **검증된 우회 path 후보** (모두 production 부적합): `/etc/hosts` + self-signed
+  TLS (system-wide 침범), binary patch (ToS 회색), desktop app 빈틈 (cloud 사용),
+  PTY 회귀 (parsing 불안), Anthropic 공식 RC 등록 (가능성 낮음).
+
 ## [0.1.3-beta] - 2026-04-26
 
 Beta 사용자 보고 follow-up. 첫 외부 사용자 환경에서 두 건 보고 — rawq sidecar 가
@@ -215,6 +255,7 @@ multi-Developer collisions, brand cancel semantics, and layout cascading bugs.
 Public beta launch. See README and `docs/reference/sessionHistory.md` for the
 full backstory; this entry only marks the cut.
 
+[0.1.4-beta]: https://github.com/hang-in/tunaFlow/compare/v0.1.3-beta...v0.1.4-beta
 [0.1.3-beta]: https://github.com/hang-in/tunaFlow/compare/v0.1.2-beta...v0.1.3-beta
 [0.1.2-beta]: https://github.com/hang-in/tunaFlow/compare/v0.1.1-beta...v0.1.2-beta
 [0.1.1-beta]: https://github.com/hang-in/tunaFlow/compare/v0.1.0-beta...v0.1.1-beta
