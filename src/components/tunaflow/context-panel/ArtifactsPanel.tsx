@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { Artifact, Plan } from "@/types";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -255,7 +255,7 @@ function ArtifactDetailPanel({
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         <div className="prose prose-sm prose-invert max-w-none text-[12px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>h2]:text-[14px] [&>h2]:font-semibold [&>h2]:mt-4 [&>h2]:mb-2 [&>h3]:text-[12px] [&>h3]:font-semibold [&>h3]:mt-3 [&>h3]:mb-1 [&>ul]:space-y-0.5 [&>ul>li]:text-[11px] [&>p]:text-foreground/85">
-          <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]}>
+          <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
             {artifact.content}
           </ReactMarkdown>
         </div>

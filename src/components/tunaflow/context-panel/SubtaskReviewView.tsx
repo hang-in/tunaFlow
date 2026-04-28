@@ -8,7 +8,7 @@ import type { Plan, PlanPhase, PlanSubtask, Branch } from "@/types";
 import * as planApi from "@/lib/api/plans";
 import { getPlanSlug, syncPlanDocument } from "@/lib/workflowOrchestration";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { markdownComponents } from "../chat/MarkdownComponents";
 import { PlanDocumentModal } from "./PlanDocumentModal";
 import { SUBTASK_STATUS_CFG } from "./plans/constants";
@@ -599,7 +599,7 @@ function SubtaskReviewCard({
                 <span className="text-[8px] text-status-approved/50">{t("subtask_review.card.status_file_exists")}</span>
               </div>
               <div className="rounded bg-card/80 border border-border/30 px-3 py-2 prose prose-invert max-w-none text-[11px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_h1]:text-[13px] [&_h2]:text-[12px] [&_h3]:text-[11px] [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-1.5 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5 [&_code]:text-[10px]">
-                <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+                <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
                   {taskFileContent}
                 </ReactMarkdown>
               </div>

@@ -7,7 +7,7 @@ import { RtReferenceBadge } from "./RtReferenceBadge";
 import { parsePromptSources } from "./rtUtils";
 import type { Message, RoundtableParticipant } from "@/types";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { Copy, Users, GitBranch, StickyNote, Forward, FileText, ShieldCheck, Trash2 } from "lucide-react";
 
 export interface RtMessageCardProps {
@@ -88,7 +88,7 @@ export function RtMessageCard({ message, isLast, onBranch, onBranchRT, onMemo, o
               <span className="typing-dot w-1 h-1 rounded-full bg-muted-foreground" />
             </div>
           ) : (
-            <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
               {content}
             </ReactMarkdown>
           )}

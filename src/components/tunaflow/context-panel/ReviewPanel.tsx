@@ -4,7 +4,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { FileSearch, Gavel, CheckCircle2, XCircle, X } from "lucide-react";
 import type { Artifact } from "@/types";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 
 // ─── Verdict parser ──────────────────────────────────────────────────────────
 
@@ -234,7 +234,7 @@ function ReviewDetailPanel({
           </>
         ) : (
           <div className={PROSE_CLS}>
-            <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]}>
+            <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
               {artifact.content}
             </ReactMarkdown>
           </div>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { X, Clock, ClipboardList, ChevronDown, ChevronRight, User, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
@@ -103,7 +103,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
               {/* Plan file content — rendered as markdown if available */}
               {planFileContent ? (
                 <div className="prose prose-invert max-w-none text-[11px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_h1]:text-[13px] [&_h2]:text-[12px] [&_h3]:text-[11px] [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-1.5 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5 [&_code]:text-[10px]">
-                  <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
                     {planFileContent}
                   </ReactMarkdown>
                 </div>
@@ -179,7 +179,7 @@ export function PlanDocumentModal({ plan, onClose }: PlanDocumentModalProps) {
                               </div>
                               {taskFileContents[i + 1] ? (
                                 <div className="rounded bg-card/80 border border-border/30 px-3 py-2 prose prose-invert max-w-none text-[11px] leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&_h1]:text-[13px] [&_h2]:text-[12px] [&_h3]:text-[11px] [&_h1]:mt-3 [&_h2]:mt-2 [&_h3]:mt-1.5 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5 [&_code]:text-[10px]">
-                                  <ReactMarkdown remarkPlugins={[[remarkGfm, { singleTilde: false }]]} components={markdownComponents}>
+                                  <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={markdownComponents}>
                                     {taskFileContents[i + 1]}
                                   </ReactMarkdown>
                                 </div>

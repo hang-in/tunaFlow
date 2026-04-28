@@ -1,9 +1,9 @@
 import { memo, useMemo, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import type { Message, Branch } from "@/types";
 
 import { markdownComponents } from "./chat/MarkdownComponents";
@@ -51,9 +51,6 @@ function hasMarkdownSignal(content: string): boolean {
   if (content.length < 100) return false;
   return /^#{1,3} |```|\n- |\n\d+\. |<!-- tunaflow:|\*\*[^*]+\*\*/m.test(content);
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const REMARK_PLUGINS: any[] = [[remarkGfm, { singleTilde: false }]];
 
 /**
  * Hide partially-arrived HTML comments during streaming so the raw

@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { X, Copy, Check, FileText } from "lucide-react";
 import { cn, errorMessage } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { REMARK_PLUGINS } from "@/lib/markdownPlugins";
 import { markdownComponents } from "./MarkdownComponents";
 
 const SyntaxHighlighter = lazy(() =>
@@ -107,7 +107,7 @@ export function FileViewer({ filePath, projectPath, lineNumber, onClose }: FileV
             file.language === "markdown" ? (
               <div className="p-5 space-y-2 text-[13px] text-foreground/90 leading-relaxed">
                 <ReactMarkdown
-                  remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
+                  remarkPlugins={REMARK_PLUGINS}
                   components={markdownComponents}
                 >
                   {file.content}
