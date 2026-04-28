@@ -13,6 +13,10 @@
 
 - [handoffMaster](./handoffMaster.md): **tunaFlow는 Tauri 2 + React + Rust + SQLite 기반의 3패널 멀티에이전트 오케스트레이션 IDE다.**
 
+## 🟢 활성 Developer 핸드오프
+
+- [resultMdContaminationFixDeveloperHandoff_2026-04-29](./resultMdContaminationFixDeveloperHandoff_2026-04-29.md) — Plan: `resultMdContaminationFixPlan_2026-04-29`. reviewer ContextPack 의 result.md 자동 첨부 제거 (P0) + truncation/self-include 가드 (P1) + i18n 정리 (P2). 4 task, Task 01 단독으로도 root cause 차단.
+
 ## 📦 Archive — one-time 프롬프트 (23개)
 
 주로 완료된 plan 대응 실행 프롬프트 + 세션 핸드오프 문서.
