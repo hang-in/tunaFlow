@@ -12,6 +12,7 @@
 | [agentSkillsReferenceIdea](./agentSkillsReferenceIdea.md) | `agent-skills`는 tunaFlow의 **전체 아키텍처 레퍼런스**로는 맞지 않다. |
 | [bkitReferenceAdoptionIdea_2026-04-29](./bkitReferenceAdoptionIdea_2026-04-29.md) | **bkit-claude-code** (Apache-2.0) 의 Context Engineering / Role Redistribution / Hooks 3 영역에서 **9 idea** 추출 (A1~A3, B1~B3, C1~C3). P2 batch (A1+A3+B2+B1) 다음 update 우선, P3 별 plan. |
 | [agentApiQuotaErrorUxIdea_2026-04-29](./agentApiQuotaErrorUxIdea_2026-04-29.md) | Agent API 4xx 에러 (quota / auth / rate limit) 의 사용자 친화 UX. **4 Layer** (분류 / 친화 UI / mismatch 진단 hint / auto fallback). 사용자 인지 vs API 응답 mismatch case (2026-04-29 보고) 트리거. |
+| [threadlensSessionManagementIdea_2026-04-30](./threadlensSessionManagementIdea_2026-04-30.md) | **ThreadLens (MIT, 0.3.0)** 의 multi-CLI 로컬 session 관리 패턴 도입. **7 idea** (T1~T7): Sidebar search / Safe cleanup / Native CLI session import (strategic) / Provider health / Session impact / Archive 명확화 / TUI(별 product). v0.1.5-beta publish 후 첫 cycle 의 T1 우선. |
 | [agentTemplateVersioningIdea](./agentTemplateVersioningIdea.md) | | 문서 영역 | 버전관리 상태 | 평가 | |
 | [architectEnhancementIdea](./architectEnhancementIdea.md) | — |
 | [artifactAndFailureLearningIdea](./artifactAndFailureLearningIdea.md) | | 타입 | DB 테이블 | 실제 사용 | |
