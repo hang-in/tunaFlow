@@ -82,9 +82,22 @@ export function AppShell() {
         const { projects, selectProject } = useChatStore.getState();
 
         const lastKey = await getSetting<string>("lastProjectKey", "");
-        let proj = lastKey ? projects.find((p) => p.key === lastKey) : null;
-        if (!proj) proj = projects[0];
-        // No auto-create: if no projects, show ProjectStartup instead
+        // Auto-select must skip projects whose `path` no longer exists on
+        // this machine — stale rows (e.g. macOS `/Users/...` ported to
+        // Windows) hang `selectProject` on file IO. `pathValid === false`
+        // is the explicit signal from backend; `undefined` (no path set)
+        // is fine for non-filesystem project types (chat / channel).
+        const stale = projects.filter((p) => p.pathValid === false);
+        if (stale.length > 0) {
+          console.warn(
+            "[AppShell] skipping auto-select for stale-path projects:",
+            stale.map((p) => `${p.key} (${p.path})`).join(", "),
+          );
+        }
+        const selectable = projects.filter((p) => p.pathValid !== false);
+        let proj = lastKey ? selectable.find((p) => p.key === lastKey) : null;
+        if (!proj) proj = selectable[0];
+        // No auto-create: if no projects (or all stale), show ProjectStartup instead
         if (proj) {
           setLoadingStep(`프로젝트 열기: ${proj.name ?? proj.key}...`);
           await selectProject(proj.key);

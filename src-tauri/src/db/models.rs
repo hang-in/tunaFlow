@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 /// - `path`: 로컬 프로젝트 디렉토리. 에이전트의 cwd + rawq 검색 대상.
 ///   향후 git repo 여부 판별의 기준 경로 (path 내 .git 존재 확인).
 /// - `workspace_root`: multi-root workspace 확장용 (현재 미사용).
+/// - `path_valid`: startup-time path 존재 여부. DB 미저장 — `list_*`/`get_project`
+///   가 채우는 runtime-only field. macOS DB 가 Windows 로 이식되어 `/Users/...`
+///   경로가 무효해진 회귀를 frontend 가 감지/차단할 수 있도록 한다.
+///   None = path 미설정, Some(true) = directory 존재, Some(false) = stale.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
@@ -19,6 +23,8 @@ pub struct Project {
     pub workspace_root: Option<String>,
     pub source: String,
     pub updated_at: i64,
+    #[serde(default, skip_deserializing)]
+    pub path_valid: Option<bool>,
 }
 
 /// DATA_MODEL.md §1.3 Conversation

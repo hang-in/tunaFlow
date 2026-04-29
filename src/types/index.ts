@@ -7,6 +7,15 @@ export interface Project {
   workspaceRoot?: string;
   source: "configured" | "discovered";
   updatedAt: number;
+  /**
+   * Runtime-only field populated by `list_projects` / `get_project` —
+   * `true` when the path exists as a directory on this machine, `false`
+   * when stale (typical regression: macOS DB ported to Windows where
+   * `/Users/...` is invalid). `undefined` when the path is unset/empty.
+   * Use this to gate auto-select on cold start so the app does not hang
+   * on stale paths.
+   */
+  pathValid?: boolean;
 }
 
 export interface Conversation {
