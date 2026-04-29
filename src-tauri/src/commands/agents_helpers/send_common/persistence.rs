@@ -285,6 +285,21 @@ pub fn prepare_engine_run(
         }
     }
 
+    // T9-b: cli mode (claude-code) 는 *fresh session 첫 send 도* compressed_memory 미inject.
+    // 이유: T9-a (PR #245, 163b1cf) 가 두 번째 send 부터의 minimal mode 만 적용. 첫 send 는
+    // 여전히 compressed-memory inject → paid API trigger → 거부 → retry 도 같은 prompt
+    // 그대로 → 영구 lock (사용자 환경 fact 2026-04-30). cli mode 는 Claude `--resume` 또는
+    // fresh session 자체가 history 보유, anchor 2 turns 의 recent_context 도 keep — 즉
+    // compressed_memory 만 drop 하면 Lite 모드 강제 회피하면서 paid API 영역 회피 가능.
+    // continuation 분기는 이미 둘 다 drop 하므로 영향 X — fresh session 분기에 한정.
+    if engine_key == "claude-code" && !data.is_session_continuation {
+        if data.compressed_memory.is_some() {
+            data.compressed_memory = None;
+            data.compressed_memory_source = None;
+            eprintln!("[session_freshness] claude-code fresh session → drop compressed_memory only (T9-b, paid API trigger 회피)");
+        }
+    }
+
     // Phase B: Pure prompt assembly — no DB lock held
     let (mut enriched_prompt, system_context, ctx_meta) = assemble_prompt(&data, identity_frag);
 
