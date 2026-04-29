@@ -49,6 +49,9 @@ _util/
 _research/
 _stash_recovery/
 
+# Auto-cloned rawq sidecar source (build-rawq.sh / build-rawq.ps1 fallback)
+vendor/rawq/
+
 # .tunaflow/ — 폐기된 outbox 잔재 + 향후 동적 산출물 차단
 .tunaflow/outbox/
 
