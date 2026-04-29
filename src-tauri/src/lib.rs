@@ -8,6 +8,17 @@ mod guardrail;
 mod http_api;
 pub mod no_console;
 
+// Native macOS notification bridge (Path B, Plan
+// `docs/plans/nativeNotificationPlan_2026-04-29.md`). Replaces the
+// `tauri-plugin-notification` osascript fallback that surfaces Script Editor
+// on click. Non-macOS OS keeps the existing plugin-notification path —
+// `notification_stub` is only used so command registration compiles cleanly.
+#[cfg(target_os = "macos")]
+mod notification;
+#[cfg(not(target_os = "macos"))]
+#[path = "notification_stub.rs"]
+mod notification;
+
 /// Thread-aware cooperative **stream abort** registry.
 ///
 /// 의미 (옵션 X, `docs/plans/branchCancelSemanticsPlan_2026-04-25.md`):
@@ -402,6 +413,12 @@ pub fn run() {
             commands::document_index::get_document_index_status,
             // Mobile pairing
             commands::mobile::get_api_connection_info,
+            // Native notification bridge (macOS UNUserNotificationCenter — Plan D)
+            // Non-macOS builds register stubs that return Err; frontend
+            // (`notificationStore.ts`) routes only macOS to these commands.
+            notification::notification_send_native,
+            notification::notification_request_permission,
+            notification::notification_get_status,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
