@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { copyToClipboard } from "@/lib/clipboard";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { cn, errorMessage } from "@/lib/utils";
-import { X, Search, FileText, ChevronRight, Copy, Send, Archive, ChevronDown } from "lucide-react";
+import { X, Search, FileText, ChevronRight, Copy, Send, Archive, ChevronDown, Download, Loader2, AlertCircle } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { getSetting, setSetting } from "@/lib/appStore";
 import { SKILL_SETS, expandSkillRefs } from "@/lib/skillSets";
@@ -417,7 +418,15 @@ interface HubHealth { available: boolean; version: string | null; message: strin
 interface HubSearchResult { id: string; title: string; source: string; snippet: string; score: number }
 interface HubDocument { id: string; title: string; content: string; source: string }
 
-function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
+interface DependencyInstallResult {
+  name: string;
+  success: boolean;
+  message: string;
+  manualCommand: string | null;
+}
+
+function ContextHubPanel({ hubHealth, onRefresh }: { hubHealth: HubHealth | null; onRefresh: () => void }) {
+  const { t } = useTranslation("settings");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HubSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -426,8 +435,37 @@ function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [sentToContext, setSentToContext] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [installResult, setInstallResult] = useState<DependencyInstallResult | null>(null);
 
   const isAvailable = hubHealth?.available ?? false;
+
+  useEffect(() => {
+    const u = listen<DependencyInstallResult>("dependency:install_result", (e) => {
+      if (e.payload.name !== "context-hub") return;
+      setInstallResult(e.payload);
+      setInstalling(false);
+      if (e.payload.success) onRefresh();
+    });
+    return () => { u.then((un) => un()).catch(() => {}); };
+  }, [onRefresh]);
+
+  const handleInstall = async () => {
+    setInstalling(true);
+    setInstallResult(null);
+    try {
+      await invoke<DependencyInstallResult>("install_dependency", { name: "context-hub" });
+      // The dependency:install_result listener handles result + state.
+    } catch (e) {
+      setInstallResult({
+        name: "context-hub",
+        success: false,
+        message: errorMessage(e),
+        manualCommand: "npm install -g @aisuite/chub",
+      });
+      setInstalling(false);
+    }
+  };
 
   const handleSearch = async () => {
     if (!query.trim() || !isAvailable) return;
@@ -470,6 +508,40 @@ function ContextHubPanel({ hubHealth }: { hubHealth: HubHealth | null }) {
           <div className="flex items-center gap-2"><span className="text-muted-foreground w-[80px]">Policy</span><span className="text-foreground/80">bundled / local / private only</span></div>
         </div>
       ) : <p className="text-[12px] text-muted-foreground/50">Checking...</p>}
+
+      {!isAvailable && hubHealth && (
+        <div className="rounded-md border border-border/40 bg-accent/20 p-2.5 space-y-1.5" data-testid="context-hub-install-panel">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleInstall}
+              disabled={installing}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 text-[11px] font-medium"
+            >
+              {installing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+              {installing ? t("runtime.context_hub_install.installing") : t("runtime.context_hub_install.button")}
+            </button>
+            <code className="text-[10px] text-muted-foreground/70">npm install -g @aisuite/chub</code>
+          </div>
+          {installResult?.success && (
+            <p className="text-[11px] text-status-approved">✓ {t("runtime.context_hub_install.success")}</p>
+          )}
+          {installResult && !installResult.success && (
+            <div className="flex items-start gap-1.5 text-[11px] text-destructive">
+              <AlertCircle className="w-3 h-3 mt-0.5" />
+              <div>
+                <div>{installResult.message}</div>
+                {installResult.manualCommand && (
+                  <div className="mt-1 text-muted-foreground">
+                    {t("runtime.context_hub_install.manual_hint")}{" "}
+                    <code className="text-foreground/70">{installResult.manualCommand}</code>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground/60">{t("runtime.context_hub_install.venv_note")}</p>
+        </div>
+      )}
 
       <div className="flex gap-1.5">
         <div className="flex-1 relative">
@@ -592,7 +664,11 @@ export function RuntimeSection() {
   const [rebuilding, setRebuilding] = useState(false);
   const [hubHealth, setHubHealth] = useState<HubHealth | null>(null);
 
-  useEffect(() => { invoke<HubHealth>("context_hub_health").then(setHubHealth).catch((e) => console.debug("[hub-health]", e)); }, []);
+  const refreshHubHealth = () => {
+    invoke<HubHealth>("context_hub_health").then(setHubHealth).catch((e) => console.debug("[hub-health]", e));
+  };
+
+  useEffect(() => { refreshHubHealth(); }, []);
 
   const handleRefreshModels = async () => { setRefreshing(true); await loadEngineModels(true); setRefreshing(false); };
 
@@ -682,7 +758,7 @@ export function RuntimeSection() {
       <ContextBudgetControl />
       <WorkflowSkillsConfig />
       <InsightAgentConfig />
-      <ContextHubPanel hubHealth={hubHealth} />
+      <ContextHubPanel hubHealth={hubHealth} onRefresh={refreshHubHealth} />
 
       {/* Background / Daemon */}
       <div className="rounded-lg border border-border/30 bg-background/50 p-4 space-y-2">
