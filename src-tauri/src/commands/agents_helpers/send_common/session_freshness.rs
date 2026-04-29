@@ -127,6 +127,13 @@ fn is_claude_cli_mode(conv_id: &str) -> bool {
     true // cli (default since 2026-04-29)
 }
 
+/// `is_claude_cli_mode` 의 pub wrapper — `persistence::finalize_engine_run` 이 cli mode
+/// 에서만 RESUME_IDS 갱신을 trigger 하기 위해 사용. session_freshness 모듈 안에서
+/// 정책을 단일 진실로 유지하기 위해 외부 호출은 본 함수로 통일.
+pub fn is_claude_cli_mode_external(conv_id: &str) -> bool {
+    is_claude_cli_mode(conv_id)
+}
+
 /// 마지막으로 기록된 전달 키.
 pub fn last_delivered_key(conv_id: &str) -> Option<String> {
     LAST_DELIVERED_KEY.lock().get(conv_id).cloned()

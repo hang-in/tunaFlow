@@ -325,6 +325,28 @@ pub fn finalize_engine_run(
     let now = now_epoch_ms();
     match result {
         Ok(out) => {
+            // T9 (claudeTransportFlipHardeningPlan, 2026-04-30):
+            // claude cli mode (`-p --resume`) 의 finalize 흐름 — 응답에 새 session_id 가
+            // 들어오면 메모리 RESUME_IDS 를 즉시 갱신해 다음 promote_pending_to_delivered
+            // 의 live key lookup 이 새 sid 를 반영하게 한다.
+            //
+            // **scope 좁힘**: sdk-url path 는 `claude_sdk_session::stream_run_sdk` 의
+            // result 핸들러가 stream 도중 RESUME_IDS 를 직접 갱신 + INV-6 무효화
+            // (claude_sdk_session.rs:931-952). 본 helper 호출은 cli mode 에서만 — DO NOT
+            // 가드 (sdk-url path 동작 보존) 의 정신에 맞춰 미진입 보장.
+            //
+            // 다른 엔진 (codex/gemini/ollama/lmstudio) 은 engine_key 가 "claude-code" /
+            // "claude" 일 때만 분기 진입.
+            if matches!(engine_key, "claude-code" | "claude") {
+                if session_freshness::is_claude_cli_mode_external(conversation_id) {
+                    if let Some(ref sid) = out.session_id {
+                        crate::agents::claude_sdk_session::register_cli_resume_id(
+                            conversation_id, sid,
+                        );
+                    }
+                }
+            }
+
             // Session freshness: 성공 시 pending → delivered 승격
             session_freshness::promote_pending_to_delivered(msg_id, conversation_id, engine_key);
 
