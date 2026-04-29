@@ -181,6 +181,68 @@ pub struct RunOutput {
     pub fresh_fallback: bool,
 }
 
+/// claude API 에러를 사용자 친화 카테고리로 분류 (T7).
+///
+/// claudeTransportFlipHardeningPlan Task 07 — backend 의 raw "out of extra
+/// usage" / "401 Unauthorized" 등을 frontend 가 용도별로 다르게 표시할 수
+/// 있도록 4 종 + Unknown 으로 분류. UI 모달은 후속 PR (frontend) — 본 commit
+/// 은 분류 함수 + serde label 만 제공.
+///
+/// 우선순위 (위에서 아래):
+/// 1. StaleResumeToken — `looks_like_stale_resume_error` 도 true 인 경우. 이미
+///    T2 가 자동 retry 처리하므로 본 분류는 retry 도 fail 시 escalate 라벨.
+/// 2. AuthFailure — 401, invalid api key, authentication
+/// 3. RateLimited — 429, rate_limit_exceeded, rate limit (Anthropic 측 한도)
+/// 4. QuotaExceeded — usage limit / quota / weekly limit (Pro/Max plan 한도)
+/// 5. ModelUnavailable — model not found, model deprecated
+/// 6. Unknown — 위 매칭 X (raw fallback)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApiErrorKind {
+    StaleResumeToken,
+    AuthFailure,
+    RateLimited,
+    QuotaExceeded,
+    ModelUnavailable,
+    Unknown,
+}
+
+/// 에러 메시지 → ApiErrorKind 분류. claude.rs 안의 helper — 다른 엔진과 무관.
+pub fn classify_claude_error(error_msg: &str) -> ApiErrorKind {
+    let lower = error_msg.to_ascii_lowercase();
+
+    if looks_like_stale_resume_error(error_msg) {
+        return ApiErrorKind::StaleResumeToken;
+    }
+    if lower.contains("401")
+        || lower.contains("invalid api key")
+        || lower.contains("authentication")
+    {
+        return ApiErrorKind::AuthFailure;
+    }
+    if lower.contains("429")
+        || lower.contains("rate_limit_exceeded")
+        || lower.contains("rate limit")
+    {
+        return ApiErrorKind::RateLimited;
+    }
+    if lower.contains("quota")
+        || lower.contains("usage limit")
+        || lower.contains("weekly limit")
+        || lower.contains("monthly limit")
+    {
+        return ApiErrorKind::QuotaExceeded;
+    }
+    if lower.contains("model not found")
+        || lower.contains("model_not_found")
+        || lower.contains("model deprecated")
+        || lower.contains("model_deprecated")
+    {
+        return ApiErrorKind::ModelUnavailable;
+    }
+    ApiErrorKind::Unknown
+}
+
 /// claude CLI 의 result.is_error 메시지가 stale resume_token 을 의미하는지 판정.
 ///
 /// claudeTransportFlipHardeningPlan T2 — `--resume <id>` 동반 send 가 다음 패턴
@@ -809,6 +871,35 @@ mod tests {
     fn looks_like_stale_resume_does_not_match_network_error() {
         assert!(!looks_like_stale_resume_error("connection timed out"));
         assert!(!looks_like_stale_resume_error("dns resolution failed"));
+    }
+
+    /// claudeTransportFlipHardeningPlan T7 — error kind 분류 정확성.
+    #[test]
+    fn classify_claude_error_routes_kinds() {
+        assert_eq!(
+            classify_claude_error("Anthropic API: out of extra usage"),
+            ApiErrorKind::StaleResumeToken
+        );
+        assert_eq!(classify_claude_error("401 Unauthorized"), ApiErrorKind::AuthFailure);
+        assert_eq!(classify_claude_error("Invalid API key"), ApiErrorKind::AuthFailure);
+        assert_eq!(classify_claude_error("429 Too Many Requests"), ApiErrorKind::RateLimited);
+        assert_eq!(classify_claude_error("rate_limit_exceeded"), ApiErrorKind::RateLimited);
+        assert_eq!(classify_claude_error("monthly quota exceeded"), ApiErrorKind::QuotaExceeded);
+        assert_eq!(classify_claude_error("usage limit reached"), ApiErrorKind::QuotaExceeded);
+        assert_eq!(classify_claude_error("Model not found: claude-x"), ApiErrorKind::ModelUnavailable);
+        assert_eq!(classify_claude_error("model deprecated"), ApiErrorKind::ModelUnavailable);
+        assert_eq!(classify_claude_error("connection timed out"), ApiErrorKind::Unknown);
+        assert_eq!(classify_claude_error("dns resolution failed"), ApiErrorKind::Unknown);
+    }
+
+    #[test]
+    fn classify_serializes_snake_case() {
+        let kind = ApiErrorKind::StaleResumeToken;
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, "\"stale_resume_token\"");
+        let kind = ApiErrorKind::QuotaExceeded;
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, "\"quota_exceeded\"");
     }
 
     #[test]

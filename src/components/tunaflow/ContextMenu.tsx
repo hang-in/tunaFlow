@@ -14,7 +14,7 @@ import { useState } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import { Copy, GitBranch, Users, Bookmark, FileText, Forward, Trash2, Pencil, Plus, ClipboardPaste } from "lucide-react";
+import { Copy, GitBranch, Users, Bookmark, FileText, Forward, Trash2, Pencil, Plus, ClipboardPaste, RotateCcw } from "lucide-react";
 
 // ─── Shared menu styling ────────────────────────────────────────────────────
 
@@ -157,9 +157,12 @@ interface SidebarItemContextMenuProps {
   onRename?: () => void;
   onCreateBranch?: () => void;
   onDelete?: () => void;
+  /** claudeTransportFlipHardeningPlan T6 — Claude 세션 수동 재시작.
+   *  conversation level 에서 trigger. backend `restart_sdk_session` 호출. */
+  onRestartClaudeSession?: () => void;
 }
 
-export function SidebarItemContextMenu({ children, onRename, onCreateBranch, onDelete }: SidebarItemContextMenuProps) {
+export function SidebarItemContextMenu({ children, onRename, onCreateBranch, onDelete, onRestartClaudeSession }: SidebarItemContextMenuProps) {
   const { t } = useTranslation("common");
   return (
     <ContextMenu.Root>
@@ -181,6 +184,11 @@ export function SidebarItemContextMenu({ children, onRename, onCreateBranch, onD
           {onCreateBranch && (
             <ContextMenu.Item className={menuItemClass} onSelect={onCreateBranch}>
               <GitBranch className={menuIconClass} />{t("context_menu.create_branch")}
+            </ContextMenu.Item>
+          )}
+          {onRestartClaudeSession && (
+            <ContextMenu.Item className={menuItemClass} onSelect={onRestartClaudeSession}>
+              <RotateCcw className={menuIconClass} />{t("context_menu.restart_claude_session")}
             </ContextMenu.Item>
           )}
           {onDelete && (

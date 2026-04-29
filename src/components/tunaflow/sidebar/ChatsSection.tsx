@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { TreeRow } from "./TreeRow";
 import { InlineRename } from "../InlineRename";
 import { SidebarItemContextMenu } from "../ContextMenu";
+import { restartClaudeSession } from "@/lib/api/claudeSession";
 import type { Conversation, Branch } from "@/types";
 
 // Status dot colors

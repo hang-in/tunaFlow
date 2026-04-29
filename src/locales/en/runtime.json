@@ -4,7 +4,8 @@
       "title": "Claude session restarted",
       "body": "Your previous session expired and was automatically recovered with a fresh one. From the next response, we'll re-attach prior conversation context via ContextPack — the first reply may be slightly slower.",
       "dismiss": "Got it",
-      "learnMore": "Open Claude usage"
+      "learnMore": "Open Claude usage",
+      "manualRestart": "Restart Claude session"
     },
     "rateLimit": {
       "ok": "Claude usage OK",
