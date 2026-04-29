@@ -11,7 +11,30 @@
     "terminal": "Terminal",
     "mobile": "Mobile",
     "docs_scope": "Docs Panel",
+    "notifications": "Notifications",
     "help": "Help"
+  },
+  "notifications": {
+    "heading": "Notifications",
+    "description": "Manage desktop notification permissions and behavior.",
+    "status": {
+      "label": "Current permission",
+      "notDetermined": "Not yet decided",
+      "denied": "Denied",
+      "authorized": "Allowed",
+      "macos_only_hint": "These controls only apply on macOS (Windows / Linux use the OS default path)."
+    },
+    "actions": {
+      "request": "Request permission now",
+      "open_system_settings": "Open macOS System Settings",
+      "test": "Send a test notification"
+    },
+    "denied_help": "Permission was denied — enable it manually in System Settings → Notifications → tunaFlow.",
+    "toast": {
+      "denied": "Notification permission denied. You can enable it later in macOS System Settings.",
+      "test_sent": "Test notification sent.",
+      "test_failed": "Test notification failed: {{error}}"
+    }
   },
   "skills_description": "Manage the skills applied to agents.",
   "profile": {
