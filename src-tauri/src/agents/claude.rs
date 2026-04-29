@@ -217,16 +217,28 @@ where
     // insightStabilityPlan Subtask 04 (INV-4): watchdog 가 `timed_out` 플래그를 set
     // 하면 reader 루프 exit 후 distinct 에러 반환 → 상위 (run_insight_analysis) 가
     // insight_sessions.status = 'failed' 로 전이할 때 원인 구분 가능.
+    //
+    // 2026-04-29: trailing kill 차단 — reader 가 정상 종료한 뒤에도 watchdog 의
+    // 30s sleep 이 누적되어 이미 reap 된 PID 에 `kill -9` 가 송출되던 race 를
+    // 차단. `watchdog_done` AtomicBool + RAII `WatchdogGuard` 로 함수 scope 가
+    // 끝날 때 (정상/에러/cancel/panic 모두) flag 가 set 되어 watchdog loop 가
+    // 다음 깨어남 즉시 종료. 기존 `timed_out` 플래그 / reader 루프 / 정상 종료
+    // 분기는 그대로 유지.
     let idle_timeout = std::time::Duration::from_secs(600);
     let last_activity = std::sync::Arc::new(parking_lot::Mutex::new(std::time::Instant::now()));
     let timed_out = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watchdog_done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let child_id = child.id();
     {
         let last_act = std::sync::Arc::clone(&last_activity);
         let timed_out_flag = std::sync::Arc::clone(&timed_out);
+        let done_flag = std::sync::Arc::clone(&watchdog_done);
         thread::spawn(move || {
             loop {
                 thread::sleep(std::time::Duration::from_secs(30));
+                if done_flag.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
                 let elapsed = last_act.lock().elapsed();
                 if elapsed > idle_timeout {
                     eprintln!(
@@ -246,6 +258,17 @@ where
             }
         });
     }
+
+    // RAII guard: 함수 scope 가 끝날 때 watchdog 에 종료 신호 전달.
+    // Drop 은 panic 시에도 호출되므로 모든 종료 경로 (정상 / 에러 / cancel /
+    // unwind) 에서 trailing kill 을 차단한다.
+    struct WatchdogGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for WatchdogGuard {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let _watchdog_guard = WatchdogGuard(std::sync::Arc::clone(&watchdog_done));
 
     for raw in reader.lines() {
         // Reset idle timer on each line
