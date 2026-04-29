@@ -4,7 +4,8 @@
       "title": "Claude 세션이 새로 시작됩니다",
       "body": "이전 세션이 만료되어 자동으로 새 세션으로 회복됐습니다. 다음 응답부터 ContextPack 으로 이전 대화 맥락을 다시 제공합니다 — 첫 응답이 약간 느릴 수 있습니다.",
       "dismiss": "확인",
-      "learnMore": "Claude 사용량 보기"
+      "learnMore": "Claude 사용량 보기",
+      "manualRestart": "Claude 세션 다시 시작"
     },
     "rateLimit": {
       "ok": "Claude 사용량 정상",

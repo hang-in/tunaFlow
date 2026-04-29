@@ -435,8 +435,28 @@ pub fn finalize_engine_run(
             if let Some(sid) = audit_session_id {
                 let _ = agent_session_tx::audit_rollback(conn, sid, &em);
             }
+            // claudeTransportFlipHardeningPlan T7 — claude 한정 에러 분류.
+            // 다른 엔진은 errorKind="unknown" (분류 없음, 기존 raw 표시 그대로).
+            // frontend 가 errorKind 보고 dedicated 모달 또는 friendly 메시지 가능.
+            // 본 commit 은 분류 라벨만 emit — UI 모달은 후속 PR.
+            let error_kind_label: &'static str = if engine_key.starts_with("claude") {
+                match crate::agents::claude::classify_claude_error(&em) {
+                    crate::agents::claude::ApiErrorKind::StaleResumeToken => "stale_resume_token",
+                    crate::agents::claude::ApiErrorKind::AuthFailure => "auth_failure",
+                    crate::agents::claude::ApiErrorKind::RateLimited => "rate_limited",
+                    crate::agents::claude::ApiErrorKind::QuotaExceeded => "quota_exceeded",
+                    crate::agents::claude::ApiErrorKind::ModelUnavailable => "model_unavailable",
+                    crate::agents::claude::ApiErrorKind::Unknown => "unknown",
+                }
+            } else {
+                "unknown"
+            };
             let _ = app.emit("agent:error", serde_json::json!({
-                "messageId": msg_id, "conversationId": conversation_id, "engine": engine_key, "error": em
+                "messageId": msg_id,
+                "conversationId": conversation_id,
+                "engine": engine_key,
+                "error": em,
+                "errorKind": error_kind_label,
             }));
         }
     }

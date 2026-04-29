@@ -82,7 +82,8 @@
     "new_conversation": "새 대화",
     "paste": "붙여넣기",
     "rename": "이름 변경",
-    "create_branch": "Branch 생성"
+    "create_branch": "Branch 생성",
+    "restart_claude_session": "Claude 세션 재시작"
   },
   "notification_bell": {
     "just_now": "방금",
