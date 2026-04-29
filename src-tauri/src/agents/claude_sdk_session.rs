@@ -1005,6 +1005,11 @@ pub fn shutdown_all_sessions() {
 
 /// Kill any orphaned `claude --sdk-url` processes from previous app runs.
 /// Called on app startup to prevent zombie processes that consume rate limit quota.
+///
+/// Unix path uses `pgrep -f` + `ps -o ppid=` to detect PPID=1 orphans, then
+/// `kill <pid>`. Windows would need WMIC / PowerShell parent-PID +
+/// command-line introspection — deferred (see windows variant below).
+#[cfg(unix)]
 pub fn kill_orphan_sdk_processes() {
     use std::process::Command;
     let output = match Command::new("pgrep").no_console().args(["-f", "claude.*--sdk-url"]).output() {
@@ -1034,6 +1039,28 @@ pub fn kill_orphan_sdk_processes() {
     if killed > 0 {
         eprintln!("[sdk-session] cleaned up {} orphan sdk-url process(es)", killed);
     }
+}
+
+/// Windows variant — intentional no-op for now.
+///
+/// The Unix path relies on `pgrep` / `ps -o ppid=` which do not exist on
+/// Windows. Spawning them previously failed silently (`Err(_) => return` on
+/// the first call), making the no-op non-obvious — this `cfg(windows)` stub
+/// makes the absence explicit.
+///
+/// Why deferred:
+/// - Random per-session port (`127.0.0.1:0`) + UUID session_id mean orphaned
+///   `claude.exe --sdk-url` processes do not collide with new sessions or
+///   directly saturate user-visible quota in practice.
+/// - Proper Windows orphan detection requires WMIC / PowerShell command-line
+///   + parent-PID introspection — deferred to a separate
+///   `windowsOrphanProcessHardeningPlan` (P3, post-beta).
+/// - The §D watchdog `taskkill` patch (PR #231) already handles the more
+///   common in-session idle-timeout kill path; this stub covers only the
+///   cross-app-restart leak path, which is rarer.
+#[cfg(windows)]
+pub fn kill_orphan_sdk_processes() {
+    // intentional no-op — see doc comment above for rationale and follow-up plan.
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
