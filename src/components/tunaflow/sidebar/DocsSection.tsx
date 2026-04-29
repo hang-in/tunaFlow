@@ -6,6 +6,12 @@ import { cn } from "@/lib/utils";
 import { useFileViewer } from "../chat/fileViewerContext";
 import { SidebarContextMenu, type ContextMenuState } from "./SidebarContextMenu";
 import { copyToClipboard } from "@/lib/clipboard";
+import { getSetting } from "@/lib/appStore";
+import {
+  DOCS_PANEL_SCOPE_KEY,
+  DOCS_PANEL_SCOPE_DEFAULT,
+  type DocsPanelScope,
+} from "../settings/DocsScopeSection";
 
 interface DocEntry {
   name: string;
@@ -14,52 +20,26 @@ interface DocEntry {
   children?: DocEntry[];
 }
 
-/** Scan project for .md files, return a tree structure */
-async function scanDocs(projectPath: string): Promise<DocEntry[]> {
-  try {
-    const entries = await invoke<{ name: string; isDir: boolean; path: string }[]>(
-      "list_directory", { path: projectPath }
-    );
-
-    const tree: DocEntry[] = [];
-    for (const entry of entries) {
-      if (entry.isDir) {
-        if (["docs", ".github"].includes(entry.name)) {
-          const children = await scanDocsDir(entry.path, 0);
-          if (children.length > 0) {
-            tree.push({ name: entry.name, path: entry.path, isDir: true, children });
-          }
-        }
-      } else if (entry.name.endsWith(".md")) {
-        tree.push({ name: entry.name, path: entry.path, isDir: false });
-      }
-    }
-    return tree;
-  } catch {
-    return [];
-  }
+interface DocsScanResult {
+  entries: DocEntry[];
+  fileCount: number;
+  truncated: boolean;
 }
 
-async function scanDocsDir(dirPath: string, depth: number): Promise<DocEntry[]> {
-  if (depth > 3) return [];
+const EMPTY_RESULT: DocsScanResult = { entries: [], fileCount: 0, truncated: false };
+
+async function scanDocs(projectPath: string, scope: DocsPanelScope): Promise<DocsScanResult> {
   try {
-    const entries = await invoke<{ name: string; isDir: boolean; path: string }[]>(
-      "list_directory", { path: dirPath }
-    );
-    const result: DocEntry[] = [];
-    for (const entry of entries) {
-      if (entry.isDir) {
-        const children = await scanDocsDir(entry.path, depth + 1);
-        if (children.length > 0) {
-          result.push({ name: entry.name, path: entry.path, isDir: true, children });
-        }
-      } else if (entry.name.endsWith(".md")) {
-        result.push({ name: entry.name, path: entry.path, isDir: false });
-      }
-    }
+    const result = await invoke<DocsScanResult>("list_project_docs", {
+      projectPath,
+      scope,
+    });
+    // Defensive: tests / stub envs may resolve to undefined.
+    if (!result || !Array.isArray(result.entries)) return EMPTY_RESULT;
     return result;
-  } catch {
-    return [];
+  } catch (e) {
+    console.warn("[docs] list_project_docs failed:", e);
+    return EMPTY_RESULT;
   }
 }
 
@@ -81,14 +61,45 @@ interface DocsSectionProps {
 export function DocsSection({ projectPath }: DocsSectionProps) {
   const { t } = useTranslation("sidebar");
   const [docs, setDocs] = useState<DocEntry[]>([]);
+  const [scope, setScope] = useState<DocsPanelScope>(DOCS_PANEL_SCOPE_DEFAULT);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const fileViewer = useFileViewer();
 
+  // 1) 초기 scope 로드 + scope 변경 이벤트 구독.
   useEffect(() => {
-    if (!projectPath) { setDocs([]); return; }
-    scanDocs(projectPath).then(setDocs);
-  }, [projectPath]);
+    let alive = true;
+    getSetting<DocsPanelScope>(DOCS_PANEL_SCOPE_KEY, DOCS_PANEL_SCOPE_DEFAULT).then((v) => {
+      if (alive) {
+        setScope(v === "tunaflow" ? "tunaflow" : "all");
+      }
+    });
+    const onScopeChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ scope: DocsPanelScope }>).detail;
+      if (detail?.scope) {
+        setScope(detail.scope === "tunaflow" ? "tunaflow" : "all");
+      }
+    };
+    window.addEventListener("tf:docs-scope-changed", onScopeChange);
+    return () => {
+      alive = false;
+      window.removeEventListener("tf:docs-scope-changed", onScopeChange);
+    };
+  }, []);
+
+  // 2) projectPath / scope 변경 시 다시 스캔.
+  useEffect(() => {
+    if (!projectPath) {
+      setDocs([]);
+      return;
+    }
+    let alive = true;
+    scanDocs(projectPath, scope).then((result) => {
+      if (!alive) return;
+      setDocs(result.entries);
+    });
+    return () => { alive = false; };
+  }, [projectPath, scope]);
 
   const toggle = useCallback((path: string) => {
     setExpanded((prev) => {
@@ -158,6 +169,9 @@ export function DocsSection({ projectPath }: DocsSectionProps) {
 
   return (
     <div className="py-1">
+      <div className="px-3 pb-1 text-[10px] text-sidebar-foreground/30 select-none">
+        {t(scope === "all" ? "docs_scope.all" : "docs_scope.tunaflow")}
+      </div>
       {docs.length === 0 ? (
         <p className="px-3 text-[10px] text-sidebar-foreground/25 italic">{t("empty.no_docs")}</p>
       ) : (

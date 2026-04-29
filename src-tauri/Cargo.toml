@@ -69,6 +69,9 @@ ndarray = "0.16"
 # OS keychain access (macOS Keychain, Windows Credential Vault, Linux Secret Service).
 # Used for persisting user-supplied secrets (future API keys etc.) outside the SQLite DB.
 keyring = "3"
+# Used by `list_project_docs` (scope='all') to honor .gitignore + auto-skip
+# heavy build dirs (node_modules/, target/, dist/, ...). Plan E (2026-04-29).
+ignore = "0.4"
 
 [profile.release]
 panic = "abort"

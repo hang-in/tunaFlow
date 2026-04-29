@@ -277,6 +277,7 @@ pub fn run() {
             commands::context_hub::context_hub_get,
             // Files
             commands::files::list_directory,
+            commands::files::list_project_docs,
             commands::files::read_file_content,
             commands::files::read_text_file,
             // Tracing
