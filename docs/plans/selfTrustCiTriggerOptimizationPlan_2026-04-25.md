@@ -78,6 +78,12 @@ on:
 
 nightly cron 으로 main 환경 차이 자동 검출. 비용 적음 (self-hosted runner). **본 plan 은 보류** — release 시점 검증으로 일단 충분 평가, 깨진 사례 나오면 도입.
 
+### 갱신 (2026-04-29) — cross-OS 예외 활성화
+
+> **예외: OS 회귀는 redundant 가 아님.** cross-OS workflow (Linux + Windows) 는 본 plan 의 *단일 OS self-trust 가정* 의 한계라, 부분적으로 PR-trigger 외 (push to main / schedule) 로 보강 가능. 상세: [`docs/plans/windowsCiPipelinePlan_2026-04-29.md`](./windowsCiPipelinePlan_2026-04-29.md).
+
+근거: 2026-04-29 Windows architect 가 path-separator 회귀 5건 발견 (PR #213 + escalate 4건) — 모두 Linux CI 통과 후 main 진입. 단일 OS self-trust 의 한계가 데이터로 확정. cross-OS 회귀 한정으로 PR-trigger 외 보강 (nightly cron + main push, 향후 self-hosted Windows runner) 채택. PR-level windows-latest 매트릭스는 working-memory 비용 우려로 채택 X (Phase 3 재검토).
+
 ## 위험 2 — 정책 인지 부재로 future architect 가 PR 모델 복원
 
 미래 architect 세션이 "왜 main push CI 안 돔" 의문 시 본 plan 의 의도 / 근거 모르고 ci.yml 의 `on: push: branches: [main]` 다시 추가할 가능성.
