@@ -251,7 +251,7 @@ tunaFlow borrows ideas and code from several open-source projects. Thanks to the
 
 - **[rawq](https://github.com/auyelbekov/rawq)** (MIT) — code-search sidecar. tunaFlow ships a locally-patched build as a bundled binary.
 - **[code-review-graph](https://github.com/tirth8205/code-review-graph)** (MIT) — CRG sidecar (Full track). Graph-based code review analysis.
-- **[context-hub](https://github.com/andrewyng/context-hub)** (MIT) — context-sharing sidecar. Auto-installed on first run.
+- **[context-hub](https://github.com/andrewyng/context-hub)** (MIT) — context-sharing sidecar. Prompted to install on first run (consent required; falls back gracefully if declined).
 
 ### Design / architecture influences
 

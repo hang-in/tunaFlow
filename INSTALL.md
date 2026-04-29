@@ -125,14 +125,14 @@ xattr -cr /Applications/tunaFlow.app
 
 ---
 
-## Lite 트랙 — 추가 기능 자동 설치
+## Lite 트랙 — 추가 기능 설치 안내 (consent 기반)
 
-앱 첫 실행 시 감지:
+앱 첫 실행 시 감지하여 **사용자 동의 후** 설치 안내 다이얼로그를 표시합니다. silent global install 은 수행하지 않습니다.
 
 | 기능 | 필요 조건 | 없을 때 |
 |------|----------|---------|
-| code-review-graph | Python 3 + pip | 앱 내 안내 표시 |
-| context-hub | Node.js + npm | 앱 내 안내 표시 |
+| code-review-graph | Python 3 + pip | 첫 실행 dialog 에서 동의 시 `pip install code-review-graph` (또는 활성 venv) — 거절 시 Settings → Runtime 에 수동 설치 버튼 노출 |
+| context-hub | Node.js + npm | 첫 실행 dialog 에서 동의 시 `npm install -g @aisuite/chub` — 거절 시 Settings → Runtime 에 수동 설치 버튼 노출 |
 | rawq | (번들 포함) | — |
 
 ---
