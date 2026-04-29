@@ -27,6 +27,16 @@
     "save": "저장",
     "cancel": "취소"
   },
+  "dependency_install": {
+    "title": "추가 사이드카 설치",
+    "lead": "다음 사이드카는 일부 기능 (context-hub 검색 / 코드 그래프 분석) 에 필요합니다. 설치를 원하지 않으면 건너뛸 수 있고, 나중에 Settings → Runtime 에서 다시 설치할 수 있습니다.",
+    "install": "설치",
+    "skip": "건너뛰기",
+    "close": "닫기",
+    "installing": "설치 중...",
+    "manual_hint": "수동 설치 명령:",
+    "venv_note": "활성 Python venv 가 감지되면 그 안에 설치합니다 (시스템 전역 설치 회피)."
+  },
   "onboarding": {
     "step_scan": "프로젝트 스캔 중...",
     "step_analyze": "기존 문서 분석 중...",

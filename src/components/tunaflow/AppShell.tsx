@@ -16,6 +16,7 @@ import { CommandPalette } from "./CommandPalette";
 import { TitleBar } from "./TitleBar";
 import { MetaFloatingChat } from "./MetaFloatingChat";
 import { ProjectOnboardingModal } from "./ProjectOnboardingModal";
+import { FirstRunDependencyDialog } from "./FirstRunDependencyDialog";
 import { SettingsPanel } from "./SettingsPanel";
 
 // ─── Panel width constraints ─────────────────────────────────────────────────
@@ -210,6 +211,7 @@ export function AppShell() {
       <>
         <ProjectStartup />
         <Toaster position="bottom-right" theme={themeMode} richColors closeButton />
+        <FirstRunDependencyDialog />
         {settingsOpen && (
           <SettingsPanel
             onClose={() => { setSettingsOpen(false); setSettingsInitialSection(undefined); }}
@@ -394,6 +396,7 @@ export function AppShell() {
     </div>
     <CommandPalette />
     <ProjectOnboardingModal />
+    <FirstRunDependencyDialog />
     </FileViewerContext.Provider>
   );
 }

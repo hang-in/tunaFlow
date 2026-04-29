@@ -295,6 +295,8 @@ pub fn run() {
             commands::context_hub::context_hub_health,
             commands::context_hub::context_hub_search,
             commands::context_hub::context_hub_get,
+            commands::dependency_install::list_dependencies,
+            commands::dependency_install::install_dependency,
             // Files
             commands::files::list_directory,
             commands::files::list_project_docs,
