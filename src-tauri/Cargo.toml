@@ -79,3 +79,13 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Direct ObjC bridge to UNUserNotificationCenter (replaces tauri-plugin-notification's
+# osascript-based macOS path that surfaces Script Editor on click — see
+# docs/plans/nativeNotificationPlan_2026-04-29.md). macOS-only target gate keeps
+# Windows/Linux paths unchanged (existing tauri-plugin-notification used there).
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSError", "NSDate"] }
+objc2-user-notifications = { version = "0.3.2", default-features = false, features = ["std", "alloc", "bitflags", "block2", "UNUserNotificationCenter", "UNNotificationContent", "UNNotificationRequest", "UNNotificationSound", "UNNotificationSettings", "UNNotificationTrigger", "UNError"] }
+block2 = "0.6"

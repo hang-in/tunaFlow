@@ -3563,6 +3563,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-user-notifications"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
+dependencies = [
+ "bitflags 2.11.0",
+ "block2",
+ "objc2",
+ "objc2-foundation",
+]
+
+[[package]]
 name = "objc2-web-kit"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6667,6 +6679,7 @@ dependencies = [
  "alacritty_terminal",
  "axum",
  "base64 0.22.1",
+ "block2",
  "chrono",
  "dirs 5.0.1",
  "futures-util",
@@ -6675,6 +6688,9 @@ dependencies = [
  "lazy_static",
  "lindera",
  "ndarray",
+ "objc2",
+ "objc2-foundation",
+ "objc2-user-notifications",
  "ort",
  "parking_lot",
  "portable-pty",
