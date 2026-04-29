@@ -13,6 +13,15 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Reviewer 정책 위반 차단** (PR #211 + 후속) — Codex Reviewer 가
+  `*-result.md` 를 자체 read tool 로 직접 열람 후 잘림 패턴을 verdict 근거로
+  사용하던 정책 위반 패턴 확인. ContextPack 입력 차단 (PR #211, root cause)
+  에 더해 REVIEWER_TEMPLATE 에 "Never read `*-result.md`" 규칙 명시 추가
+  (이 plan). reportSync 의 truncation 도 UTF-8 boundary-safe 8k/2k 상한 +
+  잘림 마커 + sentinel 기반 self-include guard 로 강화.
+- **claude agent watchdog trailing kill 차단** — reader loop 정상 종료 후
+  watchdog 30s sleep 누적이 이미 reap 된 PID 에 `kill -9` 송출하던 race.
+  PID 재사용 시 엉뚱한 프로세스 kill 위험 0 으로 차단. RAII guard 패턴.
 - **claude transport 영구 차단 회귀** (claude CLI 2.1.121 정책 변경):
   - claude 2.1.121 가 `--sdk-url` 의 host 를 `api.anthropic.com` 등 5 도메인만
     허용하도록 hardcoded whitelist 도입. tunaFlow 의 localhost WS 서버 차단
