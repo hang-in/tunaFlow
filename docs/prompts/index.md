@@ -15,6 +15,7 @@
 
 ## 🟢 활성 핸드오프
 
+- [communityFollowupBatchDeveloperHandoff_2026-04-29](./communityFollowupBatchDeveloperHandoff_2026-04-29.md) — **메인 Developer 핸드오프** (batmania52 #1/#3/#4/#5/#6/#7). 5 plan 묶음을 plan 단위로 서브에이전트 spawn 분배. 가이드라인: 사이드이펙트 방지 + Verification 실제 실행 + self-review + escalate 규칙. 권장 순서 A → B → C → D 병렬 / E 정책 결정 후.
 - [windowsBetaHardeningArchitectHandoff_2026-04-29](./windowsBetaHardeningArchitectHandoff_2026-04-29.md) — Plan: `windowsBetaHardeningPlan_2026-04-26`. **Windows 환경 architect 세션용** (사용자 본인 머신). 오늘 작업: A v0.1.4-beta Windows 자산 빌드 + C DB path stale fix(option A) + B startup race 진단 + D watchdog kill compat. INV-1~4, PR + CI watch 필수.
 
 ## ✅ 완료된 Developer 핸드오프 (recent)
