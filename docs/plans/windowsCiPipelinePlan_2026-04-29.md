@@ -1,6 +1,6 @@
 ---
 title: Windows CI 파이프라인 — PR-level / nightly / self-hosted 회귀 검출 정책
-status: draft
+status: ready (mac architect review APPROVE 2026-04-29)
 priority: P0 (회귀 누적 차단 — 즉시 결정 필요)
 created_at: 2026-04-29
 calling_role: architect (Windows 머신)
@@ -71,7 +71,7 @@ roll-out 을 정의한다.
 |---|---|
 | **INV-CI-1** | self-trust 모델의 working-memory 비용 회피 가치 보존. PR-level 으로 5분 wait 강제 부활 시키지 말 것. |
 | **INV-CI-2** | OS 회귀는 *반드시* 검출되어야 함. 검출 시점이 PR 직후 / nightly / main push 후 어디든 OK, 단 회귀가 사용자에게 도달하기 *전*. |
-| **INV-CI-3** | 자원 경제성. GitHub-hosted windows-latest 는 macos-latest 와 같은 비용 등급 (Linux 대비 2× minute charge). nightly 1회 정도는 허용, 매 PR 강제는 비용 부담. |
+| **INV-CI-3** | 자원 경제성. GitHub-hosted windows-latest 는 macos-latest 와 같은 비용 등급 (Linux 대비 2× minute charge). nightly 1회 정도는 허용, 매 PR 강제는 비용 부담. **[Q-WCI-1 결정]** 월 quota 80% 도달 시 self-hosted only 로 후퇴, GitHub-hosted 는 nightly 만 유지 — 자동 후퇴 트리거 정책 명시. |
 | **INV-CI-4** | docs-only / markdown-only / .github 템플릿 등은 제외 (현행 paths-ignore 유지). |
 | **INV-CI-5** | self-hosted Windows runner 가능성 — Windows architect 머신을 runner 로 등록할 경우 비용 0 + 검출 즉시. 단 머신 가용성 (사용자 ON/OFF) 의 영향 명시. |
 | **INV-1** (기존) | macOS 변경 0 — Windows job 추가는 macOS job 동작에 영향 없음. |
@@ -150,19 +150,23 @@ on:
 #### W-CI-2 — Windows job 실패 시 알림 통로
 
 - main push 직후 Windows job 실패 → architect 인식 시점 = 다음 cargo test 또는 GitHub 알림 직접 확인.
-- 권장: **별 plan 외 axis** — `gh notification`, slack, 또는 Push notification (현재 active 한 `nativeNotificationPlan_2026-04-29` 와 묶을 수 있음). 본 plan 은 *알림 메커니즘 구체화 안 함*. notification axis 는 별 plan.
+- **[Q-WCI-5 결정]** GitHub 기본 email/web notification 만 사용. repo Settings → Notifications 에서 사용자 preference (failed actions 알림 ON) 로 설정. 별 plan 미작성 — `nativeNotificationPlan_2026-04-29` 와 묶지 않음 (CI 알림은 GitHub native 통로가 충분, OS-level push 통합은 별 axis).
 
 #### W-CI-3 — path-separator 회귀 grep audit (회귀 5건 같은 패턴 추가 검출)
 
-- 본 plan **밖** axis 지만 motivation 강함. fix PR 진행 시 같은 패턴 grep:
+- **[R-W-7 결정]** `windowsBetaHardeningPlan §C/§D` 편입 *대신* **별 hotfix PR 즉시 진행**. escalate-1~4 와 같은 패턴이 더 있을 가능성 높아 검출 latency 최소화.
+- 패턴 grep:
   ```
   rg '\.ends_with\("[^"]*\/[^"]*"\)' src-tauri/src/
   rg '\.contains\("\/[^"]+/[^"]+"\)' src-tauri/src/
   rg 'Path::new\("[^"]*\/[^"]*"\)' src-tauri/src/
   ```
-- 결과는 별 fix PR 또는 windowsBetaHardeningPlan §C/§D 에 편입.
+- 추가 grep [mac architect 보강]: `rg "rawq.*Command|crg.*Command" src-tauri/src/` — placeholder binary 호출 케이스 (W-CI-1 의 sidecar placeholders 와 충돌 가능성) 사전 검출.
+- **별 hotfix PR**: `fix/win-path-separator-grep-audit` 브랜치, T1~T5 와 별 axis. 본 plan 의 W-CI-1 PR 과 동시 진행 가능.
 
 ### Phase 2 — self-hosted Windows runner (P1)
+
+**[Q-WCI-4 결정]** Phase 2 시작 조건: **Phase 1 P0 (W-CI-1) 머지 후 1~2주 운영 검증**. windows-latest job 의 회귀 검출 빈도 + GitHub-hosted minute 사용량 trend 확인 후 self-hosted 도입 판단. 즉시 도입하지 않음.
 
 #### W-CI-4 — Windows architect 머신 self-hosted runner 등록
 
@@ -216,29 +220,48 @@ W-CI-1/4 누적 운영 1~2주 후, working-memory 비용과 회귀 검출 즉시
 
 ### 7.3 baseline 카운트
 
-- W-CI-1 머지 시점의 main 기준 baseline:
-  - macOS / Linux: cargo test --lib 568 passed (디벨로퍼 보고 569 - T2 추가 1, 추정. 정확한 값은 W-CI-1 PR 작성 시 측정)
-  - Windows: cargo test --lib 569 passed + 4 failed (= 573, escalate 4건)
-- escalate fix PR 머지 후 양 환경 모두 +N 또는 동일.
+- **[B3 보강]** baseline 은 W-CI-1 PR 작성 시점 main HEAD 에서 *재측정* 후 PR description 에 기록. 본 plan 본문에는 재측정 절차만 명시 (값은 PR description SSOT).
+- 참고값:
+  - mac architect 측 main HEAD `26d6d03` (2026-04-29 시점) 기준 — FE **381** / Rust **564**
+  - Windows architect 측 (escalate fix 전) — FE 381 / Rust 569 passed + 4 failed
+  - 두 환경 차이는 (a) `cfg(unix)` gated test, (b) escalate 4건 사전 회귀, (c) T1/T2/T3 머지 후 추가 unit test 합산. W-CI-1 PR 시점에 정확한 차이 분해.
+- 재측정 명령:
+  ```bash
+  # main HEAD 기준
+  git fetch origin && git checkout main && git pull
+  npx vitest run                          # FE 카운트
+  cd src-tauri && cargo test --lib        # Rust 카운트 (Windows 머신 + Linux/mac 머신 각각)
+  ```
+- escalate fix PR (R-W-7 hotfix) 머지 후 양 환경 baseline 갱신 — W-CI-1 PR 의 PR description 에 *최종* baseline 기록.
 
 ## 8. 리뷰어(Codex / mac architect) review 포인트
 
 - **R-W-1** self-trust 모델 정신을 깨지 않는가 — pull_request trigger 에 Windows job 추가는 INV-CI-1 위반. W-CI-1 의 `if: ... push || schedule` 분기 정확성.
-- **R-W-2** sidecar placeholders 가 Windows 에서 정상 동작 — `New-Item -ItemType File` 이 0 byte file 생성, Tauri build script 가 file existence 만 검사하므로 OK. 단 .exe 확장자 명시 누락 시 회귀.
+- **R-W-2** sidecar placeholders 가 Windows 에서 정상 동작 — `New-Item -ItemType File` 이 0 byte file 생성, Tauri build script 가 file existence 만 검사하므로 OK. 단 .exe 확장자 명시 누락 시 회귀. **[mac architect 보강]** W-CI-1 PR 시 sidecar `.exe` 확장자가 `src-tauri/tauri.conf.json` 의 `externalBin` 항목과 일치하는지 *cross-check 명시*. 현재 externalBin: `"binaries/rawq"` 단일 항목 — Tauri 가 자동으로 `-{triple}{ext}` 확장. crg/chub 가 향후 externalBin 에 추가될 경우 placeholder 패턴 일관성 검증.
 - **R-W-3** Rust cache key (`Swatinem/rust-cache@v2`) 가 OS 별 분리되는지 — 디폴트로 분리됨, 그러나 명시 권장.
 - **R-W-4** windows-latest 의 GitHub Actions cost — 사용자 GitHub plan 의 minute quota 초과 위험 평가. 현재 Linux self-hosted 라 quota 영향 0 → Windows job 도입 시 처음으로 quota 사용. nightly + main push 빈도로 월 ~20~50 runs × 10분 = ~300분/월 예상.
 - **R-W-5** schedule cron 시간 — 18:00 UTC 가 Windows architect 의 EOD 시점과 겹치는지 (한국 03:00). nightly 결과를 다음 morning 에 보는 것이 자연스러움. 사용자 시간대 확인.
 - **R-W-6** Windows job 실패 시 알림 통로가 본 plan 에서 미정의 — W-CI-2 에 motivation 만 적고 별 plan 으로 미루는 것이 옳은지, 아니면 본 plan 에 최소 GitHub email notification 명시는 포함할지.
 
-## 9. 오픈 질문
+## 9. 결정 사항 (mac architect review 후 확정, 2026-04-29)
 
-| Q | 결정 필요한 사항 |
+| Q | 결정 |
 |---|---|
-| **Q-WCI-1** | windows-latest 비용 — 월 quota 초과 시 self-hosted only 로 후퇴 정책 미리 합의할지. |
-| **Q-WCI-2** | self-trust 모델 부분 수정 명문화 — `selfTrustCiTriggerOptimizationPlan_2026-04-25` 본문에 *"OS 회귀는 예외"* 한 줄 추가할지, 또는 본 plan 으로만 cross-reference 둘지. |
-| **Q-WCI-3** | nightly cron 시간 (Q-W-5 와 묶음). |
-| **Q-WCI-4** | self-hosted Windows runner 등록 시점 — Phase 2 P1 즉시 vs Phase 1 P0 검증 후. |
-| **Q-WCI-5** | 알림 메커니즘 — 본 plan 포함 vs 별 plan (nativeNotificationPlan 과 묶음 가능성). |
+| **Q-WCI-1** | **월 quota 80% 도달 시 self-hosted only 후퇴**. GitHub-hosted 는 nightly 만 유지. (§3 INV-CI-3 반영) |
+| **Q-WCI-2** | **selfTrustCiTriggerOptimizationPlan 본문에 한 줄 명문화** — *"OS 회귀는 self-trust redundancy 예외"*. mac architect 가 직접 처리 (mac SSOT, 별 PR 또는 incorporate commit). 본 plan 은 cross-reference 만 유지. |
+| **Q-WCI-3** | **18:00 UTC = 03:00 KST 채택**. (§5 W-CI-1 본문 그대로) |
+| **Q-WCI-4** | **Phase 1 P0 (W-CI-1) 머지 후 1~2주 운영 검증 후 Phase 2 P1**. 즉시 self-hosted 도입 안 함. (§5 Phase 2 시작 조건 반영) |
+| **Q-WCI-5** | **GitHub 기본 email/web notification 만**. repo Settings 에서 사용자 preference 설정. 별 plan 미작성 — `nativeNotificationPlan_2026-04-29` 와 묶지 않음. (§5 W-CI-2 반영) |
+
+### 9.1 mac architect 추가 보강 (반영 완료)
+
+| ID | 보강 | 반영 위치 |
+|---|---|---|
+| B-1 | R-W-7 path-separator grep audit 를 windowsBetaHardening §C 편입 *대신* 별 hotfix PR 즉시 진행 — escalate-1~4 패턴 추가 검출 | §5 W-CI-3 |
+| B-2 | R-W-2 의 sidecar `.exe` 확장자 ↔ `tauri.conf.json:externalBin` cross-check 를 W-CI-1 PR 시 명시 | §8 R-W-2 |
+| B-3 | 추가 grep `rawq.*Command|crg.*Command` 로 placeholder binary 호출 케이스 사전 검출 | §5 W-CI-3 |
+| B-4 | baseline 재측정 시점 — W-CI-1 PR 작성 시 main HEAD 기준. 참고값 `26d6d03` 기준 FE 381 / Rust 564 명시 | §7.3 |
+| B-5 | Phase 2 시작 조건 명문화 (Q-WCI-4 와 동일) | §5 Phase 2 헤더 |
 
 ## 10. 진행 메모
 
@@ -246,3 +269,9 @@ W-CI-1/4 누적 운영 1~2주 후, working-memory 비용과 회귀 검출 즉시
 - `windowsDependencyBootstrapPlan_2026-04-29` 의 §6.2 W-1~W-9 시나리오는 *수동* 검증 — 본 plan 의 W-CI-1 가 도입되면 일부 자동화 가능. 단 dialog UX 같은 UI 항목은 여전히 수동.
 - self-hosted Windows runner 등록 (W-CI-4) 은 Windows architect 가 본 머신을 *대부분 켜놓는* 운용 패턴이면 매우 강한 옵션. 사용자 운용 패턴 확인 후 결정.
 - 본 plan 작성 직후 mac architect review 권장 (Q-WCI-1~5 결정), 그 다음 W-CI-1 PR 진행.
+- mac architect review (2026-04-29) APPROVE 완료, Q-WCI-1/3/4/5 결정 + B-1~5 보강 모두 본 plan 반영. Q-WCI-2 는 mac architect 가 `selfTrustCiTriggerOptimizationPlan_2026-04-25` 본문에 직접 명문화 (분담).
+- **머지 후 흐름** (mac architect 권장 순서):
+  1. 본 PR rebase (완료) + Q answer incorporate (완료) → 머지
+  2. **R-W-7 grep audit hotfix** 별 PR 즉시 진행 (`fix/win-path-separator-grep-audit`) — W-CI-1 PR 과 동시 가능
+  3. **W-CI-1 PR** (sidecar placeholder + windows-check job) — Windows architect 또는 디벨로퍼 책임
+  4. 1~2주 운영 후 Phase 2 (self-hosted runner 등록) 검토
