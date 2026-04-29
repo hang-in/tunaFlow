@@ -1,0 +1,20 @@
+{
+  "claude": {
+    "freshFallback": {
+      "title": "Claude 세션이 새로 시작됩니다",
+      "body": "이전 세션이 만료되어 자동으로 새 세션으로 회복됐습니다. 다음 응답부터 ContextPack 으로 이전 대화 맥락을 다시 제공합니다 — 첫 응답이 약간 느릴 수 있습니다.",
+      "dismiss": "확인",
+      "learnMore": "Claude 사용량 보기"
+    },
+    "rateLimit": {
+      "ok": "Claude 사용량 정상",
+      "approaching": "Claude 5시간 한도에 가까워졌습니다",
+      "limitReached": "Claude 5시간 한도에 도달했습니다",
+      "overageDisabled": "추가 사용(overage) 이 비활성화되어 거부되었습니다",
+      "weekly": "주간 한도",
+      "fiveHour": "5시간 한도",
+      "resetsIn": "{{when}} 에 리셋",
+      "openSettings": "Anthropic 설정 열기"
+    }
+  }
+}

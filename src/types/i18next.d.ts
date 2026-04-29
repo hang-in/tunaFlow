@@ -18,6 +18,7 @@ import type koInsight from "../locales/ko/insight.json";
 import type koQuality from "../locales/ko/quality.json";
 import type koSkills from "../locales/ko/skills.json";
 import type koHarness from "../locales/ko/harness.json";
+import type koRuntime from "../locales/ko/runtime.json";
 
 declare module "i18next" {
   interface CustomTypeOptions {
@@ -35,6 +36,7 @@ declare module "i18next" {
       quality: typeof koQuality;
       skills: typeof koSkills;
       harness: typeof koHarness;
+      runtime: typeof koRuntime;
     };
   }
 }

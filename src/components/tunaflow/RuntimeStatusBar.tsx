@@ -6,6 +6,7 @@ import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
 import { Activity, Loader2, Zap, Terminal, Settings, Moon, Sun, Brain } from "lucide-react";
 import { TraceModal } from "./TraceModal";
+import { ClaudeRateLimitIndicator } from "./ClaudeRateLimitIndicator";
 import { getSetting, setSetting } from "@/lib/appStore";
 import { countBackgroundJobs, type BackgroundJobCounts } from "@/lib/api/identityAnalysis";
 
@@ -374,7 +375,7 @@ export function RuntimeStatusBar() {
           </>
         )}
 
-        {/* Rate limit */}
+        {/* Rate limit (ccusage 기반 — 5h/7d %) */}
         {rateLimit && (
           <>
             <span className="w-px h-3 bg-border/30" />
@@ -400,6 +401,11 @@ export function RuntimeStatusBar() {
             </span>
           </>
         )}
+
+        {/* claudeTransportFlipHardeningPlan T4 — claude:rate_limit 이벤트 기반
+            indicator (rate_limit_event payload). 위 ccusage 기반 % 와 다른
+            source. 정상 상태에서는 자동 hide. */}
+        <ClaudeRateLimitIndicator />
 
         {/* Separator */}
         <span className="w-px h-3 bg-border/30" />

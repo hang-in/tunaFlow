@@ -18,6 +18,7 @@ import { MetaFloatingChat } from "./MetaFloatingChat";
 import { ProjectOnboardingModal } from "./ProjectOnboardingModal";
 import { FirstRunDependencyDialog } from "./FirstRunDependencyDialog";
 import { SettingsPanel } from "./SettingsPanel";
+import { ClaudeFallbackEvents } from "./ClaudeFallbackEvents";
 
 // ─── Panel width constraints ─────────────────────────────────────────────────
 const SIDEBAR_MIN = 220;
@@ -238,6 +239,9 @@ export function AppShell() {
   return (
     <FileViewerContext.Provider value={fileViewerCtx}>
     <Toaster position="bottom-right" theme={themeMode} richColors closeButton />
+    {/* claudeTransportFlipHardeningPlan T4 — fresh_fallback 토스트 + rate_limit
+        store 갱신 listener. 시각 출력 0, AppShell 안에서 1회 mount. */}
+    <ClaudeFallbackEvents />
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans relative">
       {/* ── Title bar (macOS overlay) ── */}
       <TitleBar />

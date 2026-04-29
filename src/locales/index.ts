@@ -14,6 +14,7 @@ import koInsight from "./ko/insight.json";
 import koQuality from "./ko/quality.json";
 import koSkills from "./ko/skills.json";
 import koHarness from "./ko/harness.json";
+import koRuntime from "./ko/runtime.json";
 import enCommon from "./en/common.json";
 import enError from "./en/error.json";
 import enSettings from "./en/settings.json";
@@ -26,6 +27,7 @@ import enInsight from "./en/insight.json";
 import enQuality from "./en/quality.json";
 import enSkills from "./en/skills.json";
 import enHarness from "./en/harness.json";
+import enRuntime from "./en/runtime.json";
 
 /** Supported locales. Add 'ja', 'zh', etc. in later PRs. */
 export type SupportedLocale = "ko" | "en";
@@ -49,6 +51,7 @@ export const resources = {
     quality: koQuality,
     skills: koSkills,
     harness: koHarness,
+    runtime: koRuntime,
   },
   en: {
     common: enCommon,
@@ -63,6 +66,7 @@ export const resources = {
     quality: enQuality,
     skills: enSkills,
     harness: enHarness,
+    runtime: enRuntime,
   },
 } as const;
 
@@ -76,7 +80,7 @@ i18n
     // 누락 키는 빈 문자열 대신 키 그대로 표시 → 누락 즉시 인지.
     returnEmptyString: false,
     defaultNS: "common",
-    ns: ["common", "error", "settings", "sidebar", "chat", "dialog", "workflow", "branch", "insight", "quality", "skills", "harness"],
+    ns: ["common", "error", "settings", "sidebar", "chat", "dialog", "workflow", "branch", "insight", "quality", "skills", "harness", "runtime"],
     detection: {
       // appStore (IndexedDB) 우선, 그 다음 localStorage/navigator.
       order: ["localStorage", "navigator"],
