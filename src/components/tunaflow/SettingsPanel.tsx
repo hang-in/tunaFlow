@@ -1,20 +1,21 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User, HelpCircle, Globe, Brain, FileText } from "lucide-react";
+import { X, Bot, UserCircle, Zap, Cpu, Terminal, Smartphone, User, HelpCircle, Globe, Brain, FileText, Bell } from "lucide-react";
 import { SkillsPanel } from "./context-panel/SkillsPanel";
 import { AgentsSection } from "./settings/AgentsSection";
 import { PersonasSection } from "./settings/PersonasSection";
 import { RuntimeSection } from "./settings/RuntimeSection";
 import { TerminalSection } from "./settings/TerminalSection";
 import { MobileSection } from "./settings/MobileSection";
+import { NotificationsSection } from "./settings/NotificationsSection";
 import { ProfileSection } from "./settings/ProfileSection";
 import { HelpSection } from "./settings/HelpSection";
 import { WorldviewSettings } from "./settings/WorldviewSettings";
 import { IdentityAnalysisSettings } from "./settings/IdentityAnalysisSettings";
 import { DocsScopeSection } from "./settings/DocsScopeSection";
 
-type SettingsSection = "profile" | "worldview" | "identity" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile" | "docs_scope" | "help";
+type SettingsSection = "profile" | "worldview" | "identity" | "agents" | "personas" | "skills" | "runtime" | "terminal" | "mobile" | "docs_scope" | "notifications" | "help";
 
 /** Section labels come from `settings.section.*` i18n keys. The order is visual
  *  layout, not config — 새 섹션 추가 시 JSON 키 + 이 배열 양쪽에 등록. */
@@ -29,6 +30,7 @@ const SECTION_CONFIG: { id: SettingsSection; icon: React.ReactNode }[] = [
   { id: "terminal", icon: <Terminal className="w-4 h-4" /> },
   { id: "mobile", icon: <Smartphone className="w-4 h-4" /> },
   { id: "docs_scope", icon: <FileText className="w-4 h-4" /> },
+  { id: "notifications", icon: <Bell className="w-4 h-4" /> },
   { id: "help", icon: <HelpCircle className="w-4 h-4" /> },
 ];
 
@@ -38,7 +40,7 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
-  const valid: SettingsSection[] = ["profile", "worldview", "identity", "agents", "personas", "skills", "runtime", "terminal", "mobile", "docs_scope", "help"];
+  const valid: SettingsSection[] = ["profile", "worldview", "identity", "agents", "personas", "skills", "runtime", "terminal", "mobile", "docs_scope", "notifications", "help"];
   const initial = (initialSection && valid.includes(initialSection as SettingsSection))
     ? (initialSection as SettingsSection)
     : "profile";
@@ -94,6 +96,7 @@ export function SettingsPanel({ onClose, initialSection }: SettingsPanelProps) {
               {activeSection === "terminal" && <TerminalSection />}
               {activeSection === "mobile" && <MobileSection />}
               {activeSection === "docs_scope" && <DocsScopeSection />}
+              {activeSection === "notifications" && <NotificationsSection />}
               {activeSection === "help" && <HelpSection />}
             </div>
           </div>
