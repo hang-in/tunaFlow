@@ -97,6 +97,64 @@ conversation 우클릭 메뉴 (T6). claude.ai/settings/usage 에서 한도 / ove
   TLS (system-wide 침범), binary patch (ToS 회색), desktop app 빈틈 (cloud 사용),
   PTY 회귀 (parsing 불안), Anthropic 공식 RC 등록 (가능성 낮음).
 
+### Windows-specific changes
+
+- **첫 실행 동의 dialog + Settings 수동 설치 버튼** (PR #227 / #229 — T4/T5)
+  — `chub` (`@aisuite/chub`) 와 `code-review-graph` 가 Windows 미설치 상태로
+  unavailable 표기되던 회귀 차단. 첫 실행 시 consent dialog 노출, 사용자
+  동의 시 npm/pip 으로 글로벌 설치 (timeout npm 60s / pip 120s, 활성 venv
+  자동 활용). dismiss 시 graceful fallback + Settings → Runtime 카드의
+  "npm/pip 으로 설치" 버튼 노출. silent global install 금지 (INV-DEP-A).
+  SSOT: `docs/plans/windowsDependencyBootstrapPlan_2026-04-29.md`.
+- **`context_hub` / `crg` `resolve_bin` Windows path 인식** (PR #221 / #223
+  — T1/T2) — `%APPDATA%\npm\chub.cmd` 와 `<python>\Scripts\code-review-graph.exe`
+  를 Windows native process `Command::new` 가 정상 spawn 하도록 cfg 분기 +
+  PATH fallback 보강.
+- **Windows 타이틀바 통합** (PR #237 — T-WT-1/2/3) — `decorations: false` +
+  자체 `WindowControls.tsx` (Min / Maximize-Restore / Close 사각 46×32) +
+  좌측 정렬 통일. 기존 *3 라인 헤더* (native title bar + TitleBar.tsx +
+  콘텐츠 헤더) → *1 라인 통합*. mac 도 같은 좌측 정렬 적용 (시각 회귀 0).
+  SSOT: `docs/plans/windowsTitlebarUnificationPlan_2026-04-29.md`.
+- **claude watchdog `taskkill` 분기** (PR #231 — §D) — `Command::new("kill")`
+  은 Unix-only 라 Windows 에서 idle_timeout (600s) 시 child `claude.exe` 가
+  zombie 잔존 위험. `cfg(unix)` 는 `kill -9`, `cfg(windows)` 는
+  `taskkill /F /PID` 분기.
+- **`kill_orphan_sdk_processes` Windows no-op stub** (PR #235) — Unix-only
+  `pgrep`/`ps` 가 Windows 에서 silently no-op 였음을 explicit 화. 실제
+  orphan 처리는 `windowsOrphanProcessHardeningPlan` (P3, post-beta) 후속.
+- **conventions `@import` path separator 정규화** (PR #213) — `Path::display()`
+  Windows backslash 출력으로 Claude Code `@path` syntax 깨지던 회귀 fix.
+- **`commands/files` 테스트 path-separator 정규화** (PR #226 — R-W-7
+  hotfix) — `flatten_md_paths` test helper 정규화. escalate-1~4 + 동일 패턴
+  3건 일괄 처리, production 영향 0.
+- **DB project path stale fallback** (PR #234 — Track 3) — mac 동기화 DB 의
+  `projects.path` 가 Windows 에서 invalid 일 때 file IO timeout hang 차단.
+  startup load 시점 validate + UI fallback, DB row 보존.
+- **claude SDK 세션 stderr surface** (PR #233 — Track 2 진단 도구) —
+  `Stdio::null()` → `Stdio::piped()` + `[sdk-session-stderr]` 라인 forward.
+  PR #222 (codex stderr surface) 동등 패턴.
+
+### Internal / housekeeping (Windows)
+
+- **Rust warning silence** (PR #230) — `unused_imports` 1건 + `dead_code` 2건
+  (test-only `InvokeClaude::Empty/Stub` + `NotificationAuthStatus` stub
+  variants). 동작 변경 0.
+- **Plan / handoff docs**: `windowsDependencyBootstrapPlan` (#214/#236),
+  `windowsCiPipelinePlan` (#224, mac+win cross-OS regression detection
+  정책), `windowsTitlebarUnificationPlan` (#228/#236), 그리고 status 갱신
+  (#232 `complete`).
+
+### Known issues (Windows)
+
+- **첫 실행 후 첫 메시지 ~30초 지연** — Microsoft Defender 의 first-scan
+  영향으로 추정 (정적 분석 결과 가설 (b) 가장 유력). **1분 후 다시 보내면
+  정상 동작**. Track 2 진단 도구 (PR #233) 가 다음 cold start 시 backend
+  stderr 에 root cause 를 노출 → fix axis 는 v0.1.5 정식 release 또는 캡처
+  후 별 PR. SSOT: `docs/plans/windowsBetaHardeningPlan_2026-04-26.md` §B.
+- **Windows 11 snap layouts overlay 미표시** — Maximize 버튼 hover 시 Win11
+  22H2+ 의 snap layouts 가 안 뜸. `decorations: false` 와 잠재 충돌 진단 후
+  v0.1.5 에서 fix (T-WT-5 / Q-WT-3). SSOT: `windowsTitlebarUnificationPlan`.
+
 ## [0.1.3-beta] - 2026-04-26
 
 Beta 사용자 보고 follow-up. 첫 외부 사용자 환경에서 두 건 보고 — rawq sidecar 가

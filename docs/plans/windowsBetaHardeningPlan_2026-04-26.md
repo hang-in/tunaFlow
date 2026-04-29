@@ -93,6 +93,14 @@ CI: macOS 빌드 ✓, Windows 빌드 ✓ (run 24953057499). Release `v0.1.2-beta
 - (b) Windows-only `tokio::time::sleep(Duration::from_millis(500))` 첫 spawn 전 buffer (Defender 우회) — 임시 안전망
 - (c) `selectProject` 안의 vector indexing 자동 시작을 *opt-in* 으로 변경 (사용자가 첫 메시지 보낸 후로 미루기)
 
+### Status (2026-04-30 갱신)
+
+- **진단 도구 도입 완료** — PR #233 (Track 2 A 안) 으로 `claude_sdk_session.rs` 의 stderr 가 `Stdio::null()` → `Stdio::piped()` + `[sdk-session-stderr]` 라인 forward. 다음 cold start 시 root cause 가 backend stderr 에 자동 노출.
+- **정적 분석 결과** (디벨로퍼 보고): 가설 (a) WS race 는 unlikely (claude 가 그 포트 안 씀, per-session WS micro-race 는 OS backlog 로 가려짐), 가설 (c) selectProject lock 은 정적으로 미발견. **가설 (b) Defender first-spawn 가장 유력**.
+- **베타 publish 결정 (사용자 2026-04-30)** — 옵션 C 채택. 본 §B fix 는 v0.1.4-beta 에 포함하지 않고 **알려진 이슈로 등재**, 1분 후 재시도 workaround 안내. CHANGELOG `[0.1.4-beta]` 의 *Known issues (Windows)* 섹션 (2026-04-30 추가) 참조.
+- **Fix axis 진행 시점** — 다음 자연 cold start 시 `[sdk-session-stderr]` 캡처 결과 paste 받은 후 가설 확정 → 별 PR 진행. 또는 v0.1.5 정식 release 사이클에 묶음 진행.
+- **즉시 fix 가능한 안전망 옵션 (보류)** — defensive 로 (b) 가설 가정한 cfg(windows) `tokio sleep(500ms)` first-spawn buffer 추가는 잘못된 가설이어도 fail-safe (정상 spawn 영향 0). 사용자가 즉시 안전망 원할 시 별 axis 로 진행 가능. 현재는 stderr 캡처 우선 정책 유지.
+
 ## P1 — DB path stale
 
 **진단**: 기존 macOS DB 의 `projects` 테이블 row 의 `path` column 이 `/Users/d9ng/...`. Windows 에서 그 경로 file IO 시도 → no such directory or timeout.
