@@ -52,6 +52,12 @@ _stash_recovery/
 # Auto-cloned rawq sidecar source (build-rawq.sh / build-rawq.ps1 fallback)
 vendor/rawq/
 
+# Vendor skills snapshot — fallback source for publish-skills.sh.
+# Real artifact lives in ~/.tunaflow/skills/ after publish; this in-repo
+# folder is a co-located mirror some users keep next to the source tree.
+# Not part of the tunaFlow build.
+/agents/_skills/
+
 # .tunaflow/ — 폐기된 outbox 잔재 + 향후 동적 산출물 차단
 .tunaflow/outbox/
 
