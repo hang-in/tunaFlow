@@ -335,8 +335,22 @@ pub fn prepare_engine_run(
             data.cross_session_data.clear();
             dropped.push("cross_session");
         }
+        // T12 (사용자 통찰 2026-04-30): scratchpad 정상 = main chat 의 current_messages 미인용
+        // = anchor 2 turns 안의 specific content 가 paid API trigger 결정적. T11 적용 후
+        // (plan/artifacts/findings drop) 도 거부 = recent_context (anchor 2 turns) cause.
+        // prompt_assembly.rs:421-422 에 "anchor 는 budget 초과여도 무조건 포함" 정책이라
+        // size cap 으로 회피 불가 — current_messages + parent_messages 자체 clear.
+        // agent 가 필요 시 tool-request:recent_turns:N 으로 on-demand 검색.
+        if !data.current_messages.is_empty() {
+            data.current_messages.clear();
+            dropped.push("recent_context");
+        }
+        if !data.parent_messages.is_empty() {
+            data.parent_messages.clear();
+            dropped.push("parent_messages");
+        }
         if !dropped.is_empty() {
-            eprintln!("[session_freshness] claude-code fresh session → drop large layers (T11): {} (paid API trigger 회피, agent 가 tool-request 로 on-demand 검색)",
+            eprintln!("[session_freshness] claude-code fresh session → drop large layers (T11+T12): {} (paid API trigger 회피, agent 가 tool-request 로 on-demand 검색)",
                 dropped.join("+"));
         }
     }
