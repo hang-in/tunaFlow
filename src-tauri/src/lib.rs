@@ -142,6 +142,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Project
             commands::projects::list_projects,
+            commands::projects::list_recent_projects,
+            commands::projects::touch_project_opened_at,
             commands::projects::create_project,
             commands::projects::get_project,
             commands::projects::hide_project,

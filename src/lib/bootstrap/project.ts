@@ -103,6 +103,12 @@ export function setInitialState(
   import("@/lib/appStore")
     .then(({ setSetting }) => setSetting("lastProjectKey", key))
     .catch((e) => console.debug("[bootstrap/project] persist last key:", e));
+  // recent-projects ordering 을 위해 last_opened_at 갱신 (fire-and-forget).
+  // ProjectStartup 화면의 "최근 열었던 프로젝트" 섹션은 이 timestamp 의
+  // DESC 순으로 노출 (Plan C Task 02). 갱신 실패는 UX 영향만 — bootstrap
+  // 체인을 막지 않는다.
+  invoke("touch_project_opened_at", { key })
+    .catch((e) => console.debug("[bootstrap/project] touch last_opened_at:", e));
 }
 
 /**
