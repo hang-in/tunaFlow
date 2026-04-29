@@ -443,7 +443,10 @@ mod tests {
                     flatten_md_paths(children, out);
                 }
             } else {
-                out.push(e.path.clone());
+                // Normalize Windows backslash to forward-slash so assertions like
+                // `ends_with("docs/foo.md")` / `contains("/.git/")` remain portable.
+                // Production `e.path` keeps OS-native separators — this is test-only.
+                out.push(e.path.replace('\\', "/"));
             }
         }
     }
@@ -468,9 +471,12 @@ mod tests {
 
         let mut paths: Vec<String> = Vec::new();
         flatten_md_paths(&result.entries, &mut paths);
+        // root_prefix is normalized to forward-slash to match `paths` (already
+        // normalized inside `flatten_md_paths`).
+        let root_prefix = root.to_string_lossy().replace('\\', "/");
         let names: Vec<String> = paths
             .iter()
-            .map(|p| p.replace(&format!("{}/", root.to_string_lossy()), ""))
+            .map(|p| p.replace(&format!("{}/", root_prefix), ""))
             .collect();
 
         assert!(names.contains(&"README.md".to_string()));

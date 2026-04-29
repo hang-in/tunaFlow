@@ -252,6 +252,13 @@
   "runtime": {
     "heading": "Runtime",
     "description": "Inspect and manage the runtime environment.",
+    "context_hub_install": {
+      "button": "Install via npm",
+      "installing": "Installing...",
+      "manual_hint": "Manual command:",
+      "success": "Installed — restart to mark as ready",
+      "venv_note": "The Python sidecar (code-review-graph) is installed via the first-run dialog or with an active venv."
+    },
     "workflow_skills": {
       "heading": "Workflow Skills",
       "description": "Skill sets per workflow phase. Combined with manual selection.",

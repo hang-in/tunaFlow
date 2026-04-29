@@ -252,6 +252,13 @@
   "runtime": {
     "heading": "Runtime",
     "description": "런타임 환경 상태를 확인하고 관리합니다.",
+    "context_hub_install": {
+      "button": "npm 으로 설치",
+      "installing": "설치 중...",
+      "manual_hint": "수동 명령:",
+      "success": "설치 완료, 재시작 후 ready 로 전환",
+      "venv_note": "Python 측 사이드카 (code-review-graph) 는 첫 실행 다이얼로그 또는 venv 활성 상태에서 별도 설치하세요."
+    },
     "workflow_skills": {
       "heading": "Workflow Skills",
       "description": "워크플로우 단계별 스킬 세트. 수동 선택과 합산됩니다.",

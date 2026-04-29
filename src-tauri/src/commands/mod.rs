@@ -5,6 +5,7 @@ pub mod artifacts;
 pub mod branches;
 pub mod capabilities;
 pub mod context_hub;
+pub mod dependency_install;
 pub mod context_queries;
 pub mod conventions_sync;
 pub mod conversation_memory;

@@ -27,6 +27,16 @@
     "save": "Save",
     "cancel": "Cancel"
   },
+  "dependency_install": {
+    "title": "Install optional sidecars",
+    "lead": "These sidecars enable extra features (context-hub search / code-graph analysis). You can skip and re-run from Settings → Runtime later.",
+    "install": "Install",
+    "skip": "Skip",
+    "close": "Close",
+    "installing": "Installing...",
+    "manual_hint": "Manual command:",
+    "venv_note": "If an active Python venv is detected, install goes into the venv (avoids global system install)."
+  },
   "onboarding": {
     "step_scan": "Scanning project...",
     "step_analyze": "Analyzing existing docs...",
