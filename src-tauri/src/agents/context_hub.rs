@@ -79,6 +79,26 @@ fn is_source_allowed(source: &str) -> bool {
     ALLOWED_SOURCE_PREFIXES.iter().any(|prefix| source.starts_with(prefix))
 }
 
+/// Build candidate paths for chub on Windows npm global install dirs.
+/// Pure function — env values are passed in so tests don't mutate process env.
+#[cfg(target_os = "windows")]
+fn windows_chub_candidates(appdata: Option<&str>, userprofile: Option<&str>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(a) = appdata {
+        out.push(PathBuf::from(a).join("npm").join("chub.cmd"));
+    }
+    if let Some(u) = userprofile {
+        out.push(
+            PathBuf::from(u)
+                .join("AppData")
+                .join("Roaming")
+                .join("npm")
+                .join("chub.cmd"),
+        );
+    }
+    out
+}
+
 /// Resolve the context-hub binary path.
 /// Searches for both "context-hub" and "chub" (the actual CLI binary name).
 fn resolve_bin() -> Result<PathBuf, HubError> {
@@ -97,6 +117,17 @@ fn resolve_bin() -> Result<PathBuf, HubError> {
             if let Ok(fnm) = std::env::var("FNM_MULTISHELL_PATH") {
                 c.push(PathBuf::from(&fnm).join("bin").join("chub"));
             }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // Windows native process: HOME is usually unset, npm globals live under
+            // %APPDATA%\npm. Add explicit candidates so we don't rely solely on PATH.
+            let appdata = std::env::var("APPDATA").ok();
+            let userprofile = std::env::var("USERPROFILE").ok();
+            c.extend(windows_chub_candidates(
+                appdata.as_deref(),
+                userprofile.as_deref(),
+            ));
         }
         c.push(PathBuf::from("/usr/local/bin/chub"));
         c.push(PathBuf::from("/opt/homebrew/bin/chub"));
@@ -287,5 +318,31 @@ mod tests {
         assert!(!is_source_allowed("npm:react"));
         assert!(!is_source_allowed("public:pypi"));
         assert!(!is_source_allowed("registry:crates.io"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_candidates_include_appdata_npm_chub() {
+        let v = windows_chub_candidates(Some(r"C:\Users\u\AppData\Roaming"), None);
+        assert_eq!(v.len(), 1);
+        let s = v[0].to_string_lossy().to_string();
+        assert!(s.ends_with(r"npm\chub.cmd"), "got: {}", s);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_candidates_include_userprofile_appdata_roaming_npm_chub() {
+        let v = windows_chub_candidates(None, Some(r"C:\Users\u"));
+        assert_eq!(v.len(), 1);
+        let s = v[0].to_string_lossy().to_string();
+        assert!(s.contains("AppData"), "got: {}", s);
+        assert!(s.contains("Roaming"), "got: {}", s);
+        assert!(s.ends_with("chub.cmd"), "got: {}", s);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_candidates_empty_when_no_env() {
+        assert!(windows_chub_candidates(None, None).is_empty());
     }
 }
