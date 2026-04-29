@@ -1,9 +1,13 @@
 ---
 title: 프로젝트 분석 실패 회귀 + "건너뛰기" 버튼 미노출 회복
-status: ready
-phase: planning
+status: completed
+phase: merged
 priority: P1 (외부 사용자 보고)
 created_at: 2026-04-29
+merged_at: 2026-04-29
+task_01_merged_pr: 215
+task_01_merge_commit: 016c8e7
+task_02_followup_plan: docs/plans/onboardingCodexStderrSurfacePlan_2026-04-29.md  # F1 PR #222 / 5459a0f
 canonical: true
 related:
   - src/components/tunaflow/ProjectOnboardingModal.tsx

@@ -1,10 +1,14 @@
 ---
 title: 알림 native UNUserNotificationCenter 전환 (Path B 정공법 채택)
-status: ready
-phase: planning
+status: completed
+phase: merged
 priority: P2 (UX, 외부 사용자 보고)
 created_at: 2026-04-29
 updated_at: 2026-04-29
+merged_at: 2026-04-29
+merged_pr: 220
+merge_commit: 7f23670
+diagnosis_audit: tauri::is_dev() 시 set_application("com.apple.Terminal") 강제 분기 root cause 확정
 canonical: true
 related:
   - src/stores/notificationStore.ts

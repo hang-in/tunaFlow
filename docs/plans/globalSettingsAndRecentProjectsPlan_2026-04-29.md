@@ -1,9 +1,15 @@
 ---
 title: 글로벌 설정 진입점(Cmd+,) + 최근 프로젝트 목록
-status: ready
-phase: planning
+status: completed
+phase: merged
 priority: P1 (UX, 외부 사용자 보고)
 created_at: 2026-04-29
+merged_at: 2026-04-29
+task_01_merged_pr: 217
+task_01_merge_commit: 50b24ea
+task_02_merged_pr: 218
+task_02_merge_commit: 6d01c7c
+db_migration: v47 → v48 (recent projects, +5 unit tests)
 canonical: true
 related:
   - src/components/tunaflow/RuntimeStatusBar.tsx

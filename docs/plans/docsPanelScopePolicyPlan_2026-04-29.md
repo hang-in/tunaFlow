@@ -1,10 +1,13 @@
 ---
 title: 좌측 문서 패널 범위 — P3-Lite (scope 토글, default='all')
-status: ready
-phase: planning
+status: completed
+phase: merged
 priority: P2 (외부 사용자 보고)
 created_at: 2026-04-29
 updated_at: 2026-04-29
+merged_at: 2026-04-29
+merged_pr: 219
+merge_commit: d7cffa9
 canonical: true
 related:
   - src/components/tunaflow/SidebarDocs.tsx (또는 인근)

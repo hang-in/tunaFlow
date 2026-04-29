@@ -1,9 +1,12 @@
 ---
 title: rawq vendor 자동 clone fallback — 외부 contributor 빌드 진입 장벽 차단
-status: ready
-phase: planning
+status: completed
+phase: merged
 priority: P0 (release blocker, 외부 사용자 보고)
 created_at: 2026-04-29
+merged_at: 2026-04-29
+merged_pr: 216
+merge_commit: f9c36ea
 canonical: true
 related:
   - scripts/build-rawq.sh
