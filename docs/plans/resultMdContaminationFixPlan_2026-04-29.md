@@ -1,10 +1,16 @@
 ---
 title: result.md contamination fix — reviewer 입력 격리 + truncation/self-include 가드
-status: ready
-phase: planning
+status: completed
+phase: merged
 owner: developer-handoff
 created_at: 2026-04-29
 updated_at: 2026-04-29
+merged_at: 2026-04-29
+merged_pr: 211
+merge_commit: bc34b53
+verification:
+  frontend_tests: 381
+  rust_tests: 559
 canonical: true
 related:
   - docs/prompts/resultMdContaminationFixDeveloperHandoff_2026-04-29.md
