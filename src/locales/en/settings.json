@@ -10,6 +10,7 @@
     "runtime": "Runtime",
     "terminal": "Terminal",
     "mobile": "Mobile",
+    "docs_scope": "Docs Panel",
     "help": "Help"
   },
   "skills_description": "Manage the skills applied to agents.",
@@ -281,6 +282,21 @@
         "no_path": "Project path not found."
       }
     }
+  },
+  "docs_scope": {
+    "heading": "Docs Panel Scope",
+    "description": "Choose which .md files appear in the left sidebar docs panel.",
+    "option": {
+      "all_label": "All docs",
+      "all_desc": "Every .md file under the project root (.gitignore respected, max depth 5). Recommended for monorepos / workspaces.",
+      "tunaflow_label": "tunaFlow only",
+      "tunaflow_desc": "Only docs/ and root-level .md files (legacy behavior)."
+    },
+    "scope_label": {
+      "all": "All docs",
+      "tunaflow": "tunaFlow only"
+    },
+    "performance_warning": "Found {{count}} docs. If the panel feels heavy, switch to 'tunaFlow only' in Settings."
   },
   "conventions": {
     "heading": "Conventions Context Sync",
