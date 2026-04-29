@@ -262,14 +262,16 @@ export function ProjectOnboardingModal() {
 
             <div className="px-6 py-4 border-t border-border flex justify-between items-center">
               {error ? (
-                // Error 상태에서 "건너뛰기" 와 "닫기" 의 사용자 의도가 동일 ("이 에러 상황 탈출")
-                // 이라 단일 "닫기" 로 통합. handleCancel 이 cancel_project_onboarding 을
-                // 호출해 rust task 까지 안전하게 정리한다.
+                // Error 상태: 사용자는 "건너뛰기" 라벨을 기대 (analysis_failed_hint 메시지가
+                // "건너뛰기를 눌러 빈 템플릿으로 시작할 수 있습니다" 라고 안내하기 때문).
+                // 2026-04-25 통합 PR(#-) 이후 라벨이 "닫기" 로 보여 회귀 (batmania52 #5 보고).
+                // 동작은 handleSkip 이 cancel_project_onboarding 을 호출해 rust task 안전 정리하므로
+                // handleCancel 과 동일 (4-25 plan §INV-1 충족) — 라벨만 hint 메시지와 일치시킨다.
                 <button
-                  onClick={handleCancel}
-                  className="ml-auto px-3 py-1.5 text-[11px] font-medium text-destructive/80 hover:text-destructive transition-colors"
+                  onClick={handleSkip}
+                  className="ml-auto px-3 py-1.5 text-[11px] font-medium text-foreground/80 hover:text-foreground transition-colors"
                 >
-                  {t("onboarding.close_button")}
+                  {t("onboarding.skip_button")}
                 </button>
               ) : (
                 <button
