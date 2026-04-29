@@ -540,7 +540,18 @@ async fn await_cli_with_cancel(
         match rx.try_recv() {
             Ok(Ok(output)) => {
                 if !output.status.success() {
-                    return Err(format!("{engine} 분석 실패 (exit: {:?})", output.status.code()));
+                    let stderr_body = String::from_utf8_lossy(&output.stderr);
+                    let stderr_trimmed = stderr_body.trim();
+                    let detail = if stderr_trimmed.is_empty() {
+                        "(no stderr)".to_string()
+                    } else {
+                        stderr_trimmed.to_string()
+                    };
+                    return Err(format!(
+                        "{engine} 분석 실패 (exit: {:?}): {}",
+                        output.status.code(),
+                        detail
+                    ));
                 }
                 return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
             }
@@ -580,7 +591,11 @@ async fn call_cli_agent(
         }
         _ => return Err(format!("지원하지 않는 CLI 엔진: {engine}")),
     }
-    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+    // stderr is piped so failure diagnostics surface to the user/log via
+    // await_cli_with_cancel (Plan B Task 02 follow-up — codex exit 1 root cause
+    // identification). wait_with_output() drains the pipe automatically; success
+    // path behavior is unchanged (stderr discarded).
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let spawn_res = cmd.spawn();
     let mut child = spawn_res
