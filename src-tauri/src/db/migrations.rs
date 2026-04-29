@@ -169,6 +169,9 @@ pub fn run(conn: &mut Connection) -> Result<(), AppError> {
     if current < 48 {
         apply_v48(conn)?;
     }
+    if current < 49 {
+        apply_v49(conn)?;
+    }
     Ok(())
 }
 
@@ -1267,6 +1270,63 @@ fn apply_v48(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v49 — claude transport flip 후속: 7일+ idle conversation 의 stale
+/// `resume_token` 일괄 NULL 처리 (claudeTransportFlipHardeningPlan T5).
+///
+/// 배경: v0.1.4-beta 의 transport default flip (`-p --resume`) 으로 cli mode 가
+/// DB 의 `resume_token` 을 그대로 사용. 한동안 미사용 conversation 은 (a) 과거
+/// sdk-url 시점 session id 이거나 (b) Anthropic 측 TTL 만료 — `--resume` 시도
+/// 시 "out of extra usage" 형태로 거부됨. 본 migration 은 외부 사용자가
+/// v0.1.5-beta 로 업그레이드한 직후 그 stale token 을 일괄 클리어해 첫 send
+/// 부터 fresh session 으로 시작하도록 한다.
+///
+/// 정책:
+/// - 영향 범위: `conversations` 의 `resume_token IS NOT NULL` AND
+///   `resume_token_engine IN ('claude', 'claude-code')`.
+/// - 기준: 그 conversation 의 가장 최근 메시지가 **7일 이상** 지난 경우만.
+///   messages.timestamp 단위는 epoch ms (now_epoch_ms() 출력과 동일).
+/// - idempotent: schema_version 47 ↔ 49 marker 로 1회만 실행. 재기동 / partial
+///   upgrade 케이스에 활성 conversation 의 valid token 이 잘려나가지 않게 보호.
+/// - 다른 엔진 (codex / gemini / ollama / lmstudio) 의 resume_token 영향 0 —
+///   claude 한정. (애초에 다른 엔진은 cli `--resume` 의미 없거나 다른 모델)
+fn apply_v49(conn: &Connection) -> Result<(), AppError> {
+    // 7일 ms cutoff. messages.timestamp 는 now_epoch_ms() 결과와 동일 단위.
+    let now_ms = now_epoch_ms();
+    let cutoff_ms = now_ms - 7 * 24 * 60 * 60 * 1000;
+
+    // 1) 후보 conversation_id 조회 — claude resume_token 보유 + 마지막 메시지가 7일+ idle.
+    //    HAVING 의 MAX(timestamp) < cutoff 가 0건이면 affected = 0.
+    //    NULL safe: subquery 의 GROUP BY 는 messages 가 있는 conv 만 결과로 낸다 →
+    //    메시지 한 건도 없는 conv 는 영향 0 (resume_token 의미가 거의 없는 상태).
+    let affected = conn.execute(
+        "UPDATE conversations
+            SET resume_token = NULL
+          WHERE resume_token IS NOT NULL
+            AND resume_token_engine IN ('claude', 'claude-code')
+            AND id IN (
+                SELECT conversation_id
+                  FROM messages
+                 GROUP BY conversation_id
+                HAVING MAX(timestamp) < ?1
+            )",
+        rusqlite::params![cutoff_ms],
+    )?;
+
+    // 2) 1회 console log — 외부 사용자가 업그레이드 직후 콘솔에서 확인 가능.
+    //    Tauri release build 의 stderr 는 일반적으로 안 보이지만, dev / debug
+    //    환경에서 진단용. silent 보다 1회 흔적이 운영 가치 높음.
+    eprintln!(
+        "[migration v49] cleared {} stale resume_tokens (>7 days idle, claude only)",
+        affected
+    );
+
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (49, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1946,5 +2006,133 @@ mod tests {
         .unwrap();
         // apply_v48 가 ALTER 실패 없이 통과해야 함.
         apply_v48(&conn).expect("apply_v48 should be idempotent");
+    }
+
+    // ─── v49 — stale claude resume_token 7일+ NULL ──────────────────────────
+
+    /// `conversations` + `messages` 의 v49 SQL 이 의존하는 컬럼만 갖춘 minimal
+    /// fixture. 다른 컬럼은 v49 가 안 건드리므로 schema drift 영향 0.
+    fn open_with_resume_token_fixture() -> Connection {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(schema::CREATE_SCHEMA_VERSION).expect("schema_version");
+        conn.execute_batch(
+            "CREATE TABLE conversations (
+                id                   TEXT PRIMARY KEY,
+                resume_token         TEXT,
+                resume_token_engine  TEXT
+            );
+             CREATE TABLE messages (
+                id              TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                timestamp       INTEGER NOT NULL
+            );",
+        )
+        .expect("create fixture");
+        conn
+    }
+
+    /// 7일+ idle conversation 의 claude resume_token 만 NULL 처리되는지 확인.
+    /// 7일 미만 idle 이거나 다른 엔진의 token 은 보존.
+    #[test]
+    fn v49_clears_only_stale_claude_resume_tokens() {
+        let conn = open_with_resume_token_fixture();
+        let now_ms = now_epoch_ms();
+        let eight_days_ms = 8 * 24 * 60 * 60 * 1000_i64;
+        let three_days_ms = 3 * 24 * 60 * 60 * 1000_i64;
+
+        // c1: claude, 8일 idle → NULL 대상
+        // c2: claude, 3일 idle → 보존
+        // c3: codex, 8일 idle → 보존 (다른 엔진)
+        // c4: claude, 메시지 없음 → 보존 (subquery 가 결과 안 냄)
+        conn.execute_batch(
+            "INSERT INTO conversations (id, resume_token, resume_token_engine) VALUES
+                ('c1', 'token-stale', 'claude'),
+                ('c2', 'token-fresh', 'claude'),
+                ('c3', 'token-codex', 'codex'),
+                ('c4', 'token-no-msg', 'claude-code');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, timestamp) VALUES
+                ('m1', 'c1', ?1),
+                ('m2', 'c2', ?2),
+                ('m3', 'c3', ?1);",
+            rusqlite::params![now_ms - eight_days_ms, now_ms - three_days_ms],
+        )
+        .unwrap();
+
+        apply_v49(&conn).expect("apply_v49");
+
+        let token_c1: Option<String> = conn
+            .query_row("SELECT resume_token FROM conversations WHERE id='c1'", [], |r| r.get(0))
+            .unwrap();
+        let token_c2: Option<String> = conn
+            .query_row("SELECT resume_token FROM conversations WHERE id='c2'", [], |r| r.get(0))
+            .unwrap();
+        let token_c3: Option<String> = conn
+            .query_row("SELECT resume_token FROM conversations WHERE id='c3'", [], |r| r.get(0))
+            .unwrap();
+        let token_c4: Option<String> = conn
+            .query_row("SELECT resume_token FROM conversations WHERE id='c4'", [], |r| r.get(0))
+            .unwrap();
+
+        assert!(token_c1.is_none(), "8일 idle claude token 은 NULL 처리되어야 함");
+        assert_eq!(token_c2.as_deref(), Some("token-fresh"), "3일 idle 은 보존");
+        assert_eq!(token_c3.as_deref(), Some("token-codex"), "다른 엔진 token 은 보존");
+        assert_eq!(token_c4.as_deref(), Some("token-no-msg"), "메시지 없는 conv 는 보존");
+    }
+
+    #[test]
+    fn v49_records_schema_version() {
+        let conn = open_with_resume_token_fixture();
+        apply_v49(&conn).expect("apply_v49");
+        let v: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 49);
+    }
+
+    /// idempotent 검증: schema_version 가드 (run() 의 `if current < 49`) 에 의해
+    /// 같은 DB 에서 두 번 호출되지 않도록 보호된다. 본 테스트는 first apply 후
+    /// `current_version()` 이 49 이상으로 올라갔을 때 run() 이 v49 를 다시 호출
+    /// 하지 않는 의미를 검증한다. (다른 migration 들도 같은 패턴이며, 직접 두
+    /// 번 apply 시 schema_version PK 위반은 의도된 안전 가드)
+    #[test]
+    fn v49_guarded_by_schema_version_check() {
+        let conn = open_with_resume_token_fixture();
+        let now_ms = now_epoch_ms();
+        let eight_days_ms = 8 * 24 * 60 * 60 * 1000_i64;
+        conn.execute_batch(
+            "INSERT INTO conversations (id, resume_token, resume_token_engine)
+             VALUES ('c1', 'token-stale', 'claude');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, timestamp)
+             VALUES ('m1', 'c1', ?1);",
+            rusqlite::params![now_ms - eight_days_ms],
+        )
+        .unwrap();
+
+        apply_v49(&conn).expect("first apply_v49");
+
+        // run() 진입점 시뮬: current_version >= 49 이면 v49 skip.
+        let cur = current_version(&conn).expect("current_version");
+        assert!(cur >= 49, "schema_version 가 v49 이상이어야 함");
+        // 실제 run 가 if current < 49 가드로 skip 하므로 두 번째 호출이 발생하지 않는다.
+        // 본 testcase 는 그 invariant 를 명시 — apply_v49 자체의 SQL idempotency
+        // 는 codebase 정책상 schema_version 가드에 위임.
+
+        let token: Option<String> = conn
+            .query_row("SELECT resume_token FROM conversations WHERE id='c1'", [], |r| r.get(0))
+            .unwrap();
+        assert!(token.is_none(), "first apply 가 stale token 을 NULL 로 만들었어야");
+    }
+
+    #[test]
+    fn v49_no_messages_no_op() {
+        let conn = open_with_resume_token_fixture();
+        // empty conversations / messages — 안전하게 통과해야.
+        apply_v49(&conn).expect("apply_v49 on empty DB");
     }
 }
