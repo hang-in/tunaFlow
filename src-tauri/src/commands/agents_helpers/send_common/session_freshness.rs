@@ -80,9 +80,22 @@ pub fn discard_pending(msg_id: &str) {
 /// (cli 는 SESSIONS 자체를 채우지 않음) `None` 으로 정규화 — 첫 send 의 LAST_DELIVERED
 /// 미등록을 보장.
 pub fn current_session_key(conv_id: &str, engine: &str) -> Option<String> {
+    current_session_key_with_mode(conv_id, engine, is_claude_cli_mode(conv_id))
+}
+
+/// `current_session_key` 의 inner — mode flag 를 외부 인자로 받는 testable form.
+///
+/// production code 는 `current_session_key` 만 호출 (flag 자동 detect).
+/// test 는 본 함수에 명시 flag 를 주입 → process-wide env var mutation 회피로
+/// CI 병렬 실행 race 차단.
+fn current_session_key_with_mode(
+    conv_id: &str,
+    engine: &str,
+    cli_mode_active: bool,
+) -> Option<String> {
     match engine {
         "claude" | "claude-code" => {
-            if is_claude_cli_mode(conv_id) {
+            if cli_mode_active {
                 // cli mode: RESUME_IDS 의 sid 를 cli prefix 로 wrapping.
                 // sdk_session 의 current_session_key 를 호출하되 결과를 변환.
                 let raw = crate::agents::claude_sdk_session::current_session_key(conv_id)?;
@@ -232,18 +245,18 @@ mod tests {
     /// T9 (claudeTransportFlipHardeningPlan, 2026-04-30):
     /// cli mode 와 sdk-url mode 의 session key prefix 가 분리되어야 한다.
     /// 같은 RESUME_IDS sid 라도 cli/sdk 양쪽이 같은 conv 에 충돌하지 않도록 검증.
+    ///
+    /// **CI race 차단**: env var (`TUNAFLOW_USE_SDK_URL`) 를 process-wide 로 mutate
+    /// 하면 병렬 테스트 사이 leak 발생 (실제로 첫 PR push CI rust-check 에서 fail).
+    /// 따라서 mode flag 는 `current_session_key_with_mode` 에 직접 주입한다.
     #[test]
     fn cli_and_sdk_url_session_key_prefixes_never_collide() {
-        // env var 미설정 + non-branch conv → cli mode
         let conv_cli = unique_conv("non-branch-cli");
-        // RESUME_IDS 에 sid 직접 주입 — sdk_session 공유 메모리지만 cli mode 에서도 조회됨.
-        // sdk_session 의 RESUME_IDS 는 module-private 이라 직접 주입 대신,
-        // claude_sdk_session 이 노출하는 register_cli_resume_id pub helper 를 사용.
+        // RESUME_IDS 에 sid 직접 주입 — claude_sdk_session 의 pub helper 사용.
         crate::agents::claude_sdk_session::register_cli_resume_id(&conv_cli, "sid-abc-123");
 
-        // env var 미설정 → cli mode 활성
-        std::env::remove_var("TUNAFLOW_USE_SDK_URL");
-        let cli_key = current_session_key(&conv_cli, "claude-code")
+        // mode=true (cli) 명시 주입.
+        let cli_key = current_session_key_with_mode(&conv_cli, "claude-code", true)
             .expect("cli mode 에서 RESUME_IDS sid 가 있으면 Some");
         assert!(
             cli_key.starts_with("claude-cli:"),
@@ -266,11 +279,10 @@ mod tests {
     #[test]
     fn cli_mode_first_send_returns_none_for_router_fallback() {
         let conv = unique_conv("cli-first-send");
-        std::env::remove_var("TUNAFLOW_USE_SDK_URL");
         // RESUME_IDS 미설정, SESSIONS 도 없음 → claude_sdk_session::current_session_key None
-        // → cli wrapper 도 None.
+        // → cli wrapper 도 None. mode=true (cli) 명시 주입.
         assert!(
-            current_session_key(&conv, "claude-code").is_none(),
+            current_session_key_with_mode(&conv, "claude-code", true).is_none(),
             "cli mode 첫 send 는 None 이어야 함 (LAST_DELIVERED 미등록)"
         );
     }
@@ -280,9 +292,8 @@ mod tests {
     fn sdk_url_mode_preserves_existing_claude_ws_prefix() {
         let conv = unique_conv("sdk-url-preserve");
         crate::agents::claude_sdk_session::register_cli_resume_id(&conv, "sid-sdk-url-XYZ");
-        // env var 활성 → sdk-url mode (cli mode 가 아님)
-        std::env::set_var("TUNAFLOW_USE_SDK_URL", "1");
-        let key = current_session_key(&conv, "claude-code")
+        // mode=false (sdk-url) 명시 주입.
+        let key = current_session_key_with_mode(&conv, "claude-code", false)
             .expect("RESUME_IDS sid 가 있으면 Some");
         assert!(
             key.starts_with("claude-ws:"),
@@ -295,7 +306,6 @@ mod tests {
             key
         );
         // 정리
-        std::env::remove_var("TUNAFLOW_USE_SDK_URL");
         crate::agents::claude_sdk_session::clear_resume_id_for_test(&conv);
     }
 }
