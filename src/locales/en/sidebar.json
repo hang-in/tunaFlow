@@ -42,6 +42,10 @@
     "no_scratchpads": "No scratchpads yet",
     "no_docs": "No docs found"
   },
+  "docs_scope": {
+    "all": "All docs",
+    "tunaflow": "tunaFlow only"
+  },
   "error": {
     "path_required": "Enter a path",
     "invalid_path": "Invalid path"

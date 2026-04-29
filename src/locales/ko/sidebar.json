@@ -42,6 +42,10 @@
     "no_scratchpads": "스크래치패드 없음",
     "no_docs": "문서 없음"
   },
+  "docs_scope": {
+    "all": "전체 문서",
+    "tunaflow": "tunaFlow 산출물"
+  },
   "error": {
     "path_required": "경로를 입력하세요",
     "invalid_path": "유효하지 않은 경로"
