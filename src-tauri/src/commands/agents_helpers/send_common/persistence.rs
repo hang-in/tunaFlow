@@ -285,18 +285,59 @@ pub fn prepare_engine_run(
         }
     }
 
-    // T9-b: cli mode (claude-code) 는 *fresh session 첫 send 도* compressed_memory 미inject.
-    // 이유: T9-a (PR #245, 163b1cf) 가 두 번째 send 부터의 minimal mode 만 적용. 첫 send 는
-    // 여전히 compressed-memory inject → paid API trigger → 거부 → retry 도 같은 prompt
-    // 그대로 → 영구 lock (사용자 환경 fact 2026-04-30). cli mode 는 Claude `--resume` 또는
-    // fresh session 자체가 history 보유, anchor 2 turns 의 recent_context 도 keep — 즉
-    // compressed_memory 만 drop 하면 Lite 모드 강제 회피하면서 paid API 영역 회피 가능.
-    // continuation 분기는 이미 둘 다 drop 하므로 영향 X — fresh session 분기에 한정.
+    // T9-b/T11: cli mode (claude-code) 는 fresh session 첫 send 부터 *모든 large layer 미inject*.
+    //
+    // T9-b (PR #246, 5c126ca) — compressed_memory 만 drop. 사용자 환경에서 여전히 paid API
+    // trigger 거부 (2026-04-30 backend log: T9-b 적용 + fresh session 도 status=err).
+    //
+    // T11 (사용자 insight): "어차피 DB 에 history 있으니 검색해서 가져옴". cli mode 의 모든
+    // large layer 를 default skip + agent 가 필요 시 tool-request 마커로 on-demand 검색
+    // (`recent_turns:N`, `probe_message:ID`, `full_message:ID` 등 — 이미 구현됨, s38 메모리).
+    //
+    // skip 대상 (cli mode 의 fresh session 만):
+    //   - compressed_memory (T9-b 그대로)
+    //   - plan_section + plan_document + artifacts_section + findings_section (structured)
+    //   - retrieval_chunks (rawq 결과, on-demand 가능)
+    //   - cross_session_data
+    //
+    // keep 대상: platform / agent-role / context (recent_context, anchor 2 turns) / skills /
+    // user_prompt — agent 가 first-turn 작업하기 위한 최소 컨텍스트.
+    //
+    // continuation (두 번째 send 부터) 분기는 이미 모두 drop (sdk-url 패턴) 하므로 영향 X.
     if engine_key == "claude-code" && !data.is_session_continuation {
+        let mut dropped: Vec<&'static str> = Vec::new();
         if data.compressed_memory.is_some() {
             data.compressed_memory = None;
             data.compressed_memory_source = None;
-            eprintln!("[session_freshness] claude-code fresh session → drop compressed_memory only (T9-b, paid API trigger 회피)");
+            dropped.push("compressed_memory");
+        }
+        if data.plan_section.is_some() {
+            data.plan_section = None;
+            dropped.push("plan");
+        }
+        if data.plan_document.is_some() {
+            data.plan_document = None;
+            dropped.push("plan_document");
+        }
+        if data.artifacts_section.is_some() {
+            data.artifacts_section = None;
+            dropped.push("artifacts");
+        }
+        if data.findings_section.is_some() {
+            data.findings_section = None;
+            dropped.push("findings");
+        }
+        if !data.retrieval_chunks.is_empty() {
+            data.retrieval_chunks.clear();
+            dropped.push("retrieval");
+        }
+        if !data.cross_session_data.is_empty() {
+            data.cross_session_data.clear();
+            dropped.push("cross_session");
+        }
+        if !dropped.is_empty() {
+            eprintln!("[session_freshness] claude-code fresh session → drop large layers (T11): {} (paid API trigger 회피, agent 가 tool-request 로 on-demand 검색)",
+                dropped.join("+"));
         }
     }
 
