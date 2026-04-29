@@ -247,10 +247,22 @@ where
                         child_id
                     );
                     timed_out_flag.store(true, std::sync::atomic::Ordering::SeqCst);
-                    // Best-effort kill via system command
+                    // Best-effort kill via OS-native command. `kill -9` is Unix-only
+                    // (`kill` doesn't exist on Windows); use `taskkill /F /PID <pid>`
+                    // there. Without this branch, on Windows the watchdog could
+                    // never reap a hung child claude.exe — the RAII guard still
+                    // breaks the watchdog loop, but the subprocess would leak.
+                    #[cfg(unix)]
                     let _ = std::process::Command::new("kill")
                         .no_console()
                         .arg("-9")
+                        .arg(child_id.to_string())
+                        .output();
+                    #[cfg(windows)]
+                    let _ = std::process::Command::new("taskkill")
+                        .no_console()
+                        .arg("/F")
+                        .arg("/PID")
                         .arg(child_id.to_string())
                         .output();
                     break;
