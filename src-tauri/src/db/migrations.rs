@@ -166,6 +166,9 @@ pub fn run(conn: &mut Connection) -> Result<(), AppError> {
     if current < 47 {
         apply_v47(conn)?;
     }
+    if current < 48 {
+        apply_v48(conn)?;
+    }
     Ok(())
 }
 
@@ -1234,6 +1237,36 @@ fn apply_v47(conn: &Connection) -> Result<(), AppError> {
     result
 }
 
+/// v48: `projects` 에 `last_opened_at` 컬럼 추가 (recent projects UX).
+///
+/// `globalSettingsAndRecentProjectsPlan_2026-04-29.md` Task 02. 사용자가
+/// 프로젝트를 선택할 때마다 `selectProject` (Rust: `touch_project_opened_at`)
+/// 가 unix-ms 단위로 갱신한다. ProjectStartup 화면이 "최근 열었던 프로젝트"
+/// 섹션을 이 컬럼 DESC 순으로 보여준다.
+///
+/// - 기존 row: DEFAULT 0 — UI 는 0 인 row 도 정상 표시 (단지 우선순위가
+///   낮을 뿐). NULL 회피 위해 NOT NULL DEFAULT 0.
+/// - 인덱스: list_recent_projects 의 ORDER BY last_opened_at DESC 가
+///   index 활용하도록 명시. updated_at 인덱스와 동등 비용.
+/// - idempotent: `add_column_if_missing` + `CREATE INDEX IF NOT EXISTS`.
+fn apply_v48(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(
+        conn,
+        "projects",
+        "last_opened_at",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_projects_last_opened_at
+         ON projects(last_opened_at DESC);",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (48, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1823,5 +1856,95 @@ mod tests {
             )
             .unwrap();
         assert_eq!(c, 1);
+    }
+
+    /// Open an in-memory connection with `projects` table at the v1 shape so
+    /// `apply_v48` can operate. We don't run the full migration chain (some
+    /// earlier migrations need sqlite-vec), only the bits v48 depends on.
+    fn open_with_projects_v1() -> Connection {
+        let conn = Connection::open_in_memory().expect("open");
+        conn.execute_batch(schema::CREATE_SCHEMA_VERSION).expect("schema_version");
+        // projects table — same shape as v1 schema.
+        conn.execute_batch(
+            "CREATE TABLE projects (
+                key            TEXT    PRIMARY KEY,
+                name           TEXT    NOT NULL,
+                path           TEXT,
+                type           TEXT    NOT NULL DEFAULT 'project',
+                default_engine TEXT,
+                workspace_root TEXT,
+                source         TEXT    NOT NULL DEFAULT 'configured',
+                updated_at     INTEGER NOT NULL,
+                hidden         INTEGER NOT NULL DEFAULT 0
+            );",
+        )
+        .expect("create projects");
+        conn
+    }
+
+    #[test]
+    fn v48_adds_last_opened_at_column() {
+        let conn = open_with_projects_v1();
+        apply_v48(&conn).expect("apply_v48");
+        // PRAGMA 로 컬럼 존재 확인
+        assert!(column_exists(&conn, "projects", "last_opened_at"));
+    }
+
+    #[test]
+    fn v48_records_schema_version() {
+        let conn = open_with_projects_v1();
+        apply_v48(&conn).expect("apply_v48");
+        let v: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 48);
+    }
+
+    #[test]
+    fn v48_creates_last_opened_index() {
+        let conn = open_with_projects_v1();
+        apply_v48(&conn).expect("apply_v48");
+        let c: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_projects_last_opened_at'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(c, 1);
+    }
+
+    #[test]
+    fn v48_existing_rows_default_to_zero() {
+        let conn = open_with_projects_v1();
+        // 마이그레이션 전 row 삽입
+        conn.execute(
+            "INSERT INTO projects (key, name, type, source, updated_at)
+             VALUES ('p1', 'Pre-v48', 'project', 'configured', 1234)",
+            [],
+        )
+        .unwrap();
+        apply_v48(&conn).expect("apply_v48");
+        let v: i64 = conn
+            .query_row(
+                "SELECT last_opened_at FROM projects WHERE key='p1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v, 0, "기존 row 는 DEFAULT 0 적용");
+    }
+
+    #[test]
+    fn v48_idempotent_when_column_already_exists() {
+        let conn = open_with_projects_v1();
+        // 미리 컬럼 추가 — schema drift 시뮬
+        conn.execute(
+            "ALTER TABLE projects ADD COLUMN last_opened_at INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .unwrap();
+        // apply_v48 가 ALTER 실패 없이 통과해야 함.
+        apply_v48(&conn).expect("apply_v48 should be idempotent");
     }
 }

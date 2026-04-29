@@ -70,6 +70,60 @@ pub fn list_projects(state: State<DbState>) -> Result<Vec<Project>, AppError> {
     Ok(rows)
 }
 
+/// 최근 열었던 프로젝트 목록 — `last_opened_at DESC` 순.
+///
+/// `globalSettingsAndRecentProjectsPlan_2026-04-29.md` Task 02 의 G3.
+/// `list_projects` 와 동일한 hidden 필터 + Project shape 를 유지하지만,
+/// `last_opened_at = 0` (한 번도 열지 않은 프로젝트) 은 결과에서 제외 —
+/// "최근" 의 정의에 부합. 정렬은 last_opened_at DESC, tie-break 으로
+/// updated_at DESC.
+///
+/// `limit` 은 UI 측 (5 권장) 에서 제어. 0 또는 음수면 기본값 5 적용.
+#[tauri::command]
+pub fn list_recent_projects(
+    limit: Option<i64>,
+    state: State<DbState>,
+) -> Result<Vec<Project>, AppError> {
+    let conn = state.read.lock().map_err(|_| AppError::Lock)?;
+    let lim = limit.filter(|n| *n > 0).unwrap_or(5);
+    let mut stmt = conn.prepare(
+        "SELECT key, name, path, type, default_engine, workspace_root, source, updated_at
+         FROM projects
+         WHERE COALESCE(hidden, 0) = 0 AND COALESCE(last_opened_at, 0) > 0
+         ORDER BY last_opened_at DESC, updated_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![lim], |row| {
+            Ok(Project {
+                key: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                project_type: row.get(3)?,
+                default_engine: row.get(4)?,
+                workspace_root: row.get(5)?,
+                source: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// 프로젝트 선택 시 `last_opened_at` 을 현재 시각(ms) 으로 갱신.
+///
+/// `selectProject` 가 호출하므로 idempotent 해야 한다 — 동일 프로젝트
+/// 재선택 시 단순히 timestamp 만 갱신. 알 수 없는 key 는 no-op (UPDATE rows = 0).
+#[tauri::command]
+pub fn touch_project_opened_at(key: String, state: State<DbState>) -> Result<(), AppError> {
+    let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+    conn.execute(
+        "UPDATE projects SET last_opened_at = ?1 WHERE key = ?2",
+        params![crate::db::migrations::now_epoch_ms(), key],
+    )?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_project(
     input: CreateProjectInput,

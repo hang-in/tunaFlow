@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FolderOpen, Plus, Clock } from "lucide-react";
 import { useChatStore } from "@/stores/chatStore";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -6,6 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { setSetting } from "@/lib/appStore";
 import { basename } from "@/lib/utils";
+import type { Project } from "@/types";
+
+const RECENT_LIMIT = 5;
 
 export function ProjectStartup() {
   const projects = useChatStore((s) => s.projects);
@@ -13,6 +16,25 @@ export function ProjectStartup() {
   const createProject = useChatStore((s) => s.createProject);
   const loadProjects = useChatStore((s) => s.loadProjects);
   const [adding, setAdding] = useState(false);
+
+  // 최근 열었던 프로젝트 — last_opened_at DESC. v48 마이그레이션 이전 사용자
+  // 의 프로젝트는 last_opened_at=0 이라 본 list 에 안 잡힌다 → fallback 으로
+  // store 의 `projects` (updated_at DESC) 를 사용. 처음 한 번 열고나면
+  // 이후부터는 정상 recent list.
+  const [recent, setRecent] = useState<Project[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    invoke<Project[]>("list_recent_projects", { limit: RECENT_LIMIT })
+      .then((r) => { if (!cancelled) setRecent(r); })
+      .catch(() => { if (!cancelled) setRecent([]); });
+    return () => { cancelled = true; };
+  }, [projects.length]);
+
+  // recent 가 비어있으면 (신규 사용자 또는 v48 이전 사용자) projects 슬라이스
+  // 의 updated_at 정렬 결과를 fallback 으로 사용. fallback 도 비면 섹션 미노출.
+  const displayProjects: Project[] = recent && recent.length > 0
+    ? recent
+    : projects.slice(0, RECENT_LIMIT);
 
   const handleOpenFolder = async () => {
     setAdding(true);
@@ -65,14 +87,14 @@ export function ProjectStartup() {
         </button>
 
         {/* Recent projects */}
-        {projects.length > 0 && (
+        {displayProjects.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-1">
               <Clock className="w-3.5 h-3.5 text-muted-foreground/40" />
               <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">Recent Projects</span>
             </div>
             <div className="space-y-1">
-              {projects.slice(0, 5).map((p) => (
+              {displayProjects.map((p) => (
                 <button
                   key={p.key}
                   onClick={() => handleSelectRecent(p.key)}
