@@ -492,7 +492,12 @@ async fn spawn_session(
         // stdin/stdout piped — stdin: 메시지 전달, stdout: 이벤트 수신(HTTP POST 병행)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        // stderr 를 piped 로 surface — 첫 메시지 stuck (Defender first-spawn /
+        // connection refused / version 불일치 등) 의 root cause 가 invisible 인
+        // 회귀 차단. 별 task 에서 line 단위 drain (drain 실패 시 buffer full 로
+        // claude 가 hang 함).
+        // PR #222 codex stderr surface 와 동등 패턴.
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
     // `--session-id` vs `--resume` 상호배타 (claude CLI 2.1.x 제약).
@@ -522,6 +527,23 @@ async fn spawn_session(
         .stdout
         .take()
         .ok_or_else(|| AppError::Agent("sdk-session: could not get child stdout".into()))?;
+
+    // stderr 핸들 추출 + drain 태스크 — claude 의 startup 실패 (Defender freeze /
+    // connection refused / version 미스매치 등) 가 backend stderr 로 즉시 표면화
+    // 되도록 한다. WS connect 30s timeout 도달 전 claude 가 stderr 로 무엇을
+    // 토했는지가 가장 빠른 root-cause 신호. 30s 안에 connect 못 하는 케이스라도
+    // 이 태스크는 분리되어 있어 timeout 처리 흐름을 막지 않는다.
+    if let Some(child_stderr) = child.stderr.take() {
+        let conv_id_for_log = conv_id.to_string();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(child_stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if line.trim().is_empty() { continue; }
+                eprintln!("[sdk-session-stderr] conv={} {}", conv_id_for_log, line);
+            }
+        });
+    }
 
     // claude WS 연결 대기 (최대 30초)
     tokio::time::timeout(
