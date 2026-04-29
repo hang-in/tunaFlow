@@ -130,6 +130,13 @@ pub fn run() {
 
             bootstrap::window::restore_window_state(app)?;
 
+            // Native menu — ensures Settings is reachable from the macOS
+            // menu bar (Cmd+,) and Windows/Linux menu before any project is
+            // selected. Failure is logged but non-fatal: app keeps booting.
+            if let Err(e) = bootstrap::menu::install(app) {
+                eprintln!("[bootstrap] install menu failed: {e}");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

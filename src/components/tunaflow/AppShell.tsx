@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "@/stores/chatStore";
 import { getSetting, setSetting } from "@/lib/appStore";
 import { Sidebar } from "./Sidebar";
@@ -15,6 +16,7 @@ import { CommandPalette } from "./CommandPalette";
 import { TitleBar } from "./TitleBar";
 import { MetaFloatingChat } from "./MetaFloatingChat";
 import { ProjectOnboardingModal } from "./ProjectOnboardingModal";
+import { SettingsPanel } from "./SettingsPanel";
 
 // ─── Panel width constraints ─────────────────────────────────────────────────
 const SIDEBAR_MIN = 220;
@@ -35,6 +37,15 @@ export function AppShell() {
   const [drawerW, setDrawerW] = useState(DRAWER_DEFAULT);
   const [loaded, setLoaded] = useState(false);
   const [themeMode, setThemeMode] = useState<"dark" | "light">("dark");
+
+  // Settings 진입점은 RuntimeStatusBar 내부 state 였으나 (s40 기준), Cmd+, /
+  // macOS 메뉴 / Command Palette 등 어디서든 — 프로젝트 선택 전 ProjectStartup
+  // 화면에서도 — 열려야 하므로 AppShell 루트로 끌어올렸다. RuntimeStatusBar
+  // 의 SettingsPanel mount + 'tunaflow:open-settings' listener 는 제거되고,
+  // 기존의 이벤트 디스패치 경로 (CommandPalette / roleAssignments) 는 그대로
+  // 본 컴포넌트가 받는다 — 즉 진입점만 추가, 기존 경로 영향 0.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
   // Auto-hide sidebar when window is too narrow (< sidebar + min chat width)
   const SIDEBAR_HIDE_THRESHOLD = SIDEBAR_MIN + 680; // ~900px
   const [sidebarAutoHidden, setSidebarAutoHidden] = useState(() => window.innerWidth < SIDEBAR_MIN + 680);
@@ -103,6 +114,50 @@ export function AppShell() {
     return () => window.removeEventListener("resize", onResize);
   }, [SIDEBAR_HIDE_THRESHOLD]);
 
+  // 'tunaflow:open-settings' 이벤트 listener — 기존에 RuntimeStatusBar 안에
+  // 있던 코드를 root level 로 끌어올림. ProjectStartup 화면에서도 동작해야 하기
+  // 때문. (CommandPalette / roleAssignments / 본 컴포넌트의 Cmd+, 핸들러가
+  // 디스패처 측.)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ section?: string }>).detail;
+      setSettingsInitialSection(detail?.section);
+      setSettingsOpen(true);
+    };
+    window.addEventListener("tunaflow:open-settings", handler);
+    return () => window.removeEventListener("tunaflow:open-settings", handler);
+  }, []);
+
+  // Cmd+, (macOS) / Ctrl+, (Win/Linux) — 어디서든 Settings 열림.
+  // - IME 충돌 방지: composing 중인 IME 입력은 무시 (Korean/Japanese 등).
+  // - 일반 텍스트 입력 (textarea/input) focus 와 무관 — 사용자가 명시적으로
+  //   "," 키와 modifier 를 함께 누른 경우에만 trigger 되므로 textarea 안에서
+  //   ',' 를 그냥 입력하는 흐름과 충돌하지 않는다.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "," && !e.altKey && !e.shiftKey) {
+        // IME 조합 중인 키는 브라우저가 isComposing=true 로 표시.
+        if ((e as any).isComposing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent("tunaflow:open-settings"));
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // macOS 메뉴 → Settings... 클릭 시 Rust 가 'tunaflow:menu-open-settings'
+  // 이벤트를 emit. 같은 internal `tunaflow:open-settings` window event 로
+  // 합류시켜 단일 처리 경로를 유지한다 (macOS 메뉴 / Cmd+, / Command Palette
+  // / 톱니 버튼 모두 동일).
+  useEffect(() => {
+    const unlistenPromise = listen("tunaflow:menu-open-settings", () => {
+      window.dispatchEvent(new CustomEvent("tunaflow:open-settings"));
+    });
+    return () => { unlistenPromise.then((u) => u()).catch(() => {}); };
+  }, []);
+
   // Persist on resize end
   const persistSidebar = useCallback(() => { setSetting("sidebarWidth", sidebarW); }, [sidebarW]);
   const persistDrawer = useCallback(() => { setSetting("drawerWidth", drawerW); }, [drawerW]);
@@ -147,9 +202,22 @@ export function AppShell() {
     </div>
   );
 
-  // Project-first startup: show selector if no project is selected
+  // Project-first startup: show selector if no project is selected.
+  // SettingsPanel 은 ProjectStartup 화면에서도 Cmd+, / 메뉴로 열 수 있어야
+  // 하므로 함께 mount. (RuntimeStatusBar 가 미렌더링 상태이기 때문)
   if (!selectedProjectKey) {
-    return <ProjectStartup />;
+    return (
+      <>
+        <ProjectStartup />
+        <Toaster position="bottom-right" theme={themeMode} richColors closeButton />
+        {settingsOpen && (
+          <SettingsPanel
+            onClose={() => { setSettingsOpen(false); setSettingsInitialSection(undefined); }}
+            initialSection={settingsInitialSection}
+          />
+        )}
+      </>
+    );
   }
 
   return (
@@ -315,6 +383,12 @@ export function AppShell() {
           projectPath={projectPath}
           lineNumber={viewerFile.line}
           onClose={() => setViewerFile(null)}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsPanel
+          onClose={() => { setSettingsOpen(false); setSettingsInitialSection(undefined); }}
+          initialSection={settingsInitialSection}
         />
       )}
     </div>

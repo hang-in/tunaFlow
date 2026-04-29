@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { useChatStore } from "@/stores/chatStore";
 import { usePtyStore } from "@/stores/ptyStore";
 import { Activity, Loader2, Zap, Terminal, Settings, Moon, Sun, Brain } from "lucide-react";
-import { SettingsPanel } from "./SettingsPanel";
 import { TraceModal } from "./TraceModal";
 import { getSetting, setSetting } from "@/lib/appStore";
 import { countBackgroundJobs, type BackgroundJobCounts } from "@/lib/api/identityAnalysis";
@@ -93,21 +92,13 @@ export function RuntimeStatusBar() {
   const [traceOpen, setTraceOpen] = useState(false);
   const terminalOpen = usePtyStore((s) => s.terminalOpen);
   const toggleTerminal = usePtyStore((s) => s.toggleTerminal);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>(undefined);
   const hasPtySession = usePtyStore((s) => s.sessions.size > 0);
   const [bgJobs, setBgJobs] = useState<BackgroundJobCounts>({ pending: 0, running: 0 });
 
-  // 외부 컴포넌트(역할 게이트, CommandPalette)가 Settings 를 여는 단일 이벤트.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ section?: string }>).detail;
-      setSettingsInitialSection(detail?.section);
-      setSettingsOpen(true);
-    };
-    window.addEventListener("tunaflow:open-settings", handler);
-    return () => window.removeEventListener("tunaflow:open-settings", handler);
-  }, []);
+  // SettingsPanel mount + 'tunaflow:open-settings' listener 는 AppShell 로
+  // 끌어올렸다 — 프로젝트 미선택(ProjectStartup) 화면에서도 Cmd+, /
+  // 메뉴로 Settings 를 열 수 있어야 하기 때문. 본 컴포넌트는 footer 의 톱니
+  // 버튼이 동일 이벤트를 디스패치하기만 하면 된다.
 
   const isRunning = runningThreadIds.length > 0;
   const runningEngines = [...new Set(jobs.filter((j) => j.status === "running").map((j) => j.engine))];
@@ -290,9 +281,9 @@ export function RuntimeStatusBar() {
       <div className="flex items-center h-7 shrink-0 text-tf-xs text-prose-muted select-none">
         {/* Settings + theme toggle — far left of footer */}
         <button
-          onClick={() => setSettingsOpen(true)}
+          onClick={() => window.dispatchEvent(new CustomEvent("tunaflow:open-settings"))}
           className="flex items-center px-2.5 h-full text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-          title="Settings"
+          title="Settings (Cmd+,)"
         >
           <Settings className="w-3.5 h-3.5" />
         </button>
@@ -447,7 +438,6 @@ export function RuntimeStatusBar() {
       </div>
 
       {traceOpen && <TraceModal onClose={() => setTraceOpen(false)} />}
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} initialSection={settingsInitialSection} />}
     </>
   );
 }

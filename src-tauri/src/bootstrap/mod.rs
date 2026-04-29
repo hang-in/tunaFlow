@@ -5,5 +5,6 @@
 pub mod crash;
 pub mod db;
 pub mod env;
+pub mod menu;
 pub mod services;
 pub mod window;
