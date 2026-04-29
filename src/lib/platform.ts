@@ -12,14 +12,20 @@
  * Windows/Linux on `tauri-plugin-notification` (zero behavior change).
  */
 
-function detect(): "macos" | "other" {
+function detect(): "macos" | "windows" | "other" {
   if (typeof navigator === "undefined") return "other";
   const ua = navigator.userAgent || "";
-  return /Mac|Macintosh|MacIntel/i.test(ua) ? "macos" : "other";
+  if (/Mac|Macintosh|MacIntel/i.test(ua)) return "macos";
+  if (/Win/i.test(ua)) return "windows";
+  return "other";
 }
 
 const cached = detect();
 
 export function isMacOS(): boolean {
   return cached === "macos";
+}
+
+export function isWindows(): boolean {
+  return cached === "windows";
 }

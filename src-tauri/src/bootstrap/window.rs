@@ -10,6 +10,18 @@ pub fn restore_window_state(app: &tauri::App) -> Result<(), Box<dyn std::error::
         return Ok(());
     };
 
+    // Windows: drop native decorations so the custom TitleBar + WindowControls
+    // own the caption area (mac parity — `titleBarStyle: "Overlay"` +
+    // `hiddenTitle: true` are macOS-only). Done while the window is still
+    // hidden (`visible: false` in tauri.conf.json) so the user never sees the
+    // native chrome flicker out. cfg-gated → mac/Linux untouched.
+    #[cfg(target_os = "windows")]
+    {
+        if let Err(e) = window.set_decorations(false) {
+            eprintln!("[bootstrap/window] set_decorations(false) failed: {}", e);
+        }
+    }
+
     // window-state plugin restores position/size BEFORE setup runs.
     // Log actual state to diagnose restoration issues.
     let pos = window.outer_position().unwrap_or_default();
