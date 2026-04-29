@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { FileText, ChevronRight, ChevronDown, Folder, FolderOpen, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFileViewer } from "../chat/fileViewerContext";
@@ -25,6 +26,10 @@ interface DocsScanResult {
   fileCount: number;
   truncated: boolean;
 }
+
+/** Plan E (2026-04-29) — file count >200 시 1회 toast.
+ *  Threshold 는 plan SSOT 고정. lazy load 는 Phase 2. */
+const DOCS_PANEL_WARNING_THRESHOLD = 200;
 
 const EMPTY_RESULT: DocsScanResult = { entries: [], fileCount: 0, truncated: false };
 
@@ -60,11 +65,14 @@ interface DocsSectionProps {
 
 export function DocsSection({ projectPath }: DocsSectionProps) {
   const { t } = useTranslation("sidebar");
+  const { t: tSettings } = useTranslation("settings");
   const [docs, setDocs] = useState<DocEntry[]>([]);
   const [scope, setScope] = useState<DocsPanelScope>(DOCS_PANEL_SCOPE_DEFAULT);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const fileViewer = useFileViewer();
+  /** Toast 1회만 — 같은 (project,scope) 조합에서 재표시 X. */
+  const warnedRef = useRef<Set<string>>(new Set());
 
   // 1) 초기 scope 로드 + scope 변경 이벤트 구독.
   useEffect(() => {
@@ -97,9 +105,22 @@ export function DocsSection({ projectPath }: DocsSectionProps) {
     scanDocs(projectPath, scope).then((result) => {
       if (!alive) return;
       setDocs(result.entries);
+      // Task 03 — perf toast (Plan E 명시 threshold = 200, 1회).
+      const warnKey = `${projectPath}::${scope}`;
+      if (
+        scope === "all" &&
+        result.fileCount > DOCS_PANEL_WARNING_THRESHOLD &&
+        !warnedRef.current.has(warnKey)
+      ) {
+        warnedRef.current.add(warnKey);
+        toast.warning(
+          tSettings("docs_scope.performance_warning", { count: result.fileCount }),
+          { duration: 6000 },
+        );
+      }
     });
     return () => { alive = false; };
-  }, [projectPath, scope]);
+  }, [projectPath, scope, tSettings]);
 
   const toggle = useCallback((path: string) => {
     setExpanded((prev) => {
