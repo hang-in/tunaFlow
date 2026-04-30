@@ -46,6 +46,31 @@ pub struct CreateProjectInput {
     pub source: String,
 }
 
+/// Strip the Windows verbatim NT-namespace prefix (`\\?\D:\...` or the UNC
+/// form `\\?\UNC\server\share\...`) from a path string, returning a plain
+/// form that `std::path::Path::is_dir` can resolve.
+///
+/// Why this exists: Rust's `std::fs::canonicalize` on Windows returns the
+/// verbatim form, but `Path::is_dir` returns *false* for those strings even
+/// when the directory exists (platform quirk reproduced on user environment
+/// 2026-04-30 — `proj-1777432893872` / gemento). We round-trip through this
+/// helper on both the read side (`fill_path_valid`) and the write side
+/// (`create_project` after canonicalize) so DB rows and IO checks agree.
+///
+/// Pure string transform — paths without `\\?\` (mac, Linux, plain Windows
+/// `D:\...`) pass through unchanged → cross-platform zero behavior change.
+pub(crate) fn normalize_verbatim_path(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        // \\?\UNC\server\share\... → \\server\share\...
+        format!(r"\\{}", rest)
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        // \\?\D:\... → D:\...
+        rest.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 /// Validate the project's `path` column at runtime: populate `path_valid`
 /// and log a warning when stale. This is the single hook that makes the
 /// "macOS DB ported to Windows" regression visible to the frontend.
@@ -55,11 +80,14 @@ pub struct CreateProjectInput {
 fn fill_path_valid(p: &mut Project) {
     p.path_valid = match p.path.as_deref() {
         Some(s) if !s.trim().is_empty() => {
-            let ok = std::path::Path::new(s).is_dir();
+            // Strip Windows verbatim NT-namespace prefix before `is_dir` —
+            // see `normalize_verbatim_path` for rationale.
+            let normalized = normalize_verbatim_path(s);
+            let ok = std::path::Path::new(&normalized).is_dir();
             if !ok {
                 eprintln!(
-                    "[projects] stale path detected — key={} path={} (DB row preserved; user can re-map)",
-                    p.key, s
+                    "[projects] stale path detected — key={} path={} (normalized={}; DB row preserved; user can re-map)",
+                    p.key, s, normalized
                 );
             }
             Some(ok)
@@ -161,9 +189,15 @@ pub fn create_project(
 ) -> Result<Project, AppError> {
     let conn = state.write.lock().map_err(|_| AppError::Lock)?;
 
-    // Normalize path for duplicate check (canonicalize resolves symlinks, case, slashes)
+    // Normalize path for duplicate check (canonicalize resolves symlinks, case, slashes).
+    // Strip the Windows verbatim NT-namespace prefix that `std::fs::canonicalize`
+    // emits on Windows (`\\?\D:\...`) — that form is what makes its way into the
+    // `projects.path` column and later breaks `Path::is_dir`. See
+    // `normalize_verbatim_path` for the round-trip rationale.
     let normalized_path = input.path.as_ref().and_then(|p| {
-        std::fs::canonicalize(p).ok().map(|c| c.to_string_lossy().to_string())
+        std::fs::canonicalize(p)
+            .ok()
+            .map(|c| normalize_verbatim_path(&c.to_string_lossy()))
     });
 
     // Duplicate path check — restore hidden project or reject active duplicate
@@ -807,6 +841,57 @@ mod tests {
         let mut p = project_with_path(Some(cargo_toml.to_string_lossy().to_string()));
         fill_path_valid(&mut p);
         assert_eq!(p.path_valid, Some(false));
+    }
+
+    // ─── normalize_verbatim_path ─────────────────────────────────────────────
+
+    #[test]
+    fn normalize_verbatim_strips_disk_prefix() {
+        assert_eq!(
+            normalize_verbatim_path(r"\\?\D:\privateProject\gemento"),
+            r"D:\privateProject\gemento"
+        );
+        assert_eq!(normalize_verbatim_path(r"\\?\C:\"), r"C:\");
+    }
+
+    #[test]
+    fn normalize_verbatim_rewrites_unc_form() {
+        // \\?\UNC\server\share\dir → \\server\share\dir
+        assert_eq!(
+            normalize_verbatim_path(r"\\?\UNC\server\share\dir"),
+            r"\\server\share\dir"
+        );
+    }
+
+    #[test]
+    fn normalize_verbatim_passes_plain_paths_through() {
+        // No `\\?\` prefix — string returned unchanged on every OS.
+        assert_eq!(
+            normalize_verbatim_path("/Users/alice/projects/foo"),
+            "/Users/alice/projects/foo"
+        );
+        assert_eq!(
+            normalize_verbatim_path(r"D:\privateProject\gemento"),
+            r"D:\privateProject\gemento"
+        );
+        assert_eq!(normalize_verbatim_path(""), "");
+        assert_eq!(
+            normalize_verbatim_path(r"\\server\share"),
+            r"\\server\share"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn fill_path_valid_handles_windows_verbatim_path() {
+        // Reproduces the user-environment regression (proj-1777432893872):
+        // a real, existing directory wrapped in the verbatim NT-namespace
+        // form must still resolve to `Some(true)`.
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+        let verbatim = format!(r"\\?\{}", manifest);
+        let mut p = project_with_path(Some(verbatim));
+        fill_path_valid(&mut p);
+        assert_eq!(p.path_valid, Some(true));
     }
 }
 
