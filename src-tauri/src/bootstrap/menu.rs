@@ -62,6 +62,30 @@ pub fn install(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         .item(&PredefinedMenuItem::quit(handle, None)?)
         .build()?;
 
+    // Edit submenu — macOS native standard shortcuts 회복 (Cmd+C/V/X/A/Z/Shift+Cmd+Z).
+    //
+    // Tauri 2 macOS 정책: app.set_menu() 가 register 한 menu 는 *전체 menu set*
+    // 이 됨. Edit submenu 가 PredefinedMenuItem 으로 등록 안 되면 WKWebView 의
+    // Cmd+C/V 자체 처리도 menu 가 가로챈 후 fallthrough 안 함 → standard
+    // clipboard shortcut 모두 dead. 사용자 보고 (2026-05-02): "앱 내 Cmd+C/V
+    // 잘 안된다."
+    //
+    // 위 doc comment 의 "deliberately small" 정책은 Win/Linux 한정 유효 — 그쪽은
+    // webview 가 자체 처리. macOS 는 Edit menu 필수.
+    #[cfg(target_os = "macos")]
+    let edit_submenu = SubmenuBuilder::new(handle, "Edit")
+        .item(&PredefinedMenuItem::undo(handle, None)?)
+        .item(&PredefinedMenuItem::redo(handle, None)?)
+        .separator()
+        .item(&PredefinedMenuItem::cut(handle, None)?)
+        .item(&PredefinedMenuItem::copy(handle, None)?)
+        .item(&PredefinedMenuItem::paste(handle, None)?)
+        .item(&PredefinedMenuItem::select_all(handle, None)?)
+        .build()?;
+
+    #[cfg(target_os = "macos")]
+    let menu = MenuBuilder::new(handle).item(&app_submenu).item(&edit_submenu).build()?;
+    #[cfg(not(target_os = "macos"))]
     let menu = MenuBuilder::new(handle).item(&app_submenu).build()?;
 
     // Tauri 2.x: app-level set_menu so it applies to all windows + macOS bar.
