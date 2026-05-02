@@ -60,8 +60,24 @@ impl From<UNAuthorizationStatus> for NotificationAuthStatus {
 const COMPLETION_TIMEOUT: Duration = Duration::from_secs(5);
 const COMPLETION_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+/// dev 빌드 detect — `UNUserNotificationCenter::currentNotificationCenter()` 가
+/// bundle 없는 binary (e.g. `target/debug/tuna-flow` 직접 실행) 에서 호출 시
+/// `bundleProxyForCurrentProcess is nil` NSException → SIGABRT 발생.
+/// release `.app` 은 bundle 보유 + debug_assertions=false 라 정상 동작.
+///
+/// dev 모드: graceful skip (silent — agent 가 CLI mode 정상 동작).
+fn is_dev_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 /// 현재 알림 권한 상태를 조회한다 (`getNotificationSettingsWithCompletionHandler:`).
 pub fn notification_authorization_status() -> Result<NotificationAuthStatus, String> {
+    if is_dev_build() {
+        // dev 빌드: bundle 없어 currentNotificationCenter 호출 시 crash.
+        // graceful — notDetermined 반환 (사용자 가시 변화 0).
+        return Ok(NotificationAuthStatus::NotDetermined);
+    }
+
     let result: Arc<Mutex<Option<NotificationAuthStatus>>> = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
 
@@ -94,6 +110,11 @@ pub fn notification_authorization_status() -> Result<NotificationAuthStatus, Str
 /// 사용자가 응답하면 granted bool 이 돌아온다. 이미 결정된 (denied/authorized) 경우
 /// dialog 없이 즉시 현재 상태에 맞는 bool 만 돌아온다.
 pub fn request_notification_authorization() -> Result<bool, String> {
+    if is_dev_build() {
+        // dev 빌드: bundle 없어 requestAuthorization 호출 시 crash. silent skip.
+        return Ok(false);
+    }
+
     let result: Arc<Mutex<Option<bool>>> = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
 
@@ -126,6 +147,13 @@ pub fn request_notification_authorization() -> Result<bool, String> {
 /// 을 schedule 한 직후 호출되며, 사용자 클릭과는 무관하다. handler 의 `NSError`
 /// 가 nil 이면 schedule 성공으로 간주한다.
 pub fn send_native_notification(title: &str, body: &str) -> Result<(), String> {
+    if is_dev_build() {
+        // dev 빌드: bundle 없어 UNUserNotificationCenter 호출 시 crash.
+        // graceful — console log 로 발송 의도만 기록.
+        eprintln!("[notification] dev build — skip native send (bundle absent): title={title}, body={body}");
+        return Ok(());
+    }
+
     let title_ns = NSString::from_str(title);
     let body_ns = NSString::from_str(body);
     let identifier_ns = NSString::from_str(&format!("tunaflow.{}", uuid::Uuid::new_v4()));
