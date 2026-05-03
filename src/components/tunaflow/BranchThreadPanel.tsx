@@ -354,8 +354,12 @@ export function BranchThreadPanel() {
         )}
       </div>
 
-      {/* Input — hidden for read-only branches */}
-      {!isReadOnly && <NewMessageInput threadMode />}
+      {/* Input — hidden only for adopted branches.
+          archived 는 plan revision 후 link 끊김(MergeBranchButton/PlanProposalCard)으로
+          status 가 archived 가 되는 케이스가 있어 input 을 그대로 보존한다.
+          INV-1~5 (branchSessionPolicy) 보존 — branch session = main session 공유이므로
+          archived 에서도 send 시 동일 main session 으로 안전하게 전달된다. (#255) */}
+      {threadBranch?.status !== "adopted" && <NewMessageInput threadMode />}
 
       {/* RT creation dialog for branching from thread messages */}
       <CreateRoundtableDialog
