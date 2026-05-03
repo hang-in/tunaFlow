@@ -372,11 +372,156 @@ pub fn ensure_project_workflow_templates(project_path: String) -> Result<(), App
     Ok(())
 }
 
+/// Sentinel marker that delimits the user-customizable region inside a scaffold
+/// template. Anything between `BEGIN user-customize` and `END user-customize`
+/// is preserved across `ensure_workflow_templates` refreshes (issue #254).
+pub const SENTINEL_BEGIN: &str = "<!-- BEGIN user-customize -->";
+pub const SENTINEL_END: &str = "<!-- END user-customize -->";
+
+/// Migration suffix appended when a sentinel-less file is replaced. The
+/// original content is preserved at `{file}.pre-sentinel` so the user can
+/// recover their customizations into the new sentinel block.
+const PRE_SENTINEL_SUFFIX: &str = ".pre-sentinel";
+
+/// Extract the body between `SENTINEL_BEGIN` and `SENTINEL_END` (exclusive).
+/// Returns `None` if either marker is missing or out of order.
+fn extract_user_customize(content: &str) -> Option<&str> {
+    let begin = content.find(SENTINEL_BEGIN)?;
+    let body_start = begin + SENTINEL_BEGIN.len();
+    // The end marker must come *after* the begin marker — search the suffix.
+    let end_rel = content[body_start..].find(SENTINEL_END)?;
+    Some(&content[body_start..body_start + end_rel])
+}
+
+/// Replace the sentinel body of `template` with `body`. Returns `None` if
+/// the template itself does not contain the sentinel pair (defensive — every
+/// shipped template ships with empty sentinels).
+fn inject_user_customize(template: &str, body: &str) -> Option<String> {
+    let begin = template.find(SENTINEL_BEGIN)?;
+    let body_start = begin + SENTINEL_BEGIN.len();
+    let end_rel = template[body_start..].find(SENTINEL_END)?;
+    let end_abs = body_start + end_rel;
+    let mut out = String::with_capacity(template.len() + body.len());
+    out.push_str(&template[..body_start]);
+    out.push_str(body);
+    out.push_str(&template[end_abs..]);
+    Some(out)
+}
+
+/// Refresh a single agent doc applying the sentinel preservation policy.
+///
+/// Returns silently on any I/O failure — scaffold is best-effort and we never
+/// want a transient FS error to block project open. The single hard rule is:
+/// **never overwrite a sentinel-less user file unless the `.pre-sentinel`
+/// backup write succeeded first**.
+fn refresh_agent_doc_with_sentinel(
+    path: &std::path::Path,
+    template: &str,
+    file_label: &str,
+) {
+    use std::fs;
+
+    // Case 1 — file does not exist. First-time scaffold; nothing to preserve.
+    if !path.exists() {
+        if let Err(e) = fs::write(path, template) {
+            eprintln!("[scaffold] failed to create {}: {}", path.display(), e);
+        } else {
+            eprintln!("[scaffold] created {}", path.display());
+        }
+        return;
+    }
+
+    // Case 2/3 — file exists. Decide based on sentinel presence.
+    let existing = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[scaffold] failed to read {} (refresh skipped): {}", path.display(), e);
+            return;
+        }
+    };
+
+    if let Some(body) = extract_user_customize(&existing) {
+        // Case 2 — sentinel present. Preserve body, refresh shell.
+        match inject_user_customize(template, body) {
+            Some(new_content) => {
+                if new_content == existing {
+                    // Nothing to update — quiet no-op.
+                    return;
+                }
+                if let Err(e) = fs::write(path, &new_content) {
+                    eprintln!(
+                        "[scaffold] failed to refresh {} (write error: {}). User content untouched.",
+                        path.display(), e
+                    );
+                } else {
+                    eprintln!(
+                        "[scaffold] preserved user-customize section in {}",
+                        file_label
+                    );
+                }
+            }
+            None => {
+                // Defensive: shipped template should always have sentinels.
+                // If it doesn't, do nothing rather than risk losing user data.
+                eprintln!(
+                    "[scaffold] template for {} missing sentinel markers — refresh skipped",
+                    file_label
+                );
+            }
+        }
+        return;
+    }
+
+    // Case 3 — pre-sentinel legacy file. Back up first, then write template.
+    let backup_path = {
+        let mut s = path.as_os_str().to_owned();
+        s.push(PRE_SENTINEL_SUFFIX);
+        std::path::PathBuf::from(s)
+    };
+
+    // If a backup already exists from a prior migration attempt, do not
+    // clobber it — keep the oldest copy of the user's customization.
+    if !backup_path.exists() {
+        if let Err(e) = fs::write(&backup_path, &existing) {
+            eprintln!(
+                "[scaffold] ABORT refresh of {}: backup write to {} failed: {}. \
+                 User customization preserved on disk; tunaFlow will not overwrite.",
+                file_label, backup_path.display(), e
+            );
+            return;
+        }
+    }
+
+    if let Err(e) = fs::write(path, template) {
+        eprintln!(
+            "[scaffold] migration write failed for {} after backup at {}: {}",
+            file_label, backup_path.display(), e
+        );
+        return;
+    }
+
+    eprintln!(
+        "[scaffold] migrated {} → {} + new template",
+        file_label,
+        backup_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| backup_path.display().to_string())
+    );
+}
+
 /// Ensure workflow agent templates exist in a project directory.
 ///
-/// Creates `docs/agents/{architect,developer,reviewer}.md` if missing.
-/// Safe to call on any project — only creates files that don't exist.
-/// Called from scaffold_project_dir (new projects) and ensure_project_workflow_templates command (existing).
+/// Refresh policy (issue #254):
+///   1. Missing file → write the latest template.
+///   2. File with `BEGIN user-customize` / `END user-customize` sentinel →
+///      preserve the body between markers, refresh everything else.
+///   3. Pre-sentinel file (legacy) → back up to `*.md.pre-sentinel` first,
+///      then write the new template. **If the backup write fails, abort
+///      this file's refresh entirely** (never overwrite user customization
+///      without a recoverable backup).
+///
+/// Safe to call on any project. Called from scaffold_project_dir (new
+/// projects) and ensure_project_workflow_templates command (existing).
 pub fn ensure_workflow_templates(project_path: &str) {
     use std::fs;
     use std::path::Path;
@@ -393,10 +538,9 @@ pub fn ensure_workflow_templates(project_path: &str) {
         ("reviewer.md", REVIEWER_TEMPLATE),
     ];
 
-    for (name, content) in templates {
+    for (name, template) in templates {
         let path = agents_dir.join(name);
-        // Always overwrite — agent templates should stay current with tunaFlow version
-        let _ = fs::write(&path, content);
+        refresh_agent_doc_with_sentinel(&path, template, name);
     }
 
     // Ensure .claude/settings.local.json with default permissions
@@ -571,6 +715,15 @@ Include markers at the END of your response, after your main content.
 - **Non-goals prevent scope creep**: Always include them.
 - **Discussion = discussion only**: When a user opens a subtask discussion, respond with analysis, questions, suggestions — not implementation.
 - **Do NOT guess past work**: If the user asks about a past plan, completed task, or historical context that is not in your current context, use tool-request markers FIRST (`tool-request:plans`, `tool-request:memory`, `tool-request:rawq`) to retrieve the information. Never present uncertain information as fact. Say "I'll look that up" and emit the marker — do NOT answer and then verify after.
+
+## Custom Rules
+
+<!-- BEGIN user-customize -->
+<!-- This section is preserved across tunaFlow scaffold refreshes. Add your
+     project-specific Architect rules here. tunaFlow will never overwrite
+     content between the BEGIN/END user-customize markers. -->
+
+<!-- END user-customize -->
 "#;
 
 const DEVELOPER_TEMPLATE: &str = r#"# Developer
@@ -651,6 +804,15 @@ When you receive a rework request with review findings:
 - **Verification is not optional**: Every task has Verification commands — run them and report.
 - **Markers in chat only**: Never write tunaflow markers into files.
 - **If the plan needs changes, say so**: Don't silently deviate.
+
+## Custom Rules
+
+<!-- BEGIN user-customize -->
+<!-- This section is preserved across tunaFlow scaffold refreshes. Add your
+     project-specific Developer rules here. tunaFlow will never overwrite
+     content between the BEGIN/END user-customize markers. -->
+
+<!-- END user-customize -->
 "#;
 
 const REVIEWER_TEMPLATE: &str = r#"# Reviewer
@@ -715,6 +877,15 @@ When reviewing after rework:
   accessing the result report file is the same policy violation as judging
   it. The result report is auto-generated and not part of the review contract.
 - **Findings vs Recommendations**: Only actual defects go in findings. Everything else goes in recommendations.
+
+## Custom Rules
+
+<!-- BEGIN user-customize -->
+<!-- This section is preserved across tunaFlow scaffold refreshes. Add your
+     project-specific Reviewer rules here. tunaFlow will never overwrite
+     content between the BEGIN/END user-customize markers. -->
+
+<!-- END user-customize -->
 "#;
 
 
@@ -777,6 +948,150 @@ mod tests {
         assert!(
             ARCHITECT_TEMPLATE.contains("auto-generated by tunaFlow"),
             "architect template must explain that result.md is auto-generated"
+        );
+    }
+
+    /// Issue #254 — every shipped agent template must carry the sentinel
+    /// markers so that `ensure_workflow_templates` can preserve user edits.
+    #[test]
+    fn all_agent_templates_carry_user_customize_sentinel() {
+        for (label, tmpl) in [
+            ("ARCHITECT_TEMPLATE", ARCHITECT_TEMPLATE),
+            ("DEVELOPER_TEMPLATE", DEVELOPER_TEMPLATE),
+            ("REVIEWER_TEMPLATE", REVIEWER_TEMPLATE),
+        ] {
+            assert!(
+                tmpl.contains(SENTINEL_BEGIN),
+                "{} missing BEGIN user-customize marker", label
+            );
+            assert!(
+                tmpl.contains(SENTINEL_END),
+                "{} missing END user-customize marker", label
+            );
+            // BEGIN must precede END.
+            let begin = tmpl.find(SENTINEL_BEGIN).unwrap();
+            let end = tmpl.find(SENTINEL_END).unwrap();
+            assert!(begin < end, "{} has END before BEGIN", label);
+        }
+    }
+
+    #[test]
+    fn extract_user_customize_returns_body_between_markers() {
+        let doc = format!(
+            "header\n\n## Custom\n\n{}\nuser line A\nuser line B\n{}\nfooter\n",
+            SENTINEL_BEGIN, SENTINEL_END
+        );
+        let body = extract_user_customize(&doc).expect("sentinel pair must parse");
+        assert!(body.contains("user line A"));
+        assert!(body.contains("user line B"));
+        assert!(!body.contains("header"));
+        assert!(!body.contains("footer"));
+    }
+
+    #[test]
+    fn extract_user_customize_returns_none_without_markers() {
+        assert!(extract_user_customize("plain doc, no markers").is_none());
+        let only_begin = format!("foo {} bar", SENTINEL_BEGIN);
+        assert!(extract_user_customize(&only_begin).is_none());
+    }
+
+    #[test]
+    fn inject_user_customize_round_trips() {
+        let template = format!(
+            "shell head\n{}\nDEFAULT EMPTY\n{}\nshell tail\n",
+            SENTINEL_BEGIN, SENTINEL_END
+        );
+        let preserved = "\nuser-line-1\nuser-line-2\n";
+        let merged = inject_user_customize(&template, preserved).expect("inject must succeed");
+        assert!(merged.contains("shell head"));
+        assert!(merged.contains("shell tail"));
+        assert!(merged.contains("user-line-1"));
+        assert!(merged.contains("user-line-2"));
+        assert!(!merged.contains("DEFAULT EMPTY"));
+    }
+
+    #[test]
+    fn refresh_preserves_sentinel_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let agents = dir.path().join("docs/agents");
+        std::fs::create_dir_all(&agents).unwrap();
+        let path = agents.join("architect.md");
+
+        // Seed the file with the shipped template + a user customization.
+        let body = "\nMY PROJECT RULE: never add a result task.\n";
+        let seeded = inject_user_customize(ARCHITECT_TEMPLATE, body).unwrap();
+        std::fs::write(&path, &seeded).unwrap();
+
+        ensure_workflow_templates(dir.path().to_str().unwrap());
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            after.contains("MY PROJECT RULE: never add a result task."),
+            "sentinel body must survive a scaffold refresh"
+        );
+        assert!(
+            !path.with_extension("md.pre-sentinel").exists() &&
+            !agents.join("architect.md.pre-sentinel").exists(),
+            "no migration backup should be created when sentinels are present"
+        );
+    }
+
+    #[test]
+    fn refresh_migrates_pre_sentinel_legacy_file_with_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let agents = dir.path().join("docs/agents");
+        std::fs::create_dir_all(&agents).unwrap();
+        let path = agents.join("architect.md");
+
+        // Legacy file without sentinel markers.
+        let legacy = "# Architect (legacy)\n\nUser rules without sentinel.\n";
+        std::fs::write(&path, legacy).unwrap();
+
+        ensure_workflow_templates(dir.path().to_str().unwrap());
+
+        let backup = agents.join("architect.md.pre-sentinel");
+        assert!(backup.exists(), "legacy file must be backed up before overwrite");
+        let backup_contents = std::fs::read_to_string(&backup).unwrap();
+        assert_eq!(backup_contents, legacy, "backup must be exact copy of legacy file");
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            after.contains(SENTINEL_BEGIN) && after.contains(SENTINEL_END),
+            "new file must contain sentinel markers"
+        );
+        assert!(
+            after.contains("# Architect"),
+            "new file must be the shipped template"
+        );
+    }
+
+    #[test]
+    fn refresh_creates_file_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_workflow_templates(dir.path().to_str().unwrap());
+        let path = dir.path().join("docs/agents/architect.md");
+        assert!(path.exists(), "missing agent doc must be created");
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains(SENTINEL_BEGIN));
+    }
+
+    #[test]
+    fn refresh_does_not_overwrite_existing_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let agents = dir.path().join("docs/agents");
+        std::fs::create_dir_all(&agents).unwrap();
+        let path = agents.join("architect.md");
+        let backup = agents.join("architect.md.pre-sentinel");
+
+        std::fs::write(&path, "legacy v2\n").unwrap();
+        std::fs::write(&backup, "legacy v1 (older, must be kept)\n").unwrap();
+
+        ensure_workflow_templates(dir.path().to_str().unwrap());
+
+        let backup_after = std::fs::read_to_string(&backup).unwrap();
+        assert_eq!(
+            backup_after, "legacy v1 (older, must be kept)\n",
+            "existing backup must not be clobbered"
         );
     }
 }
