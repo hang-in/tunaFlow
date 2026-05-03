@@ -2,7 +2,7 @@
 
 # tunaFlow
 
-**One surface for Claude Code, Codex, Gemini, and OpenCode — plan, branch, and review across engines.**
+**A desktop client that runs Claude Code, Codex, Gemini, and local engines under one Plan → Dev → Review workflow.**
 
 [![CI](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
@@ -16,8 +16,6 @@
 
 > **Of the agent, By the agent, For the agent**
 
-Stop shuttling between tmux panes. tunaFlow is a desktop client that runs multiple CLI coding agents (Claude Code, Codex, Gemini, OpenCode) side by side under a unified Plan → Dev → Review workflow.
-
 </div>
 
 ![tunaFlow screenshot](./docs/assets/screenshot-main.png)
@@ -28,13 +26,50 @@ https://github.com/user-attachments/assets/69cdc5b3-2456-4873-9599-3c2c3e0f6f13
 
 ---
 
-## Who is this for?
+## What it is
 
-- Users of Claude Code, Codex, or Gemini CLI who need **structured workflows** beyond simple chat.
-- Those who want to delegate execution to agents while **retaining direction and judgment**.
-- Small teams or individuals looking to integrate AI agents into their daily development workflow.
+A desktop app for orchestrating subscription-tier CLI coding agents (Claude Code, Codex, Gemini) plus local engines (Ollama, LM Studio) inside one window. The same `ContextPack` is assembled for all five engines, so switching providers mid-conversation is a one-line toggle, not a prompt rewrite. The Architect drafts a plan; the Developer implements; a *different vendor's* model performs blind cross-review before any code lands.
 
-### Why it exists
+Status: Beta. macOS arm64 + Windows x64 builds shipping (v0.1.5-beta). 614 Rust tests · 401 frontend tests · SQLite v49.
+
+## What's notable
+
+A few design choices that aren't standard in the surrounding tools:
+
+- **Single assembly function for five engines** — `build_normalized_prompt_with_budget()` produces the same `ContextPack` (identity, recent context, long-term memory, skills, tool results) regardless of which engine consumes it. Engine swap is a toggle, not a fork.
+- **Subscription-CLI-first, not API-first** — primary execution paths spawn the official `claude` / `codex` / `gemini` binaries against the user's own subscription. SDK / API is a fallback. No tunaFlow account, no token markup, no billing axis owned by us.
+- **Cross-vendor blind review** — Architect (Claude Opus) and Reviewer (Codex by default) sit on different vendors so failure modes don't cancel out. The 4D rubric (`plan_coverage` / `code_quality` / `test_coverage` / `convention`) + `invariant_checks` runs *before* implementation cost is spent.
+- **Branch / adopt model** — experiments fork into shadow conversations; only the summary lands back in main. The chat tree stays linear; side branches don't pollute context.
+- **100% AI-authored codebase** — every line was written by Claude Code; a single human maintainer sets architecture and direction. An honest engineering data point about modern multi-agent workflows, not a quality guarantee.
+
+## How it sits next to existing tools
+
+Not a replacement for your IDE or your CLI. The niche is between them — a structured surface that uses subscriptions you already pay for, swaps engines without rewriting prompts, and catches design flaws via cross-vendor blind review.
+
+| | tunaFlow | Editor extensions (Cursor / Continue / Cline) | Single-engine CLIs (Claude Code / aider) | Agent frameworks (crewAI / langgraph) |
+|---|---|---|---|---|
+| Surface | Desktop app | IDE plugin | Terminal | Library |
+| Engines run together | 5 | 1–2 | 1 | Unopinionated |
+| Billing model | Subscription CLI | Mostly API | Subscription CLI (own only) | API |
+| Plan / Dev / Review pipeline | Built-in, cross-vendor | — | — | DIY |
+| Branch / Roundtable | Yes | — | — | DIY |
+
+tunaFlow is unlikely to be your only AI tool — it complements an IDE-side assistant rather than replacing it.
+
+## Non-goals
+
+- **Not an IDE.** No inline completion or syntax-aware suggestion surface.
+- **Not a SaaS.** No tunaFlow account, hosted backend, or token markup. The maintainer cannot see your conversations.
+- **Not an API-billing wrapper.** Account multiplexing, token resale, OAuth pooling, or any pattern that violates the upstream provider's TOS is out of scope.
+- **Not a substitute for human review.** The review pass is performed by *other AI agents*. There is no human gate before commit; treat the cross-vendor blind review as a strong filter, not a guarantee.
+
+## Who this is for
+
+- Users running multiple CLI agents who want a structured workflow surface beyond raw chat.
+- Developers who delegate execution but keep direction and judgment.
+- Small teams or individuals integrating AI agents into daily development.
+
+## Why it exists
 
 tunaFlow started from a concrete pain: running Claude Code, Codex, and Gemini CLI side by side meant constant copy-pasting between tmux panes, iTerm tabs, or terminal multiplexers like cmux. Even when the individual engines were great, the workflow was manual stitching. tunaFlow bundles that stitching into a single surface so the user's attention stays on intent, not on terminal pane management.
 
@@ -43,7 +78,7 @@ tunaFlow started from a concrete pain: running Claude Code, Codex, and Gemini CL
 ## Design Features
 
 ### Engine Parity — No prompt rewriting when switching engines
-The four engines (Claude, Codex, Gemini, Ollama) share a single assembly function, `build_normalized_prompt_with_budget()`. Since identity, recent context, long-term memory, skills, and tool results are assembled into a consistent `ContextPack` regardless of the engine, switching engines is a one-line toggle, not a prompt rewrite.
+The five engines (Claude, Codex, Gemini, Ollama, LM Studio) share a single assembly function, `build_normalized_prompt_with_budget()`. Since identity, recent context, long-term memory, skills, and tool results are assembled into a consistent `ContextPack` regardless of the engine, switching engines is a one-line toggle, not a prompt rewrite.
 
 ### Blind Cross-verification — Catching Plan flaws before implementation
 The `Plan` is drafted by the `Architect` (Claude Opus) and verified by an independent `Reviewer` (Codex, blind) using `invariant_checks` and a 4D rubric (`plan_coverage`, `code_quality`, `test_coverage`, `convention`). Converging design-phase BLOCKERs reduces the cost of major implementation reworks.
@@ -109,7 +144,7 @@ Automatically detects available agents during initial project setup and recommen
 
 ### Prerequisites
 
-- macOS (currently macOS only)
+- **macOS** 12 Monterey+ (Apple Silicon / Intel) or **Windows** 10 21H2+ (x64). Linux deferred.
 - **Node.js 20+**
 - **Rust stable** — if not already installed, one line via rustup:
 
@@ -143,20 +178,27 @@ npm run tauri dev
 ./scripts/build.sh
 ```
 
-### Beta Installation (macOS)
+### Beta Installation
+
+**macOS** (one-line install):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hang-in/tunaFlow/main/install.sh | bash
 ```
 
-> As this uses an ad-hoc signature, a Gatekeeper warning may appear.
-> Clear it with: `xattr -cr /Applications/tunaFlow.app`
+> Ad-hoc signature only — a Gatekeeper warning may appear. The installer handles `xattr -cr` for you. Manual: `xattr -cr /Applications/tunaFlow.app`.
+
+**Windows**: download the NSIS installer (`tunaFlow_*_x64-setup.exe`) from the [latest release](https://github.com/hang-in/tunaFlow/releases/latest) and run it.
+
+> SmartScreen may flag the binary (no code-signing in Beta) — choose "More info" → "Run anyway". If antivirus quarantines, restore from quarantine or whitelist `%LOCALAPPDATA%\tunaFlow`. WebView2 Runtime auto-installs if missing.
+
+Detailed install / troubleshooting: [INSTALL.md](./INSTALL.md).
 
 ---
 
 ## Tech Stack
 
-Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WAL, v46)
+Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WAL, v49)
 
 Code Search: `rawq` sidecar (bge-m3 embedding) · `code-review-graph` · `context-hub`
 External Integration: HTTP API + WebSocket · MCP Server (`tunaflow-mcp`)
@@ -213,9 +255,9 @@ If this trade-off is unacceptable for your workflow, run Claude Code directly in
 
 ### Will be fixed (P0 / P1)
 
-- **PTY Terminal — Work in Progress** — The in-app terminal panel is temporarily unavailable in the Beta bundle and is being rewired. Use an external terminal (iTerm2 / Terminal.app / Warp) alongside tunaFlow until a follow-up release restores it.
+- **PTY Terminal — Work in Progress** — The in-app terminal panel is temporarily unavailable in the Beta bundle and is being rewired. Use an external terminal (iTerm2 / Terminal.app / Warp / Windows Terminal) alongside tunaFlow until a follow-up release restores it.
 - **JSONL Completion Detection Failure (P1)** — Occasional issues where PTY session responses are not reflected in the UI (transitioning to `sdk-session` WebSocket path).
-- **Windows / Linux builds** — Not yet supported; packaging pipeline in progress.
+- **Linux builds** — Deferred. macOS arm64 + Windows x64 are shipping.
 
 ### Anthropic billing & Claude session behavior
 

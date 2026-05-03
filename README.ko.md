@@ -2,7 +2,7 @@
 
 # tunaFlow
 
-**Claude Code · Codex · Gemini · OpenCode 를 한 화면에서 — plan · branch · review 까지.**
+**Claude Code · Codex · Gemini · 로컬 엔진을 한 화면 안 Plan → Dev → Review 워크플로우로 묶은 데스크톱 클라이언트.**
 
 [![CI](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/hang-in/tunaFlow/actions/workflows/ci.yml)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.0-FFC131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
@@ -17,8 +17,6 @@
 > **Of the agent, By the agent, For the agent**
 > *— 인간지능 × 인공지능, 2인3각.*
 
-여러 CLI 를 번갈아 쓰는 피로를 줄이는 데스크톱 앱입니다. Claude Code / Codex / Gemini / OpenCode 를 하나의 Plan → Dev → Review 워크플로우에서 함께 운영합니다.
-
 </div>
 
 ![tunaFlow screenshot](./docs/assets/screenshot-main.png)
@@ -29,13 +27,50 @@ https://github.com/user-attachments/assets/69cdc5b3-2456-4873-9599-3c2c3e0f6f13
 
 ---
 
+## 무엇인가
+
+구독 기반 CLI 코딩 에이전트 (Claude Code · Codex · Gemini) 와 로컬 엔진 (Ollama · LM Studio) 다섯을 한 데스크톱 창 안에서 운영합니다. 다섯 엔진 모두 같은 `ContextPack` 으로 조립되기 때문에, 대화 도중 엔진을 바꿔도 프롬프트를 다시 쓰지 않고 토글 한 줄이면 됩니다. Architect 가 plan 을 세우고, Developer 가 구현하고, *다른 벤더의* 모델이 blind cross-review 를 돌립니다 — 코드가 바닥에 닿기 전에.
+
+상태: Beta. macOS arm64 + Windows x64 빌드 shipping (v0.1.5-beta). Rust 614 tests · Frontend 401 tests · SQLite v49.
+
+## 특기할 만한 부분
+
+주변 도구들에서는 흔하지 않은 설계 결정 몇 가지:
+
+- **다섯 엔진을 위한 단일 조립 함수** — `build_normalized_prompt_with_budget()` 가 identity / 최근 맥락 / 장기 기억 / 스킬 / 도구 결과를 같은 `ContextPack` 으로 조립합니다. 어떤 엔진이 받아도 동일. 엔진 교체는 토글이지 fork 가 아닙니다.
+- **API 가 아닌 구독 CLI 우선** — 기본 실행 경로는 사용자의 구독으로 공식 `claude` / `codex` / `gemini` 바이너리를 spawn 합니다. SDK / API 는 보조. tunaFlow 계정 없음, 토큰 마크업 없음, 우리가 소유하는 과금 축 없음.
+- **벤더 간 blind review** — Architect (Claude Opus) 와 Reviewer (기본 Codex) 를 다른 벤더에 의도적으로 배치해 동일 모델의 실패 모드가 서로 cancel 되지 않게 합니다. 4D 루브릭 (`plan_coverage` / `code_quality` / `test_coverage` / `convention`) + `invariant_checks` 가 *구현 비용 들기 전* 에 돕니다.
+- **Branch / adopt 모델** — 실험은 shadow conversation 으로 분기되고, 결과는 요약만 main 에 돌아옵니다. 채팅 트리는 선형으로 유지되고, 곁가지가 컨텍스트를 오염시키지 않습니다.
+- **100% AI 작성 코드베이스** — 모든 줄을 Claude Code 가 썼고, 사람 메인테이너 한 명이 아키텍처와 방향만 결정합니다. 마케팅 슬로건이 아니라, 현대 multi-agent workflow 에 대한 솔직한 엔지니어링 데이터 포인트입니다.
+
+## 기존 도구와의 위치 관계
+
+IDE 나 CLI 를 대체하려는 게 아닙니다. 그 사이의 빈 공간 — 이미 결제한 구독을 그대로 쓰면서, 프롬프트 다시 안 쓰고 엔진 교체하고, 구현 전에 cross-vendor blind review 로 설계 결함을 잡는 구조화된 surface 입니다.
+
+| | tunaFlow | 에디터 확장 (Cursor / Continue / Cline) | 단일 엔진 CLI (Claude Code / aider) | 에이전트 프레임워크 (crewAI / langgraph) |
+|---|---|---|---|---|
+| 형태 | 데스크톱 앱 | IDE 플러그인 | 터미널 | 라이브러리 |
+| 동시 운영 엔진 | 5 | 1~2 | 1 | 미정 |
+| 과금 모델 | 구독 CLI | 대부분 API | 구독 CLI (자기 것만) | API |
+| Plan / Dev / Review 파이프라인 | 내장 (cross-vendor) | — | — | DIY |
+| Branch / Roundtable | 있음 | — | — | DIY |
+
+tunaFlow 는 사용자의 *유일한* AI 도구가 될 가능성이 낮습니다 — IDE 측 어시스턴트를 *대체* 하는 게 아니라 *보완* 하는 위치입니다.
+
+## Non-goals
+
+- **IDE 가 아닙니다.** 인라인 자동완성이나 syntax-aware 제안 surface 가 없습니다.
+- **SaaS 가 아닙니다.** tunaFlow 계정 없음, 호스팅 백엔드 없음, 토큰 마크업 없음. 메인테이너는 사용자의 대화를 볼 수 없습니다.
+- **API 과금 wrapper 가 아닙니다.** 계정 다중화, 토큰 재판매, OAuth 풀링 등 upstream provider 의 ToS 를 위반하는 패턴은 의도적으로 범위 밖에 둡니다.
+- **사람의 리뷰를 대체하지 않습니다.** 리뷰는 *다른 AI 에이전트* 가 수행합니다. commit 전 사람 게이트는 없습니다 — cross-vendor blind review 를 강한 필터로 다루되 보장으로 다루지는 마세요.
+
 ## 누구를 위한 도구인가
 
-- Claude Code / Codex / Gemini CLI 를 쓰면서 단순 채팅을 넘어선 **구조화된 워크플로우** 가 필요한 분
-- 실행은 에이전트에게 맡기되 **방향과 판단은 직접 잡고** 싶은 분
+- 여러 CLI 에이전트를 쓰면서 단순 채팅을 넘어선 구조화된 워크플로우 surface 가 필요한 분
+- 실행은 에이전트에게 맡기되 방향과 판단은 직접 잡고 싶은 분
 - AI 에이전트를 일상 개발 흐름에 끼워 넣고 싶은 소규모 팀이나 개인
 
-### 왜 만들었나
+## 왜 만들었나
 
 작은 불편에서 출발했습니다. Claude Code / Codex / Gemini CLI 를 같이 쓰다 보면 tmux / iTerm / cmux 같은 터미널을 오가며 복붙이 반복됩니다. 엔진 자체는 훌륭한데, 그걸 하나의 흐름으로 엮는 일은 결국 사람이 손으로 했습니다. tunaFlow 는 그 엮는 일을 한 화면 안으로 옮겨서, 사용자가 "터미널 창 관리" 가 아니라 "무엇을 시킬지" 에 집중할 수 있도록 만들었습니다.
 
@@ -44,7 +79,7 @@ https://github.com/user-attachments/assets/69cdc5b3-2456-4873-9599-3c2c3e0f6f13
 ## 설계 특징
 
 ### Engine Parity — 엔진을 바꿔도 프롬프트를 다시 쓰지 않는다
-Claude · Codex · Gemini · Ollama 네 엔진 모두 하나의 조립 함수 `build_normalized_prompt_with_budget()` 을 거칩니다. identity · 최근 맥락 · 장기 기억 · 스킬 · 도구 결과가 엔진에 상관없이 같은 ContextPack 으로 조립되므로, 엔진 교체는 한 줄 토글로 끝납니다.
+Claude · Codex · Gemini · Ollama · LM Studio 다섯 엔진 모두 하나의 조립 함수 `build_normalized_prompt_with_budget()` 을 거칩니다. identity · 최근 맥락 · 장기 기억 · 스킬 · 도구 결과가 엔진에 상관없이 같은 ContextPack 으로 조립되므로, 엔진 교체는 한 줄 토글로 끝납니다.
 
 ### Blind Cross-verification — 설계 단계에서 결함을 잡는다
 Plan 은 Architect(Claude Opus) 가 작성하고, 독립적인 Reviewer(Codex, blind) 가 `invariant_checks` 와 4 차원 루브릭(plan_coverage · code_quality · test_coverage · convention) 으로 검증합니다. 구현 전에 BLOCKER 를 라운드 단위로 걸러내면, 구현 이후에 드러나는 큰 재작업을 막을 수 있습니다.
@@ -110,7 +145,7 @@ rawq 와 code-review-graph 가 미리 뽑아둔 데이터를 에이전트가 분
 
 ### 사전 준비
 
-- macOS (현재 macOS 전용)
+- **macOS** 12 Monterey+ (Apple Silicon / Intel) 또는 **Windows** 10 21H2+ (x64). Linux 는 보류.
 - **Node.js 20+**
 - **Rust stable** — 설치 안 돼있으면 rustup 한 줄로 설치:
 
@@ -144,20 +179,27 @@ npm run tauri dev
 ./scripts/build.sh
 ```
 
-### 베타 설치 (macOS)
+### 베타 설치
+
+**macOS** (한 줄 설치):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/hang-in/tunaFlow/main/install.sh | bash
 ```
 
-> macOS ad-hoc 서명이므로 Gatekeeper 경고가 뜰 수 있습니다.
-> `xattr -cr /Applications/tunaFlow.app` 으로 해제합니다.
+> ad-hoc 서명이라 Gatekeeper 경고가 뜰 수 있습니다. installer 가 `xattr -cr` 까지 처리합니다. 수동: `xattr -cr /Applications/tunaFlow.app`.
+
+**Windows**: NSIS installer (`tunaFlow_*_x64-setup.exe`) 를 [최신 release](https://github.com/hang-in/tunaFlow/releases/latest) 에서 다운받아 실행합니다.
+
+> 코드 서명 없는 Beta 라 SmartScreen 이 차단할 수 있습니다 — "추가 정보" → "실행" 으로 진행하세요. 백신이 격리하면 격리함에서 복원하거나 `%LOCALAPPDATA%\tunaFlow` 를 예외 경로로 추가합니다. WebView2 Runtime 이 없으면 installer 가 자동 설치합니다.
+
+자세한 설치 / 트러블슈팅: [INSTALL.md](./INSTALL.md).
 
 ---
 
 ## 기술 스택
 
-Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WAL, v46)
+Tauri 2 + React 18 + TypeScript + Zustand 5 + Tailwind CSS 4 + Rust + SQLite (WAL, v49)
 
 코드 검색: rawq sidecar (bge-m3 임베딩) · code-review-graph · context-hub
 외부 연동: HTTP API + WebSocket · MCP 서버 (`tunaflow-mcp`)
@@ -200,9 +242,9 @@ tunaFlow 를 만들면서 Claude Opus 가 쓴 개발기입니다. 설계 결정 
 
 ### 해결 예정 (P0 / P1)
 
-- **PTY 터미널 — 작업 중** — 인앱 터미널 패널은 Beta 번들에서 일시적으로 비활성화되어 재구성 중입니다. 후속 릴리즈에서 복원되기 전까지는 외부 터미널 (iTerm2 / Terminal.app / Warp) 을 병행 사용하세요.
+- **PTY 터미널 — 작업 중** — 인앱 터미널 패널은 Beta 번들에서 일시적으로 비활성화되어 재구성 중입니다. 후속 릴리즈에서 복원되기 전까지는 외부 터미널 (iTerm2 / Terminal.app / Warp / Windows Terminal) 을 병행 사용하세요.
 - **JSONL 완료 감지 실패 (P1)** — PTY 세션에서 응답이 UI 에 반영되지 않는 경우 간헐적 발생 (sdk-session WebSocket 경로로 이동 중).
-- **Windows / Linux 빌드** — 미지원. 패키징 파이프라인 준비 중.
+- **Linux 빌드** — 보류. macOS arm64 + Windows x64 는 shipping 중.
 
 ### Anthropic billing & Claude 세션 동작
 
