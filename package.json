@@ -1,7 +1,7 @@
 {
   "name": "tuna-flow",
   "private": true,
-  "version": "0.1.5-beta",
+  "version": "0.1.6-beta",
   "description": "Multi-agent orchestration desktop client for CLI coding agents (Claude Code, Codex, Gemini, OpenCode)",
   "license": "Apache-2.0",
   "author": "d9ng <d9ng@outlook.com>",

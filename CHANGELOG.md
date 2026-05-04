@@ -4,6 +4,58 @@ All notable changes to tunaFlow are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6-beta] - 2026-05-04
+
+**Workflow architectural change** — Reviewer verdict 처리 책임이 Meta-agent inbox
+에서 Architect main conv 로 이동. *"Of the agent, By the agent, For the agent"*
+원칙에 따라 *plan 사이클 결정* 은 Architect 의 design 책임으로 통합되고, Meta
+는 *Tier 2 brief 생성기 + 알림 inbox* 역할로 좁아짐 (전면 해체 아님).
+
+### Changed
+
+- **Reviewer verdict → Architect 직행** (PR #261) — Plan 리뷰 통과 / 5회 누적
+  실패 시 Meta inbox 알림이 아닌 Architect main conv 로 prompt 자동 dispatch.
+  - `review_passed` (pass) → Architect 가 *"plan 완료, 다음 우선순위 제안"*
+    prompt 자동 수신
+  - `doom_loop_escalated` (5회 fail 누적) → Architect 가 *plan 재설계* prompt
+    자동 수신 (기존엔 사용자 명시 클릭 필요)
+  - 신규 helper SSOT: `src/lib/workflow/architectDispatch.ts` —
+    `dispatchArchitectNextPriority(plan)` / `dispatchArchitectRedesign(plan,
+    verdict, opts)`. `ReviewVerdictCard.handleRedesign()` (사용자 클릭) 도 같은
+    helper 재사용.
+  - doom warn (3회 fail) 은 사용자 결정 영역 보존 — `plan_event_log` 에
+    `doom_loop_warning` event 만 남고 Architect 자동 호출 없음
+- **MetaNotificationKind 정리** (PR #262) — review-cycle 4종 (`review_passed` /
+  `review_failed` / `doom_loop_warning` / `doom_loop_escalated`) deprecated.
+  `tier2_brief` 신규 — Tier 2 분석 (Haiku/Flash 저비용 brief) 결과 전용.
+  기존 inbox 의 deprecated kind row 는 fallback 라벨로 표시 (route navigation
+  / dismiss 정상). 마이그레이션 불필요.
+
+### Removed
+
+- **askMeta UX 폐지** (PR #260) — Meta 알림 inbox 의 *"메타에게 물어보기"* 버튼
+  / `askMetaAbout` callback / 관련 i18n 키 (`action_ask_meta`, `ask_about_*`)
+  제거. inbox 항목은 *읽기 / dismiss / route 이동* 만 동작. 사용자가 직접 메타에게
+  질문하는 흐름은 Meta floating chat 의 *채팅 탭 입력창* 으로 대체.
+
+### Notes
+
+- Tier 2 brief 분석 (`maybeTriggerMetaAnalysis`) 의 트리거 시점 (review_passed /
+  review_failed) + 엔진 (Haiku/Flash) + 분석 결과 dispatch 자체는 보존 — kind
+  만 `tier2_brief` 로 이동.
+- identity-trigger / memory auto-trigger / Rust `meta_agent/` 모듈 / Meta
+  conversation 자체 / `tool_request_failed` / `insight_detected` /
+  `plan_promoted` / `architect_redesign_requested` / `generic` 알림 모두 보존.
+- Plan SSOT: `docs/plans/reviewerVerdictDirectArchitectPlan_2026-05-04.md`
+  (10 invariants, 7 task → 3 PR 분리). c-2 scope (Meta role 부분 축소).
+- Test baseline: FE 401 → 422 (+21 — architectDispatch 단위 / verdict 분기 /
+  askMeta 비존재 가드). Rust 614 변동 없음.
+- Gemini code review medium feedback follow-up 동일 cycle 머지 (40bc1aa):
+  `architectDispatch` 의 `useChatStore` static import → dynamic
+  `await import("@/stores/chatStore")` 패턴 (다른 workflow 모듈과 일관성),
+  `MetaFloatingChat.test.tsx` 의 source-level regex 가드 brittleness 한계 +
+  의도 주석 보강.
+
 ## [0.1.5-beta] - 2026-05-03
 
 🩹 **devbug 외부 사용자 보고 #254 / #255 hotfix release** — 두 영역 자가 회복 path 회복.
