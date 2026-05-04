@@ -12,17 +12,21 @@
  * - PR-3: Tier 2 메타 LLM 브리핑 (Haiku/Gemini Flash)
  */
 
+/**
+ * **kind 정리 (2026-05-04, reviewerVerdictDirectArchitectPlan)**:
+ * - review_passed / review_failed / doom_loop_warning / doom_loop_escalated 4 kind 는
+ *   Architect 직행 라우팅으로 dispatch 가 사라짐 → MetaNotificationKind 에서 제거
+ * - tier2_brief 신규 추가 — Tier 2 분석 (Haiku/Flash) 결과 dispatch 전용
+ * - DB 의 deprecated kind row 는 free-text 라 그대로 남음. UI 는 unknown kind 폴백 처리
+ */
 export type MetaNotificationKind =
-  | "review_passed"           // Plan 리뷰 통과 → Done
-  | "review_failed"           // Review 실패 → Rework
-  | "doom_loop_warning"       // 3회 이상 실패 → 설계 재검토 권장
-  | "doom_loop_escalated"     // 5회 이상 실패 → Architect 재설계 강제
+  | "tier2_brief"             // Tier 2 (Haiku/Flash) 분석 결과 brief
   | "architect_redesign_requested"  // 사용자가 재설계 버튼 명시 클릭
   | "plan_completed"          // Plan 전체 사이클 완료
   | "plan_promoted"           // 새 Plan 등록됨
   | "tool_request_failed"     // 도구 호출 실패
   | "insight_detected"        // 새 Insight finding 감지
-  | "generic";                // 기타 폴백
+  | "generic";                // 기타 폴백 (legacy review-cycle row 도 여기로 폴백)
 
 export interface MetaNotificationRoute {
   /** 이동할 탭 (AppShell 의 `tunaflow:switch-tab` 이벤트와 매칭) */

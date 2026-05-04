@@ -116,7 +116,7 @@ export async function maybeTriggerMetaAnalysis(
       `최근 ${t.reviewPassedCount}건의 Plan 이 리뷰 통과되었습니다. 프로젝트 전반에서 반복되는 잘된 패턴과 다음 우선순위 작업을 간단히 요약해주세요. 300자 이내.`,
       config,
       {
-        kind: "review_passed",
+        kind: "tier2_brief",
         title: `📊 ${t.reviewPassedCount}건 Plan 통과 — 주간 요약`,
         summaryFallback: "분석이 완료되지 않았습니다. 메타 채팅에서 직접 질문해보세요.",
       },
@@ -129,7 +129,7 @@ export async function maybeTriggerMetaAnalysis(
       `최근 ${t.reviewFailedCount}건의 Review 가 실패했습니다. 반복되는 실패 패턴(동일 파일/동일 findings)이 있는지 확인하고, 설계 재검토가 필요한 부분을 제안해주세요. 구체적 findings:\n${findingsContext}\n\n300자 이내 한국어 요약.`,
       config,
       {
-        kind: "review_failed",
+        kind: "tier2_brief",
         title: `⚠️ ${t.reviewFailedCount}건 Review 실패 — 패턴 분석`,
         summaryFallback: "반복되는 실패 패턴이 있을 수 있습니다. 메타 채팅에서 확인하세요.",
       },
