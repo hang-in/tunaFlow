@@ -114,14 +114,10 @@
     "inbox_clear_all": "Clear all",
     "inbox_count": "{{count}}",
     "inbox_empty": "No notifications",
-    "action_ask_meta": "Ask meta",
     "action_navigate": "Go to related location",
     "action_dismiss": "Dismiss",
     "empty_state_primary": "I can help analyze project status, detect issues, and suggest priorities.",
     "empty_state_secondary": "Try starting with \"Check project status\"",
-    "input_placeholder": "Ask Meta...",
-    "ask_about_header": "Notification: **{{title}}**",
-    "ask_about_summary": "Summary: {{summary}}",
-    "ask_about_instruction": "Please analyze the event above and suggest the next recommended actions."
+    "input_placeholder": "Ask Meta..."
   }
 }

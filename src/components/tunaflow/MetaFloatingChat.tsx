@@ -196,30 +196,6 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
     if (!pinned) setOpen(false);
   }, [pinned]);
 
-  /** C — "메타에게 물어보기": 알림 하나를 선택해 메타 채팅 패널을 열면서
-   *  해당 맥락을 input 에 자동 주입. 사용자는 엔터만 누르거나 질문을 덧붙여 전송.
-   *  실제 메타 LLM 호출은 사용자가 전송할 때 (원칙: 자동 실행 금지). */
-  const askMetaAbout = useCallback((notif: MetaNotification) => {
-    // 읽음 처리
-    setNotifs((prev) => {
-      const next = prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n));
-      saveNotifs(next);
-      return next;
-    });
-    invoke("mark_meta_notification_read", { id: notif.id }).catch(() => {});
-    // 메타 채팅 탭으로 전환 + 컨텍스트 질문 prompt 주입
-    const prompt = [
-      t("meta_chat.ask_about_header", { title: notif.title }),
-      notif.summary ? t("meta_chat.ask_about_summary", { summary: notif.summary }) : "",
-      "",
-      t("meta_chat.ask_about_instruction"),
-    ].filter(Boolean).join("\n");
-    setInput(prompt);
-    setActiveTab("chat");
-    setOpen(true);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  }, []);
-
   // Close popup on outside click (pinned stays open)
   useEffect(() => {
     if (!open || pinned) return;
@@ -576,9 +552,6 @@ export function MetaFloatingChat({ projectKey }: MetaFloatingChatProps) {
                             </p>
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => askMetaAbout(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title={t("meta_chat.action_ask_meta")}>
-                              <Bot className="w-3 h-3" />
-                            </button>
                             {n.route && (
                               <button onClick={() => routeTo(n)} className="p-1 rounded hover:bg-primary/10 text-primary" title={t("meta_chat.action_navigate")}>
                                 <ChevronRight className="w-3 h-3" />
