@@ -13,7 +13,6 @@ import {
 } from "../manualVerification";
 import * as failureLessonsApi from "../api/failureLessons";
 import * as insightApi from "../api/insight";
-import { dispatchMetaNotification } from "../metaNotifications";
 import { maybeTriggerMetaAnalysis } from "../metaAnalysisTrigger";
 import { dispatchArchitectNextPriority, dispatchArchitectRedesign } from "./architectDispatch";
 import {
@@ -515,16 +514,10 @@ export async function processReviewVerdict(
       // Baton has moved to Architect — review branch is no longer active.
       const { archiveReviewBranchForHandoff } = await import("./implementWorkflow");
       await archiveReviewBranchForHandoff(plan);
-      // projectKey 조회 (meta conv mirror 용).
-      const escProjectKey = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId })
-        .then((c) => c?.projectKey).catch(() => undefined);
-      dispatchMetaNotification({
-        kind: "doom_loop_escalated",
-        title: `⚠️ Plan "${plan.title}" 재설계 필요`,
-        summary: `Review ${failCount}회 실패로 Architect 재설계가 강제되었습니다. Subtask 범위를 재검토하세요.`,
-        projectKey: escProjectKey,
-        route: { tab: "workflow", stage: "plan-check", planId: plan.id },
-      });
+      // 자동 escalate 시 Architect 가 main conv 에서 재설계 prompt 를 즉시 수신.
+      // 기존 dispatchMetaNotification(doom_loop_escalated) → Meta inbox 의존을 제거.
+      // plan_event_log 에 doom_loop_escalated 이벤트는 보존되어 시스템 자동 결정 흔적 유지.
+      await dispatchArchitectRedesign(plan, verdict, { reason: "doom-escalate", failCount });
     } else if (doom.recommendation === "warn") {
       await planApi.createPlanEvent(
         plan.id,
@@ -532,15 +525,9 @@ export async function processReviewVerdict(
         "system",
         `Review 실패 ${failCount}회 — 설계 재검토를 권장합니다. Architect 재설계 또는 Developer 계속 rework 중 선택하세요.`,
       );
-      const warnProjectKey = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId })
-        .then((c) => c?.projectKey).catch(() => undefined);
-      dispatchMetaNotification({
-        kind: "doom_loop_warning",
-        title: `⚠️ Plan "${plan.title}" ${failCount}회 실패`,
-        summary: "설계 재검토 권장. 계속 rework 할지 Architect 재설계로 갈지 선택하세요.",
-        projectKey: warnProjectKey,
-        route: { tab: "workflow", stage: "review", planId: plan.id },
-      });
+      // warn 단계는 사용자 결정 (continue rework vs redesign) 으로 유지 — Architect 자동
+      // 호출 없음. plan_event_log 의 doom_loop_warning 이벤트가 ReviewVerdictCard /
+      // DevProgressView 에 표시되어 사용자 결정 UI 가 충족됨.
     }
   } else {
     await planApi.createPlanEvent(plan.id, "review_conditional", "reviewer", detail);
