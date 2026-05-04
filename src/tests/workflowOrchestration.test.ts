@@ -37,6 +37,22 @@ vi.mock("@/lib/appStore", () => ({
   setSetting: vi.fn(() => Promise.resolve()),
 }));
 
+// Mock architectDispatch — verify pass / doom-escalate 분기 호출 (Plan 2026-05-04 T07)
+vi.mock("@/lib/workflow/architectDispatch", () => ({
+  dispatchArchitectNextPriority: vi.fn(() => Promise.resolve()),
+  dispatchArchitectRedesign: vi.fn(() => Promise.resolve()),
+}));
+
+// Mock metaAnalysisTrigger — Tier 2 brief 호출 시점 보존 검증 (INV-RVA-5)
+vi.mock("@/lib/metaAnalysisTrigger", () => ({
+  maybeTriggerMetaAnalysis: vi.fn(() => Promise.resolve()),
+}));
+
+// Mock metaNotifications — review-cycle dispatch 가 0회 호출인지 검증 (INV-RVA: T01/T02 본체)
+vi.mock("@/lib/metaNotifications", () => ({
+  dispatchMetaNotification: vi.fn(),
+}));
+
 import { invoke } from "@tauri-apps/api/core";
 import * as planApi from "@/lib/api/plans";
 import * as appStore from "@/lib/appStore";
@@ -291,6 +307,142 @@ describe("processReviewVerdict — doom loop", () => {
 
     expect(planApi.updatePlanPhase).toHaveBeenCalledWith("p-1", "rework");
     expect(planApi.updatePlanPhase).not.toHaveBeenCalledWith("p-1", "subtask_review");
+  });
+});
+
+// ─── Verdict → Architect dispatch routing (Plan 2026-05-04) ────────────
+
+describe("processReviewVerdict — Architect direct dispatch (T01/T02)", () => {
+  it("pass: calls dispatchArchitectNextPriority and skips dispatchMetaNotification", async () => {
+    const { dispatchArchitectNextPriority, dispatchArchitectRedesign } = await import("@/lib/workflow/architectDispatch");
+    const { dispatchMetaNotification } = await import("@/lib/metaNotifications");
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "pass",
+      findings: [],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    expect(dispatchArchitectNextPriority).toHaveBeenCalledTimes(1);
+    expect(dispatchArchitectNextPriority).toHaveBeenCalledWith(mockPlan);
+    expect(dispatchArchitectRedesign).not.toHaveBeenCalled();
+    // INV: review-cycle Meta inbox dispatch 0건
+    expect(dispatchMetaNotification).not.toHaveBeenCalled();
+  });
+
+  it("pass: still calls maybeTriggerMetaAnalysis(review_passed) (INV-RVA-5)", async () => {
+    const { maybeTriggerMetaAnalysis } = await import("@/lib/metaAnalysisTrigger");
+    (invoke as any).mockImplementation((cmd: string) => {
+      if (cmd === "get_conversation") return Promise.resolve({ projectKey: "proj-1" });
+      return Promise.resolve();
+    });
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "pass",
+      findings: [],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    expect(maybeTriggerMetaAnalysis).toHaveBeenCalledWith("proj-1", "review_passed", expect.any(Object));
+  });
+
+  it("fail (1회): no dispatchArchitectRedesign, no Meta inbox", async () => {
+    const { dispatchArchitectNextPriority, dispatchArchitectRedesign } = await import("@/lib/workflow/architectDispatch");
+    const { dispatchMetaNotification } = await import("@/lib/metaNotifications");
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "fail",
+      findings: ["bug"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    // 1 fail 만 있으면 doom-loop 임계값 미도달 → Architect 자동 호출 0건
+    expect(dispatchArchitectNextPriority).not.toHaveBeenCalled();
+    expect(dispatchArchitectRedesign).not.toHaveBeenCalled();
+    expect(dispatchMetaNotification).not.toHaveBeenCalled();
+  });
+
+  it("doom warn (3회): no dispatchArchitectRedesign — user decision UI보존", async () => {
+    const { dispatchArchitectRedesign } = await import("@/lib/workflow/architectDispatch");
+    const { dispatchMetaNotification } = await import("@/lib/metaNotifications");
+    vi.mocked(planApi.listPlanEvents).mockResolvedValue([
+      { id: "e1", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["x"]}', createdAt: 1 },
+      { id: "e2", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["y"]}', createdAt: 2 },
+      { id: "e3", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["z"]}', createdAt: 3 },
+    ]);
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "fail",
+      findings: ["bug"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    // warn 단계는 Architect 자동 호출 안 함 + Meta 알림 0건. plan_event_log 의
+    // doom_loop_warning 만 남고 사용자 결정 UI (ReviewVerdictCard) 보존.
+    expect(dispatchArchitectRedesign).not.toHaveBeenCalled();
+    expect(dispatchMetaNotification).not.toHaveBeenCalled();
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "doom_loop_warning", "system", expect.stringContaining("3회"),
+    );
+  });
+
+  it("doom escalate (5회): calls dispatchArchitectRedesign with reason=doom-escalate + failCount", async () => {
+    const { dispatchArchitectRedesign } = await import("@/lib/workflow/architectDispatch");
+    const { dispatchMetaNotification } = await import("@/lib/metaNotifications");
+    vi.mocked(planApi.listPlanEvents).mockResolvedValue([
+      { id: "e1", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["a"]}', createdAt: 1 },
+      { id: "e2", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["b"]}', createdAt: 2 },
+      { id: "e3", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["c"]}', createdAt: 3 },
+      { id: "e4", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["d"]}', createdAt: 4 },
+      { id: "e5", planId: "p-1", eventType: "review_failed", actor: "reviewer", detail: '{"findings":["e"]}', createdAt: 5 },
+    ]);
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "fail",
+      findings: ["bug"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    expect(dispatchArchitectRedesign).toHaveBeenCalledTimes(1);
+    expect(dispatchArchitectRedesign).toHaveBeenCalledWith(
+      mockPlan,
+      expect.objectContaining({ verdict: "fail" }),
+      { reason: "doom-escalate", failCount: 5 },
+    );
+    // INV: review-cycle Meta inbox dispatch 0건 (T02)
+    expect(dispatchMetaNotification).not.toHaveBeenCalled();
+    // plan_event_log 의 doom_loop_escalated event 는 보존 (시스템 자동 결정 흔적)
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith(
+      "p-1", "doom_loop_escalated", "system", expect.stringContaining("5회"),
+    );
+  });
+
+  it("conditional: no dispatchArchitect{NextPriority,Redesign} — INV-RVA-4 보존", async () => {
+    const { dispatchArchitectNextPriority, dispatchArchitectRedesign } = await import("@/lib/workflow/architectDispatch");
+    const { dispatchMetaNotification } = await import("@/lib/metaNotifications");
+
+    await processReviewVerdict(mockPlan, {
+      verdict: "conditional",
+      findings: ["maybe"],
+      recommendations: [],
+      failedSubtaskIds: [],
+      raw: "",
+    });
+
+    expect(dispatchArchitectNextPriority).not.toHaveBeenCalled();
+    expect(dispatchArchitectRedesign).not.toHaveBeenCalled();
+    expect(dispatchMetaNotification).not.toHaveBeenCalled();
+    expect(planApi.createPlanEvent).toHaveBeenCalledWith("p-1", "review_conditional", "reviewer", expect.any(String));
   });
 });
 
