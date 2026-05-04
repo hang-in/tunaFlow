@@ -167,8 +167,14 @@ cd src-tauri && cargo test --lib  # Rust unit tests (485 tests)
 | 프론트엔드 구현 | `anthropic-frontend-design`, `microsoft-zustand-store-ts` |
 | 프론트엔드 리뷰 | `microsoft-frontend-design-review`, `anthropic-webapp-testing` |
 | OpenAI/Codex 연동 | `openai-openai-docs` |
-| Claude/Anthropic 연동 | `anthropic-claude-api` |
+| Claude/Anthropic 연동 | `anthropic-claude-api` (SKILL.md + `shared/` — 2026-05-04 refresh) |
+| ContextPack / 캐싱 설계 | `anthropic-claude-api/shared/prompt-caching.md` |
+| Tool use / marker 설계 | `anthropic-claude-api/shared/tool-use-concepts.md` |
+| Multi-agent 오케스트레이션 설계 | `anthropic-claude-api/shared/agent-design.md` |
+| Claude 모델 버전업 (Opus/Sonnet/Haiku) | `anthropic-claude-api/shared/model-migration.md` |
 | MCP/tool 연동 | `anthropic-mcp-builder` |
+| Plan / Handoff 작성 | `anthropic-doc-coauthoring` |
+| 새 스킬 제작 (tunaFlow 자체 패턴 codify) | `anthropic-skill-creator` |
 
 ---
 
