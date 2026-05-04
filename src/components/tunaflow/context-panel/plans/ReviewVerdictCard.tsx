@@ -6,6 +6,7 @@ import type { Plan, PlanPhase, PlanStatus } from "@/types";
 import type { ParsedReviewVerdict } from "@/lib/planProposalParser";
 import { processReviewVerdict, approveAndStartImplementation } from "@/lib/workflowOrchestration";
 import * as planApi from "@/lib/api/plans";
+import { dispatchArchitectRedesign } from "@/lib/workflow/architectDispatch";
 import { toast } from "sonner";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -94,29 +95,8 @@ export function ReviewVerdictCard({
         await invoke("update_subtask_status", { id: st.id, status: "pending" }).catch(() => {});
       }
 
-      // 4. Architect에게 findings 포함 재설계 요청 전송
-      const { sendWithEngine, getConversationEngine } = useChatStore.getState();
-      const convId = plan.conversationId;
-      const saved = getConversationEngine(convId);
-      const engine = saved?.engine ?? "claude";
-
-      const findings = verdict.findings.length > 0
-        ? verdict.findings.map((f) => `- ${f}`).join("\n")
-        : t("review.verdict.findings_empty_redesign");
-      const recs = verdict.recommendations.length > 0
-        ? verdict.recommendations.map((r) => `- ${r}`).join("\n")
-        : "";
-      const recsBlock = recs ? t("review.verdict.redesign_recs_block", { recs }) : "";
-      const prompt = t("review.verdict.redesign_prompt", {
-        title: plan.title,
-        revision: plan.revision,
-        verdict: verdict.verdict.toUpperCase(),
-        findings,
-        recsBlock,
-        nextRevision: (plan.revision ?? 1) + 1,
-      });
-
-      await sendWithEngine(engine, prompt);
+      // 4. Architect에게 findings 포함 재설계 요청 전송 (helper 경유 — Task 05)
+      await dispatchArchitectRedesign(plan, { ...verdict, verdict: "fail" }, { reason: "user-redesign" });
 
       onPlanUpdate({ phase: "done" as PlanPhase, status: "abandoned" as PlanStatus });
       toast.success(t("review.verdict.redesign_success"));

@@ -334,7 +334,9 @@
       "conditional_prompt": "[Conditional Review] 리뷰어가 일부 수정을 요청했습니다.\n\n**Findings (수정 필요):{{findings}}\n{{recsBlock}}\n\n수정 후 impl-complete 마커를 출력해 주세요.",
       "conditional_recs_block": "**Recommendations:{{recs}}",
       "redesign_prompt": "[Plan 개정 요청] \"{{title}}\" (rev.{{revision}})이 리뷰 실패로 폐기되었습니다.\n\n**리뷰어 판정**: {{verdict}}\n\n**Findings (실패 원인)**:\n{{findings}}\n{{recsBlock}}\n\n위 findings를 분석하여 실패한 서브태스크를 수정한 rev.{{nextRevision}} Plan을 `<!-- tunaflow:plan-proposal -->` 형식으로 제안해 주세요.\n성공한 서브태스크는 유지하고, 실패 원인이 된 부분만 수정하세요.",
-      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}"
+      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}",
+      "redesign_reason_doom_escalate": "[자동 에스컬레이션] Review 가 {{failCount}}회 연속 실패하여 시스템이 Architect 재설계를 요청합니다.",
+      "next_priority_prompt": "[다음 우선순위 제안] \"{{title}}\" Plan 이 리뷰 통과로 완료되었습니다.\n\n프로젝트의 현재 상태를 보고 다음 우선순위 작업이나 후속 plan 분기를 제안해 주세요. 새 plan 이 필요하다면 `<!-- tunaflow:plan-proposal -->` 형식으로 작성하세요. 단순 안내라면 자유 형식으로 답변해 주세요."
     }
   }
 }

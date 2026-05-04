@@ -334,7 +334,9 @@
       "conditional_prompt": "[Conditional Review] The reviewer requested partial revisions.\n\n**Findings (must fix):{{findings}}\n{{recsBlock}}\n\nAfter fixing, emit the impl-complete marker.",
       "conditional_recs_block": "**Recommendations:{{recs}}",
       "redesign_prompt": "[Plan revision request] \"{{title}}\" (rev.{{revision}}) was abandoned after review failure.\n\n**Reviewer verdict**: {{verdict}}\n\n**Findings (failure causes)**:\n{{findings}}\n{{recsBlock}}\n\nAnalyze the findings above and propose a revised rev.{{nextRevision}} Plan that fixes the failed subtasks, in `<!-- tunaflow:plan-proposal -->` format.\nKeep successful subtasks as-is; only revise the parts that caused the failure.",
-      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}"
+      "redesign_recs_block": "\n**Recommendations**:\n{{recs}}",
+      "redesign_reason_doom_escalate": "[Auto-escalation] Review failed {{failCount}} times in a row, so the system is requesting an Architect redesign.",
+      "next_priority_prompt": "[Next-priority suggestion] Plan \"{{title}}\" has completed review.\n\nLooking at the project's current state, propose the next priority task or a follow-up plan branch. If a new plan is needed, write it in `<!-- tunaflow:plan-proposal -->` format. If it's just guidance, respond in free form."
     }
   }
 }
