@@ -15,6 +15,7 @@ import * as failureLessonsApi from "../api/failureLessons";
 import * as insightApi from "../api/insight";
 import { dispatchMetaNotification } from "../metaNotifications";
 import { maybeTriggerMetaAnalysis } from "../metaAnalysisTrigger";
+import { dispatchArchitectNextPriority, dispatchArchitectRedesign } from "./architectDispatch";
 import {
   buildPlanContext,
   getOrCreateReviewBranch,
@@ -407,22 +408,13 @@ export async function processReviewVerdict(
     await planApi.updatePlanPhase(plan.id, "done");
     await planApi.updatePlanStatus(plan.id, "done");
     await planApi.createPlanEvent(plan.id, "review_passed", "reviewer", detail);
-    // Notify Meta — plan cycle finished, user may want next-priority suggestion.
-    // projectKey 는 plan 의 메인 conv 경유해서 찾기
+    // projectKey 는 plan 의 메인 conv 경유해서 찾기 — Tier 2 분석 트리거용.
     let projectKey: string | undefined;
     try {
       const conv = await invoke<{ projectKey?: string }>("get_conversation", { id: plan.conversationId });
       projectKey = conv?.projectKey;
     } catch { /* ignore */ }
-    dispatchMetaNotification({
-      kind: "review_passed",
-      title: `✅ Plan "${plan.title}" 리뷰 통과`,
-      summary: verdict.findings.length > 0
-        ? `minor findings ${verdict.findings.length}건. ${verdict.recommendations[0]?.slice(0, 100) ?? ""}`
-        : "모든 검증 통과 — Done 처리됨",
-      projectKey,
-      route: { tab: "workflow", stage: "done", planId: plan.id },
-    });
+    // Tier 2 분석 (Haiku/Flash brief) 은 보존 — 결과 dispatch kind 는 PR-3 에서 tier2_brief 로 분리.
     if (projectKey) {
       maybeTriggerMetaAnalysis(projectKey, "review_passed", { planTitle: plan.title })
         .catch((e) => console.debug("[meta-trigger]", e));
@@ -448,10 +440,11 @@ export async function processReviewVerdict(
       const { useChatStore } = await import("@/stores/chatStore");
       await useChatStore.getState().loadBranches(plan.conversationId);
     } catch (e) { console.debug("[loadBranches after archive]", e); }
-    // Role separation: plan completion goes to Meta inbox only (dispatchMetaNotification
-    // above + maybeTriggerMetaAnalysis for Tier 2 brief). Architect is NOT auto-invoked —
-    // 'what's next?' is Meta's oversight role, not Architect's design role. User asks
-    // via the inbox entry's askMeta button when they want the next-priority suggestion.
+    // Plan 완료 → Architect 가 main conv 에서 다음 우선순위 제안 prompt 를 자동 수신.
+    // 기존엔 Meta inbox 의 review_passed 알림 + 사용자 클릭 (askMeta) 흐름이었지만,
+    // *plan-cycle 결정* 은 Meta 의 read-only 역할보다 Architect 의 design 역할에 속함.
+    // 사용자 의사결정 burden 제거. Tier 2 brief (Haiku/Flash) 는 별 axis 로 inbox 유지.
+    await dispatchArchitectNextPriority(plan);
   } else if (verdict.verdict === "fail") {
     await planApi.updatePlanPhase(plan.id, "rework");
     await planApi.createPlanEvent(plan.id, "review_failed", "reviewer", detail);
