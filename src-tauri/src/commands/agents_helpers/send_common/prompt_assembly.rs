@@ -483,6 +483,15 @@ pub fn assemble_prompt(
             sections.push(s);
             included_sections.push("findings".into());
         }
+        // RT consensus — Architect dispatch 가 누적 합의를 명시 인계받는 경로
+        // (devbug #263 Task 04). 빈 결과는 None → 섹션 자체 skip (INV-RTC-7/8).
+        if let Some(s) = guardrail::truncate_section(
+            data.rt_consensus_section.clone(),
+            dyn_cap("findings"),
+        ) {
+            sections.push(s);
+            included_sections.push("rt-consensus".into());
+        }
         if let Some(s) = guardrail::truncate_section(
             data.artifacts_section.clone(),
             dyn_cap("artifacts"),
@@ -826,6 +835,7 @@ mod tests {
             plan_document: None,
             findings_section: None,
             artifacts_section: None,
+            rt_consensus_section: None,
             retrieval_chunks: vec![],
             document_chunks: vec![],
             compressed_memory: None,

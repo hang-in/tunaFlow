@@ -35,6 +35,7 @@ mod tests {
             plan_document: None,
             findings_section: None,
             artifacts_section: None,
+            rt_consensus_section: None,
             retrieval_chunks: vec![],
             document_chunks: vec![],
             compressed_memory: None,

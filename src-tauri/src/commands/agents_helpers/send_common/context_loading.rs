@@ -422,6 +422,10 @@ pub struct ContextData {
     pub plan_document: Option<String>,
     pub findings_section: Option<String>,
     pub artifacts_section: Option<String>,
+    /// Roundtable consensus section (devbug #263 Task 04). Architect / single
+    /// agent dispatch 가 RT 누적 합의 (`roundtable_consensus` 테이블) 를 명시
+    /// 인계받게 한다. 빈 결과 시 None — RT 미사용 / 첫 라운드 경로 영향 0.
+    pub rt_consensus_section: Option<String>,
 
     // Retrieval
     pub retrieval_chunks: Vec<crate::commands::context_queries::RetrievedChunk>,
@@ -571,7 +575,19 @@ pub fn load_context_data(
     let has_active_plan: bool = isolated_plan.is_some();
 
     // Query 2: current messages — budget-based dynamic window + per-agent last-message guarantee
-    let current_messages = load_recent_messages_with_author(conn, conversation_id, 20);
+    //
+    // devbug #263 Task 03: RT round 메시지는 *raw transcript* 로 prepend 하지
+    // 않는다. RT 의 누적 합의는 `rt_consensus_section` 에 별 섹션으로 명시
+    // 인계되므로, single agent dispatch 가 RT 라운드 메시지를 *주제별 컨텍스트*
+    // 로 오인하지 않음 (시나리오 A 회복 핵심 path).
+    //
+    // INV-RTC-7/8 (RT 미사용 영향 0): RT 한번도 안 쓴 conv 는 모든 row 의
+    // rt_round_index = NULL → 출력이 기존 동작과 동일.
+    let current_messages = crate::commands::context_queries::load_recent_messages_excluding_rt(
+        conn,
+        conversation_id,
+        20,
+    );
 
     // Query 3: parent messages (branch: parent conv, scratchpad: main chat)
     let parent_messages: Vec<(String, String, Option<String>, Option<String>)> = if is_branch {
@@ -711,6 +727,13 @@ pub fn load_context_data(
 
     let findings_section = build_findings_section(conn, &plan_conv_id);
     let artifacts_section = build_artifact_handoff_section(conn, &plan_conv_id);
+    // RT consensus section (devbug #263 Task 04). Lookup against the live
+    // conversation_id (not plan_conv_id) so brand-shadow conv branches are
+    // covered too via `branch:<id>` JOIN inside the helper.
+    let rt_consensus_section = crate::commands::agents_helpers::context_pack::build_rt_consensus_section(
+        conn,
+        conversation_id,
+    );
 
     // Query 8-9: retrieval chunks (FTS5 + vector hybrid)
     let project_key: Option<String> = conn.query_row(
@@ -941,6 +964,7 @@ pub fn load_context_data(
         plan_document,
         findings_section,
         artifacts_section,
+        rt_consensus_section,
         retrieval_chunks,
         document_chunks,
         compressed_memory,
@@ -1250,6 +1274,7 @@ mod tests {
             plan_document: None,
             findings_section: None,
             artifacts_section: None,
+            rt_consensus_section: None,
             retrieval_chunks: vec![],
             document_chunks: vec![],
             compressed_memory: None,

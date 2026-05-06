@@ -397,6 +397,82 @@ pub fn build_rt_inheritance_section(
     Some(format!("## Roundtable Context\n\n{}", parts.join("\n\n")))
 }
 
+/// Build a `## Roundtable Consensus` section from `roundtable_consensus` rows.
+///
+/// devbug #263 Task 04 — Architect 가 dispatch 받는 ContextPack 에 RT 누적
+/// 합의를 명시 인계하는 helper. 라운드별 합의 항목 (axis / decision /
+/// participants / round_index) 을 prompt 본문에 *"## Roundtable Consensus"*
+/// 섹션으로 조립.
+///
+/// 정책:
+/// - INV-RTC-7/8 (RT 미사용 영향 0): row 0건이면 None 반환 → caller 측 섹션
+///   skip → ContextPack 변경 0
+/// - INV-RTC-4 (기존 ContextPack 섹션 보존): build_findings_section 의
+///   `roundtable_brief` LIMIT 3 fallback 은 보조로 그대로 호출 — 본 helper 는
+///   *추가 섹션* 만, 기존 섹션 변경 0
+/// - 토큰 budget 가드: 라운드별 decision 600자 truncate, 한 conv 의 모든
+///   누적 합의를 보여주되 한 합의가 prompt 본문 잠식하지 않게
+/// - branch shadow conv 도 cover: `roundtable_consensus.conversation_id` 가
+///   `branch:<id>` 형식이면 부모 conv 의 합의도 collect (RT 가 brand session
+///   에서 진행된 케이스)
+pub fn build_rt_consensus_section(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+) -> Option<String> {
+    // Collect from this conv + any branch-shadow convs whose parent is this conv.
+    let mut stmt = conn
+        .prepare(
+            "SELECT round_index, axis, decision, participants
+               FROM roundtable_consensus
+              WHERE conversation_id = ?1
+                 OR conversation_id IN (
+                    SELECT 'branch:' || id FROM branches WHERE conversation_id = ?1
+                 )
+              ORDER BY round_index ASC, created_at ASC",
+        )
+        .ok()?;
+
+    let rows: Vec<(i64, String, String, String)> = stmt
+        .query_map([conversation_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .ok()?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if rows.is_empty() {
+        return None;
+    }
+
+    let mut lines: Vec<String> = Vec::with_capacity(rows.len());
+    for (round_index, axis, decision, participants_json) in rows {
+        let decision_truncated = truncate_str(&decision, 600);
+        let participants: Vec<String> =
+            serde_json::from_str::<Vec<String>>(&participants_json).unwrap_or_default();
+        let by = if participants.is_empty() {
+            String::new()
+        } else {
+            format!(" _(by {})_", participants.join(", "))
+        };
+        lines.push(format!(
+            "- **R{}** **{}**{}: {}",
+            round_index, axis, by, decision_truncated
+        ));
+    }
+
+    Some(format!(
+        "## Roundtable Consensus\n\n\
+         These axes are *already agreed* in roundtable rounds — Architect / single\n\
+         agent dispatch builds on top of these without re-litigating.\n\n{}",
+        lines.join("\n")
+    ))
+}
+
 // ─── Layer A′ tests: brand-aware plan lookup ─────────────────────────────────
 
 #[cfg(test)]
@@ -510,5 +586,111 @@ mod plan_isolation_tests {
 
         let r = lookup_plan_for_conversation(&conn, "conv-main").unwrap();
         assert_eq!(r.1, "main-plan");
+    }
+}
+
+// ─── RT consensus section tests (devbug #263 Task 04) ─────────────────────
+#[cfg(test)]
+mod rt_consensus_tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn build_db_with_rt() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE conversations (id TEXT PRIMARY KEY);
+             CREATE TABLE branches (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL
+             );
+             CREATE TABLE roundtable_consensus (
+                id              TEXT    PRIMARY KEY,
+                conversation_id TEXT    NOT NULL,
+                round_index     INTEGER NOT NULL,
+                axis            TEXT    NOT NULL,
+                decision        TEXT    NOT NULL,
+                participants    TEXT    NOT NULL DEFAULT '[]',
+                confidence      REAL    NOT NULL DEFAULT 0.0,
+                created_at      INTEGER NOT NULL
+             );
+             INSERT INTO conversations (id) VALUES ('conv-main');
+             INSERT INTO conversations (id) VALUES ('conv-other');",
+        )
+        .unwrap();
+        conn
+    }
+
+    /// Architect dispatch 가 받는 ContextPack 에 RT 누적 합의가 *"## Roundtable
+    /// Consensus"* 섹션으로 등장 — Plan §3 Task 04 의 핵심 회귀 가드.
+    #[test]
+    fn architect_context_pack_includes_consensus_section() {
+        let conn = build_db_with_rt();
+        // 라운드 1, 2 에서 axis 별 합의 누적
+        conn.execute_batch(
+            "INSERT INTO roundtable_consensus
+                (id, conversation_id, round_index, axis, decision, participants, confidence, created_at)
+              VALUES
+                ('c1', 'conv-main', 1, 'compression', 'Lite/Standard/Full automode', '[\"claude\",\"codex\"]', 0.9, 100),
+                ('c2', 'conv-main', 2, 'budget', 'dynamic per-section budget', '[\"gemini\"]', 0.85, 200);",
+        ).unwrap();
+
+        let result = build_rt_consensus_section(&conn, "conv-main").unwrap();
+        assert!(result.starts_with("## Roundtable Consensus"));
+        assert!(result.contains("**R1** **compression**"));
+        assert!(result.contains("Lite/Standard/Full automode"));
+        assert!(result.contains("**R2** **budget**"));
+        assert!(result.contains("by claude, codex"));
+        assert!(result.contains("by gemini"));
+    }
+
+    /// 빈 결과 (RT 미진행 / 다른 conv) → None — Architect ContextPack 에서
+    /// 섹션 자체 skip (INV-RTC-7/8 fast path).
+    #[test]
+    fn empty_consensus_returns_none() {
+        let conn = build_db_with_rt();
+        // conv-other 는 합의 row 없음
+        let result = build_rt_consensus_section(&conn, "conv-other");
+        assert!(result.is_none());
+    }
+
+    /// 다른 conversation 의 합의가 누설되지 않음 — INV-RTC-7 격리.
+    #[test]
+    fn consensus_isolated_per_conversation() {
+        let conn = build_db_with_rt();
+        conn.execute_batch(
+            "INSERT INTO roundtable_consensus
+                (id, conversation_id, round_index, axis, decision, participants, confidence, created_at)
+              VALUES
+                ('c1', 'conv-main',  1, 'A', 'main A', '[]', 0.8, 100),
+                ('c2', 'conv-other', 1, 'B', 'other B', '[]', 0.8, 100);",
+        )
+        .unwrap();
+
+        let main_result = build_rt_consensus_section(&conn, "conv-main").unwrap();
+        assert!(main_result.contains("**A**"));
+        assert!(!main_result.contains("**B**"));
+
+        let other_result = build_rt_consensus_section(&conn, "conv-other").unwrap();
+        assert!(other_result.contains("**B**"));
+        assert!(!other_result.contains("**A**"));
+    }
+
+    /// branch shadow conv 의 RT 도 부모 conv 검색에 포함 — branch 에서 RT
+    /// 진행 후 main conv Architect dispatch 시 합의 인계.
+    #[test]
+    fn consensus_includes_branch_shadow_conversations() {
+        let conn = build_db_with_rt();
+        conn.execute_batch(
+            "INSERT INTO branches (id, conversation_id) VALUES ('br-1', 'conv-main');
+             INSERT INTO conversations (id) VALUES ('branch:br-1');
+             INSERT INTO roundtable_consensus
+                (id, conversation_id, round_index, axis, decision, participants, confidence, created_at)
+              VALUES
+                ('c1', 'branch:br-1', 1, 'branch-axis', 'branch decision', '[]', 0.7, 100);",
+        )
+        .unwrap();
+
+        let result = build_rt_consensus_section(&conn, "conv-main").unwrap();
+        assert!(result.contains("**branch-axis**"));
     }
 }
