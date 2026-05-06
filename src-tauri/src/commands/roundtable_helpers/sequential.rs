@@ -10,8 +10,10 @@ use super::executor::{
     RtContextCache, RtVectorIndex, RtParticipantStatus, RoundtableParticipant,
     SessionMap, stream_participant, participant_identity,
 };
-use super::prompt::{build_round_prompt_with_identity, build_round_prompt_with_vector_context, PromptSources};
-use super::persist::{persist_streaming_start, persist_streaming_done};
+use super::prompt::{
+    build_round_prompt_with_consensus, build_round_prompt_with_vector_context, PromptSources,
+};
+use super::persist::{load_consensus, persist_streaming_start, persist_streaming_done};
 
 /// Sequential: run participants one by one. Each sees prior-round + current-round context.
 pub async fn execute_sequential(
@@ -40,6 +42,13 @@ pub async fn execute_sequential(
             eprintln!("[rt] vector index built: {} entries from prior transcript", vec_index.entries_len());
         }
     }
+
+    // Load prior consensus once per round — round 1 returns empty (fast path).
+    // INV-RTC-7/8: RT 미진행 / 첫 라운드 영향 0.
+    let prior_consensus = {
+        let conn = state.write.lock().map_err(|_| AppError::Lock)?;
+        load_consensus(&conn, conversation_id)
+    };
 
     for p in participants {
         if cancel.check_and_consume(conversation_id) {
@@ -77,13 +86,19 @@ pub async fn execute_sequential(
         let identity = participant_identity(p);
         let mut prompt = if p.blind {
             eprintln!("[rt] blind verifier: {} — no transcript", p.name);
-            build_round_prompt_with_identity(topic, &[], &[], Some(&identity))
+            // Blind 도 prior consensus 는 보여줘야 *이미 합의된 axis 재시도* 차단.
+            build_round_prompt_with_consensus(topic, &[], &[], Some(&identity), &prior_consensus)
         } else if !vec_index.is_empty() {
             let vec_ctx = vec_index.search(topic, 5);
             eprintln!("[rt] {} using vector context: {} chunks (vs {} full transcript)", p.name, vec_ctx.len(), transcript.len());
-            build_round_prompt_with_vector_context(topic, &vec_ctx, &round_responses, Some(&identity))
+            // Vector path 는 prior_consensus 를 prompt body 앞단에 직접 prepend
+            // (vector helper 의 시그니처를 INV-RTC-2 보존 위해 그대로 둠).
+            let base = build_round_prompt_with_vector_context(topic, &vec_ctx, &round_responses, Some(&identity));
+            prepend_consensus_if_any(base, &prior_consensus)
         } else {
-            build_round_prompt_with_identity(topic, transcript, &round_responses, Some(&identity))
+            build_round_prompt_with_consensus(
+                topic, transcript, &round_responses, Some(&identity), &prior_consensus,
+            )
         };
         if let Some(ctx) = ctx_cache.get(engine_key) {
             prompt = format!("{}\n\n---\n\n{}", ctx, prompt);
@@ -121,4 +136,40 @@ pub async fn execute_sequential(
     }
 
     Ok((messages, round_responses))
+}
+
+/// Prepend prior-consensus section to an existing prompt body (used in vector
+/// context path so the synthesizer / participants see *already agreed axes*
+/// before reading vector-retrieved chunks). Empty list → original prompt
+/// unchanged (INV-RTC-7/8 fast path).
+fn prepend_consensus_if_any(
+    prompt: String,
+    prior_consensus: &[(u32, super::persist::ConsensusItem)],
+) -> String {
+    if prior_consensus.is_empty() {
+        return prompt;
+    }
+    let mut lines: Vec<String> = Vec::with_capacity(prior_consensus.len());
+    for (round, item) in prior_consensus {
+        let decision = if item.decision.len() > 600 {
+            let safe = item
+                .decision
+                .char_indices()
+                .map(|(i, _)| i)
+                .take_while(|&i| i <= 597)
+                .last()
+                .unwrap_or(0);
+            format!("{}...", &item.decision[..safe])
+        } else {
+            item.decision.clone()
+        };
+        lines.push(format!("- **{}** (R{}): {}", item.axis, round, decision));
+    }
+    format!(
+        "## Consensus reached so far\n\n\
+         These axes are *already agreed* in prior rounds — do NOT re-litigate them.\n\
+         Build on top of these, or address only *new* axes:\n\n{}\n\n---\n\n{}",
+        lines.join("\n"),
+        prompt
+    )
 }

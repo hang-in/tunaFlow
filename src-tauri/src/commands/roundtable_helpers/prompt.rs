@@ -35,11 +35,73 @@ pub fn build_round_prompt_with_identity(
     current_round: &[(String, String)],
     identity: Option<&str>,
 ) -> String {
+    build_round_prompt_full(topic, transcript, current_round, identity, &[])
+}
+
+/// Format prior consensus items as a synthesizer-readable bullet section.
+///
+/// Round N+1 의 prompt 에 *"라운드 1~N 에서 이미 합의된 axis"* 명시 포함 →
+/// synthesizer / 참여자가 같은 합의를 다시 시도하지 않게 차단 (devbug #263
+/// 시나리오 B 회복 핵심 path).
+///
+/// 각 row: `- **<axis>** (R<round_index>): <decision>` — axis / round_index 가
+/// machine-readable 하면서도 자연어 prompt 친화적.
+fn format_consensus_section(
+    consensus: &[(u32, super::persist::ConsensusItem)],
+) -> Option<String> {
+    if consensus.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<String> = Vec::with_capacity(consensus.len());
+    for (round, item) in consensus {
+        // truncate decision to keep prompt budget under control
+        let decision = truncate(&item.decision, 600);
+        lines.push(format!("- **{}** (R{}): {}", item.axis, round, decision));
+    }
+    Some(format!(
+        "## Consensus reached so far\n\n\
+         These axes are *already agreed* in prior rounds — do NOT re-litigate them.\n\
+         Build on top of these, or address only *new* axes:\n\n{}",
+        lines.join("\n")
+    ))
+}
+
+/// Build prompt with prior consensus injected — Plan B Task 02 path.
+///
+/// Round N+1 시점에 라운드 1~N 의 누적 합의 (`(round_index, ConsensusItem)`
+/// list) 를 prompt 본문에 *"## Consensus reached so far"* 섹션으로 명시 포함.
+///
+/// 빈 consensus list 시 기존 `build_round_prompt_with_identity()` 와 동작 동일
+/// (INV-RTC-7/8: RT 미진행 / 첫 라운드 영향 0).
+pub fn build_round_prompt_with_consensus(
+    topic: &str,
+    transcript: &[(String, String)],
+    current_round: &[(String, String)],
+    identity: Option<&str>,
+    prior_consensus: &[(u32, super::persist::ConsensusItem)],
+) -> String {
+    build_round_prompt_full(topic, transcript, current_round, identity, prior_consensus)
+}
+
+/// Internal — full assembly with all optional sections.
+fn build_round_prompt_full(
+    topic: &str,
+    transcript: &[(String, String)],
+    current_round: &[(String, String)],
+    identity: Option<&str>,
+    prior_consensus: &[(u32, super::persist::ConsensusItem)],
+) -> String {
     let mut sections: Vec<String> = Vec::new();
 
     // Participant identity — tells the agent who it is in this roundtable
     if let Some(id) = identity {
         sections.push(id.to_string());
+    }
+
+    // Prior consensus — *before* round transcripts so the agent knows the
+    // already-agreed axes before reading raw round responses (devbug #263).
+    if let Some(consensus) = format_consensus_section(prior_consensus) {
+        sections.push(consensus);
     }
 
     if !transcript.is_empty() {
@@ -314,5 +376,58 @@ mod tests {
         let json = serde_json::to_string(&sources).unwrap();
         assert!(json.contains("\"mode\":\"deliberative\""));
         assert!(json.contains("\"currentRoundRefs\":[]"));
+    }
+
+    // ─── Prior consensus injection (devbug #263 Task 02) ────────────────────
+
+    /// Round N+1 prompt 에 라운드 1~N 누적 합의가 *"## Consensus reached so far"*
+    /// 섹션으로 등장하는지 검증 — Plan §3 Task 02 의 핵심 e2e 가드.
+    #[test]
+    fn next_round_prompt_includes_prior_consensus() {
+        use super::super::persist::ConsensusItem;
+        let prior = vec![
+            (
+                1u32,
+                ConsensusItem {
+                    axis: "compression".into(),
+                    decision: "Lite/Standard/Full automode preserved.".into(),
+                    participants: vec!["claude".into(), "codex".into()],
+                    confidence: 0.9,
+                },
+            ),
+            (
+                2u32,
+                ConsensusItem {
+                    axis: "budget".into(),
+                    decision: "dynamic per-section budget.".into(),
+                    participants: vec!["gemini".into()],
+                    confidence: 0.85,
+                },
+            ),
+        ];
+
+        let result = build_round_prompt_with_consensus(
+            "round 3 topic", &[], &[], Some("identity"), &prior,
+        );
+
+        assert!(result.contains("## Consensus reached so far"));
+        assert!(result.contains("**compression** (R1)"));
+        assert!(result.contains("**budget** (R2)"));
+        assert!(result.contains("Lite/Standard/Full automode preserved."));
+        // already-agreed 안내 문구가 모델 prompt 에 등장 — 같은 합의 재시도 차단.
+        assert!(result.contains("already agreed"));
+        // 기존 topic 영역도 보존
+        assert!(result.contains("round 3 topic"));
+    }
+
+    /// 빈 prior_consensus 입력 시 기존 동작과 동일 — INV-RTC-7/8 fast path.
+    #[test]
+    fn empty_consensus_preserves_legacy_behavior() {
+        let with_consensus = build_round_prompt_with_consensus(
+            "topic", &[], &[], Some("identity"), &[],
+        );
+        let legacy = build_round_prompt_with_identity("topic", &[], &[], Some("identity"));
+        assert_eq!(with_consensus, legacy);
+        assert!(!with_consensus.contains("Consensus reached so far"));
     }
 }
