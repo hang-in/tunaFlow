@@ -160,6 +160,9 @@ pub fn assemble_prompt(
         guardrail::SectionBudget { name: "plan",       content_len: data.plan_section.as_ref().map_or(0, |s| s.len()),     weight: 1.5, min_chars: 500,  max_chars: guardrail::MAX_PLAN_SECTION },
         guardrail::SectionBudget { name: "plan-doc",   content_len: data.plan_document.as_ref().map_or(0, |s| s.len()),    weight: 2.0, min_chars: 1000, max_chars: 6000 },
         guardrail::SectionBudget { name: "findings",   content_len: data.findings_section.as_ref().map_or(0, |s| s.len()), weight: 1.2, min_chars: 500,  max_chars: guardrail::MAX_FINDINGS_SECTION },
+        // RT consensus 는 findings 와 동일 weight + min_chars (devbug #263 Task 04).
+        // 라운드별 1줄 axis 누적 → 일반적으로 짧음, MAX_FINDINGS_SECTION 안에서 충분.
+        guardrail::SectionBudget { name: "rt-consensus", content_len: data.rt_consensus_section.as_ref().map_or(0, |s| s.len()), weight: 1.2, min_chars: 500, max_chars: guardrail::MAX_FINDINGS_SECTION },
         guardrail::SectionBudget { name: "artifacts",  content_len: data.artifacts_section.as_ref().map_or(0, |s| s.len()),weight: 1.0, min_chars: 300,  max_chars: guardrail::MAX_ARTIFACTS_SECTION },
         // Supplementary sources
         guardrail::SectionBudget { name: "skills",     content_len: if data.active_skills.is_empty() { 0 } else { 2000 },  weight: 0.8, min_chars: 500,  max_chars: guardrail::MAX_SKILLS_SECTION },
@@ -487,7 +490,7 @@ pub fn assemble_prompt(
         // (devbug #263 Task 04). 빈 결과는 None → 섹션 자체 skip (INV-RTC-7/8).
         if let Some(s) = guardrail::truncate_section(
             data.rt_consensus_section.clone(),
-            dyn_cap("findings"),
+            dyn_cap("rt-consensus"),
         ) {
             sections.push(s);
             included_sections.push("rt-consensus".into());
@@ -1141,5 +1144,68 @@ mod tests {
             "engine 만 있는 케이스에도 sender 줄 출력: {}", assembled
         );
         assert!(!assembled.contains("persona="));
+    }
+
+    // ─── RT consensus integration (devbug #263 Task 04+05) ─────────────────
+
+    /// Architect dispatch path 의 통합 검증: ContextData.rt_consensus_section
+    /// 이 채워져 있으면 prompt 본문에 *"## Roundtable Consensus"* 섹션 등장 +
+    /// `meta.sections` 에 `rt-consensus` 라벨 등장. 시나리오 C 회복 e2e 가드.
+    #[test]
+    fn rt_consensus_section_assembled_into_prompt_and_meta() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.rt_consensus_section = Some(
+            "## Roundtable Consensus\n\n\
+             These axes are *already agreed* in roundtable rounds — Architect / single\n\
+             agent dispatch builds on top of these without re-litigating.\n\n\
+             - **R1** **compression** _(by claude, codex)_: Lite/Standard/Full automode\n\
+             - **R2** **budget** _(by gemini)_: dynamic per-section budget"
+                .into(),
+        );
+        data.context_mode_override = Some("standard".into());
+
+        let (assembled, _sys, meta) = assemble_prompt(&data, None);
+
+        assert!(
+            meta.sections.contains(&"rt-consensus".to_string()),
+            "meta.sections 에 rt-consensus 라벨 등장해야: {:?}", meta.sections,
+        );
+        assert!(
+            assembled.contains("## Roundtable Consensus"),
+            "prompt 본문에 RT 합의 섹션 헤딩 등장: {}", assembled,
+        );
+        assert!(
+            assembled.contains("**R1** **compression**"),
+            "라운드별 axis 누적 list 등장",
+        );
+        assert!(
+            assembled.contains("**R2** **budget**"),
+            "라운드 2 합의도 그대로 인계",
+        );
+        assert!(
+            assembled.contains("Lite/Standard/Full automode"),
+            "decision 본문 truncate 안 됨 (짧은 결정)",
+        );
+    }
+
+    /// rt_consensus_section None → meta 에 rt-consensus 부재 (INV-RTC-7/8 fast
+    /// path). RT 미사용 / 첫 라운드 영향 0.
+    #[test]
+    fn empty_rt_consensus_skips_section() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.rt_consensus_section = None;
+        data.context_mode_override = Some("standard".into());
+
+        let (assembled, _sys, meta) = assemble_prompt(&data, None);
+        assert!(
+            !meta.sections.contains(&"rt-consensus".to_string()),
+            "rt-consensus 섹션 미등장 — RT 미사용 fast path",
+        );
+        assert!(
+            !assembled.contains("Roundtable Consensus"),
+            "prompt 본문에도 RT 합의 섹션 부재",
+        );
     }
 }
