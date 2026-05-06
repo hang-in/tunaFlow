@@ -161,6 +161,22 @@ devbug 외부 사용자에게 진행 상황 안내:
 - 시나리오 검증 결과 (사용자 환경에서 재현되는지) 사용자 회신 받으면 plan §0.3 가설 확정/탈락 확정
 - 시나리오 자체에 *"환경 차이로 재현 안 되는 항목"* 발견 시 별 추가 issue 분기
 
-## 7. 변경 이력
+## 7. Fix 후 회복 결과 (PR-1 + PR-2 + PR-3 머지)
+
+| 시나리오 | Fix 진입점 | 회복 메커니즘 | 회귀 가드 unit test |
+|---|---|---|---|
+| **A** (단일 질의 시 합의 무시) | PR-2 Task 03 | `messages.rt_round_index` 컬럼 + `load_recent_messages_excluding_rt()` 가 single agent dispatch 시 RT round transcript 를 *주제별 컨텍스트* 영역에서 제외. 합의는 PR-2 Task 04 의 `build_rt_consensus_section()` 으로 별 섹션 인계 | `single_agent_dispatch_skips_rt_transcript`, `legacy_loader_includes_rt_messages`, `architect_context_pack_includes_consensus_section` |
+| **B** (라운드 길어지면 합의 망각) | PR-1 Task 02 | `roundtable_consensus` 테이블 영구화 + synthesizer 가 `<!-- tunaflow:consensus -->` JSON fence 또는 `## Agreed axes` markdown 으로 합의 추출 → `save_consensus()` row 누적 → 라운드 N+1 prompt 의 *"## Consensus reached so far"* 섹션이 라운드 1~N 합의 명시 포함 | `consensus_persisted_across_rounds`, `consensus_isolated_per_conversation`, `next_round_prompt_includes_prior_consensus`, `extract_consensus_from_json_marker`, `extract_consensus_from_markdown_fallback` |
+| **C** (Architect 가 RT 대화 내역 접근 못 함) | PR-2 Task 04 | `build_rt_consensus_section()` 이 `roundtable_consensus` 테이블 조회 → ContextPack assembly 의 findings 다음에 *"## Roundtable Consensus"* 섹션 push. branch shadow conv 도 부모 conv 검색에 cover | `architect_context_pack_includes_consensus_section`, `consensus_includes_branch_shadow_conversations`, `rt_consensus_section_assembled_into_prompt_and_meta` |
+
+회귀 가드 e2e (사용자 환경 검증으로 위임):
+- 시나리오 A 의 *실 동작 환각 표면* (단일 질의가 라운드 재실행 흉내) 가 fix 후 *"단일 에이전트가 합의 인지 + follow-up answer"* 로 회복되는지
+- 시나리오 B 의 *5 라운드 이상 진행 시* 같은 합의 재시도 환각이 사라지는지
+- 시나리오 C 의 *Architect 응답에 라운드 1~N 누적 합의 + 참여자 의견 등장* 하는지
+
+위 3 영역은 mcp 환경 차단으로 Architect 직접 e2e 캡처 불가 — v0.1.7-beta release 후 사용자 (devbug) 환경 e2e 검증으로 최종 확인 (Plan §6 / 핸드오프 §5).
+
+## 8. 변경 이력
 
 - 2026-05-07 초안 작성 (devbug #263 보고 직후, plan 작성 동시 시점)
+- 2026-05-07 PR-1 (#265) + PR-2 (#266) + PR-3 머지 후 §7 Fix 후 회복 결과 추가

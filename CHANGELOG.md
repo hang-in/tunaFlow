@@ -4,6 +4,58 @@ All notable changes to tunaFlow are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+**Roundtable 합의 영구화 + RT marker 격리 + Architect ContextPack 인계** —
+외부 사용자 (devbug, [#263](https://github.com/hang-in/tunaFlow/issues/263))
+보고 회복. RT 환각/오동작 3 영역 (라운드 간 합의 망각 / main conv 단일
+dispatch 시 합의 무시 / Architect 가 RT 대화 내역 접근 못 함) 의 root cause
+3중 복합 fix. *"사용자 RT 사용 포기"* 단계 → 정상 사용 회복 path 도입.
+
+### Added
+
+- **`roundtable_consensus` 테이블** (DB migration v50) — RT round 간 axis
+  별 합의 항목을 영구 누적. 컬럼: id / conversation_id / round_index / axis /
+  decision / participants(json) / confidence / created_at. INDEX:
+  `idx_roundtable_consensus_conv_round`.
+- **합의 추출 helper** — synthesizer 응답에서 `<!-- tunaflow:consensus -->`
+  JSON fence (primary) 또는 `## Agreed axes` markdown bullet (fallback) 으로
+  axis 추출 후 `roundtable_consensus` row 누적.
+- **synthesizer prompt 의 *"## Consensus reached so far"* 섹션** — 라운드
+  N+1 의 synthesizer + 참여자 prompt 에 라운드 1~N 의 누적 합의 명시 포함.
+  같은 합의 재시도 환각 차단 (시나리오 B 회복 핵심 path).
+- **`messages.rt_round_index` 컬럼** (DB migration v51, nullable) — RT round
+  헤더 + 참여자 메시지 + synthesizer 헤더에 round_num 기록. 부분 INDEX
+  `idx_messages_rt_round`.
+- **`load_recent_messages_excluding_rt()` helper** — single agent dispatch
+  시 ContextPack 의 `current_messages` 가 RT round transcript 를 *주제별
+  컨텍스트* 로 prepend 하지 않음 (시나리오 A 회복 핵심 path).
+- **`build_rt_consensus_section()` helper** — Architect dispatch / single
+  agent dispatch 가 받는 ContextPack 에 *"## Roundtable Consensus"* 섹션
+  명시 인계. 라운드별 axis / decision / participants 누적 list (시나리오
+  C 회복 핵심 path). branch shadow conv 도 cover.
+
+### Fixed
+
+- **시나리오 A** (#263 보고 #1) — RT 진행 중 단일 에이전트 follow-up 질의
+  시 *라운드 재실행 흉내* / *합의 부정* 환각 회복. ContextPack 이 RT round
+  transcript 를 transcript 영역에서 제외하고 합의는 별 섹션으로 인계.
+- **시나리오 B** (#263 보고 #2) — RT 5 라운드 이상 진행 시 *같은 합의
+  재시도* / *3 fail 임계값 누적* / *사용자 fallback 영구 반복* 회복. 누적
+  합의가 synthesizer + 참여자 prompt 에 명시 등장.
+- **시나리오 C** (#263 보고 #3) — RT 종료 후 Architect dispatch 시 *마지막
+  라운드만 정리* 회복. 라운드별 누적 합의 + 참여자 의견 명시 인계.
+
+### Notes
+
+- DB migration v50 + v51 자동 진행. 기존 사용자 데이터 보존 (기존
+  `roundtable_brief` memo / messages 의 NULL `rt_round_index` 모두 그대로).
+- INV-RTC-1~8 모두 보존: round 본체 알고리즘 / Voting + MoA Synthesizer
+  본체 / conv 공유 정책 / 기존 ContextPack 섹션 / branchSessionPolicy
+  INV-1~5 / migration destructive 금지 / RT 미사용 영향 0.
+- Frontend 변경 0 (backend 영역). 사용자 가시 변화는 *RT 진행 동작 회복*
+  으로 표면됨.
+
 ## [0.1.6-beta] - 2026-05-04
 
 **Workflow architectural change** — Reviewer verdict 처리 책임이 Meta-agent inbox

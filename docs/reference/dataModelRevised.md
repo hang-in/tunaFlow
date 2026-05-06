@@ -323,6 +323,40 @@ tools:
 
 ---
 
+### 1.11 RoundtableConsensus
+
+**정의**: Roundtable (RT) 라운드에서 도달한 axis 별 합의 항목. 라운드 간 누적 영구화.
+
+**책임**: 라운드 N+1 의 synthesizer + 참여자 prompt 에 *"이미 합의된 axis"* 명시 인계 + Architect dispatch 시 ContextPack 의 *"## Roundtable Consensus"* 섹션 인계 (devbug #263 회복).
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| id | string (PK) | UUID |
+| conversationId | string (FK→Conversation) | RT 진행 conv (또는 brand shadow `branch:<id>`) |
+| roundIndex | integer | 합의 도달 라운드 번호 (1..N) |
+| axis | string | 합의 주제 키워드 (예: *"compression"*, *"budget"*) |
+| decision | string | 1~3 문장 합의 요약 (synthesizer 추출) |
+| participants | string[] (JSON) | 합의 참여자 이름 list (예: `["claude","codex"]`) |
+| confidence | real (0.0-1.0) | synthesizer 의 합의 신뢰도 판단 |
+| createdAt | integer (epoch ms) | persist 시각 |
+
+**저장**: SQLite `roundtable_consensus` 테이블 (DB migration v50, 2026-05-07).
+INDEX: `idx_roundtable_consensus_conv_round (conversation_id, round_index)`.
+
+**관련 컬럼**: `messages.rt_round_index` (DB migration v51, nullable) — RT round
+헤더 + 참여자 메시지 + synthesizer 헤더에 round_num 기록. ContextPack 의
+`load_recent_messages_excluding_rt()` 가 `rt_round_index IS NULL` 만 collect →
+single agent dispatch 가 RT round transcript 를 *주제별 컨텍스트* 로 prepend
+하지 않음 (시나리오 A 회복).
+
+**근거**: `src-tauri/src/db/migrations.rs:apply_v50/apply_v51`,
+`src-tauri/src/commands/roundtable_helpers/persist.rs:save_consensus/load_consensus/extract_consensus_items`,
+`src-tauri/src/commands/agents_helpers/context_pack/db_queries.rs:build_rt_consensus_section`,
+Plan: `docs/plans/roundtableConsensusPersistencePlan_2026-05-07.md`,
+시나리오: `docs/reference/roundtableReproductionScenarios_2026-05-07.md`
+
+---
+
 ## 2. Relationship Model
 
 ```text
@@ -489,10 +523,11 @@ ContextPack                              (인메모리 조합, 실행 시점에 
 |--------|--------|------|-----------|
 | `projects` | Project | V1 | PK: key |
 | `conversations` | Conversation | V1 (+V2: resume_token) | (project_key), (updated_at DESC) |
-| `messages` | Message | V1 | (conversation_id, timestamp) |
+| `messages` | Message | V1 (+V51: rt_round_index) | (conversation_id, timestamp), (conversation_id, rt_round_index) WHERE NOT NULL |
 | `branches` | Branch | V1 | (conversation_id), (session_id) |
 | `messages_fts` | Message (검색) | V1 (스키마만, 미사용) | FTS5 가상 테이블 |
 | `memos` | Memo | V1 | (project_key), (message_id) |
+| `roundtable_consensus` | RoundtableConsensus | V50 | (conversation_id, round_index) |
 | `artifacts` | Artifact | V1 | (conversation_id) |
 | `trace_log` | TraceEntry | V1 (스키마만, 미사용) | (conversation_id) |
 | `schema_version` | 마이그레이션 추적 | V0 | PK: version |
