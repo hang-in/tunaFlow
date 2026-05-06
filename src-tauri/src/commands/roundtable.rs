@@ -14,7 +14,7 @@ use super::roundtable_helpers::executor::{
     execute_round, RoundStrategy, RoundtableParticipant, SessionMap,
 };
 use super::roundtable_helpers::persist::{
-    archive_transcript, extract_consensus_items, load_consensus, persist_header,
+    archive_transcript, extract_consensus_items, load_consensus, persist_header_with_round,
     save_consensus, save_shared_brief,
 };
 use super::agents_helpers::trace_log::{insert_trace_log, new_trace_id, new_span_id, SpanInfo};
@@ -107,10 +107,14 @@ async fn run_synthesizer_after_round(
     };
 
     // Emit a header message to delimit the synthesizer output in the transcript.
+    // Synthesizer 는 round_num + 1 의 결과로 취급 — single dispatch 시 ContextPack
+    // 이 RT 메시지로 인지 가능 (devbug #263 Task 03).
     let header_content = format!("--- Synthesizer · {} reviewer verdicts ---", round_responses.len());
     let _ = {
         let conn = state.write.lock().ok()?;
-        super::roundtable_helpers::persist::persist_header(&conn, conversation_id, &header_content)
+        super::roundtable_helpers::persist::persist_header_with_round(
+            &conn, conversation_id, &header_content, Some(round_num + 1),
+        )
             .ok()
             .map(|h| {
                 let _ = app.emit("roundtable:progress", &h);
@@ -288,7 +292,7 @@ pub async fn roundtable_run(
         )?;
 
         let header = format!("--- Round 1 · {} · {} ---", mode_label, names);
-        let header_msg = persist_header(&conn, &input.conversation_id, &header)?;
+        let header_msg = persist_header_with_round(&conn, &input.conversation_id, &header, Some(1))?;
         let _ = app.emit("roundtable:progress", &header_msg);
         all_messages.push(header_msg);
     }
@@ -393,7 +397,7 @@ pub async fn roundtable_followup(
 
         round_num = next_round_number(&conn, &input.conversation_id);
         let header = format!("--- Round {} · {} · {} ---", round_num, mode_label, names);
-        let header_msg = persist_header(&conn, &input.conversation_id, &header)?;
+        let header_msg = persist_header_with_round(&conn, &input.conversation_id, &header, Some(round_num))?;
         let _ = app.emit("roundtable:progress", &header_msg);
         all_messages.push(header_msg);
     }
@@ -499,7 +503,7 @@ pub async fn start_roundtable_run(
         conn.execute("INSERT INTO messages (id, conversation_id, role, content, timestamp, status) VALUES (?1, ?2, 'user', ?3, ?4, 'done')", params![id, input.conversation_id, input.prompt, now])?;
 
         let header = format!("--- Round 1 · {} · {} ---", mode_label, names);
-        let header_msg = persist_header(&conn, &input.conversation_id, &header)?;
+        let header_msg = persist_header_with_round(&conn, &input.conversation_id, &header, Some(1))?;
         let _ = app.emit("roundtable:progress", &header_msg);
         (ep, pp, header_msg.id)
     };
@@ -614,7 +618,7 @@ pub async fn start_roundtable_followup(
 
         let rn = next_round_number(&conn, &input.conversation_id);
         let header = format!("--- Round {} · {} · {} ---", rn, mode_label, names);
-        let header_msg = persist_header(&conn, &input.conversation_id, &header)?;
+        let header_msg = persist_header_with_round(&conn, &input.conversation_id, &header, Some(rn))?;
         let _ = app.emit("roundtable:progress", &header_msg);
         (prior, rn, pp, header_msg.id)
     };

@@ -175,6 +175,9 @@ pub fn run(conn: &mut Connection) -> Result<(), AppError> {
     if current < 50 {
         apply_v50(conn)?;
     }
+    if current < 51 {
+        apply_v51(conn)?;
+    }
     Ok(())
 }
 
@@ -1372,6 +1375,39 @@ fn apply_v50(conn: &Connection) -> Result<(), AppError> {
     Ok(())
 }
 
+/// v51 — Roundtable round marker on messages (devbug #263 Task 03).
+///
+/// 배경: RT 와 main conv 가 동일 conversation_id 를 공유 (INV-RTC-3). RT 가
+/// 진행 중일 때 main conv 에서 *모든 에이전트 선택 해제* 후 단일 에이전트
+/// dispatch 시, ContextPack 이 RT round 메시지 (synthesizer / 참여자 / round
+/// header) 를 *주제별 컨텍스트* 인지 *RT 라운드 안* 인지 구분 못 함 → 단일
+/// 에이전트가 *라운드 재실행 흉내* 응답 (시나리오 A 회귀).
+///
+/// 본 migration 은 `messages.rt_round_index` (nullable) 컬럼을 추가만 한다.
+/// RT 안에서 저장된 메시지는 round_num 기록 → ContextPack 의 *single agent
+/// dispatch* 가 그 메시지를 *raw transcript* 로 prepend 하지 않게 helper 가
+/// 필터 (Plan §3 Task 03).
+///
+/// 정책:
+/// - INV-RTC-3 (conv 공유 보존): 별 conv 분리 안 함
+/// - INV-RTC-7 (RT 미사용 영향 0): 컬럼 NULL 이면 기존 동작 그대로
+/// - 후방 호환: 기존 메시지 row 의 rt_round_index 는 NULL → ContextPack 이
+///   *main conv 메시지* 로 처리 (시나리오 A 회복 path 가 fix 후 RT 안에서
+///   저장되는 메시지부터 적용)
+fn apply_v51(conn: &Connection) -> Result<(), AppError> {
+    add_column_if_missing(conn, "messages", "rt_round_index", "INTEGER")?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_messages_rt_round
+            ON messages(conversation_id, rt_round_index)
+            WHERE rt_round_index IS NOT NULL;",
+    )?;
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (51, ?1)",
+        [now_epoch_ms()],
+    )?;
+    Ok(())
+}
+
 /// Milliseconds since Unix epoch (for Message.timestamp)
 pub fn now_epoch_ms() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -2262,5 +2298,85 @@ mod tests {
         apply_v50(&conn).expect("apply_v50 on empty db");
         let cur = current_version(&conn).expect("current_version");
         assert_eq!(cur, 50);
+    }
+
+    // ─── v51 — messages.rt_round_index column (devbug #263 Task 03) ──────
+
+    /// `messages.rt_round_index` 컬럼이 nullable 로 추가되고 기존 row 가 NULL
+    /// 로 보존되는지. 후방 호환 검증.
+    #[test]
+    fn v51_adds_rt_round_index_nullable_and_preserves_existing_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+             CREATE TABLE conversations (id TEXT PRIMARY KEY);
+             CREATE TABLE messages (
+                id              TEXT    PRIMARY KEY,
+                conversation_id TEXT    NOT NULL,
+                role            TEXT    NOT NULL,
+                content         TEXT    NOT NULL,
+                timestamp       INTEGER NOT NULL,
+                status          TEXT    NOT NULL DEFAULT 'done',
+                progress_content TEXT,
+                engine          TEXT,
+                model           TEXT,
+                persona         TEXT
+             );
+             INSERT INTO conversations (id) VALUES ('conv-x');
+             INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
+             VALUES ('m-old', 'conv-x', 'user', 'pre-v51 message', 100, 'done');",
+        )
+        .unwrap();
+
+        apply_v51(&conn).expect("apply_v51");
+
+        // 컬럼 존재 + 기존 row 의 rt_round_index 가 NULL
+        let rt_idx: Option<i64> = conn
+            .query_row(
+                "SELECT rt_round_index FROM messages WHERE id = 'm-old'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(rt_idx.is_none(), "기존 row 는 NULL");
+
+        // INDEX 존재
+        let index_exists: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_rt_round'",
+                [], |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(index_exists, 1);
+
+        let cur = current_version(&conn).expect("current_version");
+        assert_eq!(cur, 51);
+    }
+
+    /// idempotent: 두 번째 적용 시도 시 add_column_if_missing 가 panic 없이 skip
+    /// (run() 의 schema_version 가드와 별개로, 함수 자체의 안전성).
+    #[test]
+    fn v51_idempotent_when_column_already_exists() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+             CREATE TABLE conversations (id TEXT PRIMARY KEY);
+             CREATE TABLE messages (
+                id              TEXT    PRIMARY KEY,
+                conversation_id TEXT    NOT NULL,
+                role            TEXT    NOT NULL,
+                content         TEXT    NOT NULL,
+                timestamp       INTEGER NOT NULL,
+                status          TEXT    NOT NULL DEFAULT 'done',
+                progress_content TEXT,
+                engine          TEXT,
+                model           TEXT,
+                persona         TEXT,
+                rt_round_index  INTEGER
+             );",
+        )
+        .unwrap();
+        // 컬럼이 이미 있는 상태에서 호출 → ALTER ADD COLUMN skip + version row insert
+        apply_v51(&conn).expect("apply_v51 on pre-existing column");
     }
 }

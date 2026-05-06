@@ -18,6 +18,10 @@ pub fn load_recent_messages(
 
 /// Load recent messages with author metadata.
 /// Returns `(role, content, engine, persona)` tuples.
+///
+/// devbug #263 Task 03 — RT 메시지 (rt_round_index IS NOT NULL) 도 그대로 포함.
+/// single agent dispatch 가 RT 라운드 안에 들어가지 않은 *순수 main conv* 메시지
+/// 만 받고 싶다면 [`load_recent_messages_excluding_rt`] 사용.
 pub fn load_recent_messages_with_author(
     conn: &Connection,
     conversation_id: &str,
@@ -29,6 +33,45 @@ pub fn load_recent_messages_with_author(
          ORDER BY timestamp DESC LIMIT ?2",
     ) else {
         return Vec::new();
+    };
+    let mut rows: Vec<(String, String, Option<String>, Option<String>)> = stmt
+        .query_map(params![conversation_id, limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })
+        .map(|mapped| mapped.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    rows.reverse();
+    rows
+}
+
+/// Load recent messages excluding RT round messages.
+///
+/// devbug #263 Task 03 — single agent dispatch (main conv 의 *모든 에이전트
+/// 선택 해제* 후 단일 질의) 시점에 ContextPack 이 RT round transcript 를
+/// *주제별 컨텍스트* 로 prepend 하지 않게 사용.
+///
+/// `rt_round_index IS NULL` row 만 collect — 컬럼 자체가 없는 v50 이전
+/// fixture 에서도 query 가 깨지지 않게 fallback (호출 측이 v51+ 가정).
+///
+/// INV-RTC-7/8 (RT 미사용 영향 0): RT 한번도 안 쓴 conv 는 모든 row 의
+/// rt_round_index = NULL → 출력이 `load_recent_messages_with_author` 와 동일.
+pub fn load_recent_messages_excluding_rt(
+    conn: &Connection,
+    conversation_id: &str,
+    limit: i64,
+) -> Vec<(String, String, Option<String>, Option<String>)> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT role, content, engine, persona FROM messages
+         WHERE conversation_id = ?1 AND rt_round_index IS NULL
+         ORDER BY timestamp DESC LIMIT ?2",
+    ) else {
+        // 컬럼 부재 (구 fixture) 시 기존 동작으로 fallback
+        return load_recent_messages_with_author(conn, conversation_id, limit);
     };
     let mut rows: Vec<(String, String, Option<String>, Option<String>)> = stmt
         .query_map(params![conversation_id, limit], |row| {
@@ -438,4 +481,129 @@ pub fn project_path_for_conversation(conn: &Connection, conversation_id: &str) -
     )
     .ok()
     .flatten()
+}
+
+// ─── RT marker filter tests (devbug #263 Task 03) ──────────────────────────
+#[cfg(test)]
+mod rt_filter_tests {
+    use super::*;
+
+    fn build_db_with_messages() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE messages (
+                id              TEXT    PRIMARY KEY,
+                conversation_id TEXT    NOT NULL,
+                role            TEXT    NOT NULL,
+                content         TEXT    NOT NULL,
+                timestamp       INTEGER NOT NULL,
+                status          TEXT    NOT NULL DEFAULT 'done',
+                progress_content TEXT,
+                engine          TEXT,
+                model           TEXT,
+                persona         TEXT,
+                rt_round_index  INTEGER
+             );
+             -- Main conv 일반 user/assistant 메시지
+             INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine, persona, rt_round_index)
+             VALUES
+                ('m1', 'conv-1', 'user',      'main user msg 1',           100, 'done', NULL,         NULL,         NULL),
+                ('m2', 'conv-1', 'assistant', 'main assistant reply',      200, 'done', 'claude',     NULL,         NULL),
+                -- RT 라운드 1 헤더 + 참여자 응답
+                ('m3', 'conv-1', 'assistant', '--- Round 1 ... ---',       300, 'done', 'system',     NULL,         1),
+                ('m4', 'conv-1', 'assistant', 'rt round 1 claude reply',   400, 'done', 'claude-code','claude',     1),
+                ('m5', 'conv-1', 'assistant', 'rt round 1 codex reply',    500, 'done', 'codex',      'codex',      1),
+                -- 라운드 사이 단일 follow-up (RT 메시지 아님)
+                ('m6', 'conv-1', 'user',      'follow-up: clarify X',      600, 'done', NULL,         NULL,         NULL),
+                ('m7', 'conv-1', 'assistant', 'single agent answer',       700, 'done', 'claude',     NULL,         NULL);",
+        ).unwrap();
+        conn
+    }
+
+    /// Single agent dispatch 시 RT 라운드 메시지가 transcript 에서 제외 — Plan
+    /// §3 Task 03 의 시나리오 A 회복 핵심 가드.
+    #[test]
+    fn single_agent_dispatch_skips_rt_transcript() {
+        let conn = build_db_with_messages();
+        let rows = load_recent_messages_excluding_rt(&conn, "conv-1", 20);
+
+        // RT 라운드 1 메시지 (m3, m4, m5) 모두 제외
+        let contents: Vec<&str> = rows.iter().map(|(_, c, _, _)| c.as_str()).collect();
+        assert!(!contents.iter().any(|c| c.contains("Round 1")));
+        assert!(!contents.iter().any(|c| c.contains("rt round 1 claude")));
+        assert!(!contents.iter().any(|c| c.contains("rt round 1 codex")));
+
+        // 일반 main conv 메시지는 그대로 — m1, m2, m6, m7 4건
+        assert_eq!(rows.len(), 4);
+        assert!(contents.contains(&"main user msg 1"));
+        assert!(contents.contains(&"main assistant reply"));
+        assert!(contents.contains(&"follow-up: clarify X"));
+        assert!(contents.contains(&"single agent answer"));
+    }
+
+    /// 기존 helper 는 *모든* 메시지 그대로 — RT 본 흐름 (transcript 조립) 영역
+    /// 의 동작 보존.
+    #[test]
+    fn legacy_loader_includes_rt_messages() {
+        let conn = build_db_with_messages();
+        let rows = load_recent_messages_with_author(&conn, "conv-1", 20);
+        assert_eq!(rows.len(), 7, "기존 helper 는 모든 메시지 포함");
+    }
+
+    /// RT 미사용 conv (rt_round_index 모두 NULL) 의 두 helper 결과 동일 —
+    /// INV-RTC-7/8 fast path 검증.
+    #[test]
+    fn no_rt_usage_yields_identical_results() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE messages (
+                id              TEXT    PRIMARY KEY,
+                conversation_id TEXT    NOT NULL,
+                role            TEXT    NOT NULL,
+                content         TEXT    NOT NULL,
+                timestamp       INTEGER NOT NULL,
+                status          TEXT    NOT NULL DEFAULT 'done',
+                progress_content TEXT,
+                engine          TEXT,
+                model           TEXT,
+                persona         TEXT,
+                rt_round_index  INTEGER
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine, persona, rt_round_index)
+             VALUES
+                ('m1', 'conv-x', 'user',      'msg 1', 100, 'done', NULL,     NULL, NULL),
+                ('m2', 'conv-x', 'assistant', 'msg 2', 200, 'done', 'claude', NULL, NULL);",
+        )
+        .unwrap();
+
+        let with_rt    = load_recent_messages_with_author(&conn, "conv-x", 20);
+        let without_rt = load_recent_messages_excluding_rt(&conn, "conv-x", 20);
+        assert_eq!(with_rt, without_rt);
+    }
+
+    /// 컬럼 부재 fixture 에서도 panic 없이 fallback (구 schema 호환).
+    #[test]
+    fn falls_back_when_rt_round_index_column_missing() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE messages (
+                id              TEXT    PRIMARY KEY,
+                conversation_id TEXT    NOT NULL,
+                role            TEXT    NOT NULL,
+                content         TEXT    NOT NULL,
+                timestamp       INTEGER NOT NULL,
+                status          TEXT    NOT NULL DEFAULT 'done',
+                progress_content TEXT,
+                engine          TEXT,
+                model           TEXT,
+                persona         TEXT
+             );
+             INSERT INTO messages (id, conversation_id, role, content, timestamp, status)
+             VALUES ('m1', 'conv-y', 'user', 'msg', 100, 'done');",
+        )
+        .unwrap();
+        // 컬럼 부재 → fallback 으로 일반 helper 결과
+        let rows = load_recent_messages_excluding_rt(&conn, "conv-y", 20);
+        assert_eq!(rows.len(), 1);
+    }
 }

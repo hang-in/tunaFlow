@@ -13,7 +13,7 @@ use super::executor::{
 use super::prompt::{
     build_round_prompt_with_consensus, build_round_prompt_with_vector_context, PromptSources,
 };
-use super::persist::{load_consensus, persist_streaming_start, persist_streaming_done};
+use super::persist::{load_consensus, persist_streaming_start_with_round, persist_streaming_done};
 
 /// Deliberative: run all participants in parallel via tokio tasks, then persist results.
 /// Each sees prior-round context but not current-round peers.
@@ -62,8 +62,9 @@ pub async fn execute_parallel(
                 "ollama" => "ollama",
                 other => other,
             };
-            let streaming_msg = persist_streaming_start(
+            let streaming_msg = persist_streaming_start_with_round(
                 &conn, conversation_id, &p.name, engine_label, p.model.as_deref(), &sources_json,
+                Some(round_num),
             )?;
             msg_ids.push(streaming_msg.id.clone());
             let _ = app.emit("roundtable:progress", &streaming_msg);

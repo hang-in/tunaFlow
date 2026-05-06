@@ -9,17 +9,32 @@ use crate::errors::AppError;
 use super::executor::ParticipantResult;
 
 /// Persist a round header (system message) and return it.
+///
+/// 기존 시그니처 보존 — `rt_round_index` NULL. RT 라운드 진행 안에서 호출
+/// 되는 callsite 는 `persist_header_with_round` 사용 (devbug #263 Task 03).
 pub fn persist_header(
     conn: &rusqlite::Connection,
     conversation_id: &str,
     text: &str,
 ) -> Result<Message, AppError> {
+    persist_header_with_round(conn, conversation_id, text, None)
+}
+
+/// Round-index aware variant — Task 03 path. RT round 헤더 / synthesizer
+/// 안내 메시지는 round_index 기록 → ContextPack 의 single agent dispatch 가
+/// 그 메시지를 *raw transcript* 로 prepend 하지 않게 helper 가 필터.
+pub fn persist_header_with_round(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+    text: &str,
+    round_index: Option<u32>,
+) -> Result<Message, AppError> {
     let id = Uuid::new_v4().to_string();
     let now = now_epoch_ms();
     conn.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, 'done', 'system')",
-        params![id, conversation_id, text, now],
+        "INSERT INTO messages (id, conversation_id, role, content, timestamp, status, engine, rt_round_index)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, 'done', 'system', ?5)",
+        params![id, conversation_id, text, now, round_index.map(|r| r as i64)],
     )?;
     Ok(Message {
         id,
@@ -37,7 +52,9 @@ pub fn persist_header(
 }
 
 /// Persist a streaming-start placeholder — empty message with status='streaming'.
-/// Returns the Message (with generated id) so callers can emit it and pass the id to chunk events.
+///
+/// 기존 시그니처 보존 — `rt_round_index` NULL. RT 라운드 안에서 참여자
+/// 메시지 저장 시 `persist_streaming_start_with_round` 사용 (Task 03).
 pub fn persist_streaming_start(
     conn: &rusqlite::Connection,
     conversation_id: &str,
@@ -46,15 +63,37 @@ pub fn persist_streaming_start(
     model: Option<&str>,
     sources_json: &str,
 ) -> Result<Message, AppError> {
+    persist_streaming_start_with_round(
+        conn,
+        conversation_id,
+        name,
+        engine_label,
+        model,
+        sources_json,
+        None,
+    )
+}
+
+/// Round-index aware variant — Task 03 path. 참여자 메시지에 rt_round_index
+/// 기록 → main conv 의 단일 dispatch 가 ContextPack 에서 RT 메시지 분리.
+pub fn persist_streaming_start_with_round(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+    name: &str,
+    engine_label: &str,
+    model: Option<&str>,
+    sources_json: &str,
+    round_index: Option<u32>,
+) -> Result<Message, AppError> {
     let msg_id = Uuid::new_v4().to_string();
     let now = now_epoch_ms();
     let progress = if sources_json.is_empty() { None } else { Some(sources_json) };
 
     conn.execute(
         "INSERT INTO messages
-         (id, conversation_id, role, content, timestamp, status, progress_content, engine, model, persona)
-         VALUES (?1, ?2, 'assistant', '', ?3, 'streaming', ?4, ?5, ?6, ?7)",
-        params![msg_id, conversation_id, now, progress, engine_label, model, name],
+         (id, conversation_id, role, content, timestamp, status, progress_content, engine, model, persona, rt_round_index)
+         VALUES (?1, ?2, 'assistant', '', ?3, 'streaming', ?4, ?5, ?6, ?7, ?8)",
+        params![msg_id, conversation_id, now, progress, engine_label, model, name, round_index.map(|r| r as i64)],
     )?;
 
     Ok(Message {
