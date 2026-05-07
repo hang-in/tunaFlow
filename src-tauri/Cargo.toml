@@ -1,6 +1,6 @@
 [package]
 name = "tuna-flow"
-version = "0.1.7-beta-5"
+version = "0.1.7-beta-6"
 edition = "2021"
 description = "Multi-agent orchestration desktop client for CLI coding agents (Claude Code, Codex, Gemini, OpenCode)"
 license = "Apache-2.0"

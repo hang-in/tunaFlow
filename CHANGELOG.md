@@ -4,6 +4,38 @@ All notable changes to tunaFlow are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7-beta-6] - 2026-05-07
+
+🩹 **Win 10 22H2 WebView2 strict CSP path matching hotfix** —
+v0.1.7-beta-5 까지의 fix 가 architect 환경 (Win 11 23H2) 에선 정상 동작
+했으나 외부 사용자 (devbug, [#264](https://github.com/hang-in/tunaFlow/issues/264))
+의 Win 10 22H2 환경에서 stylesheet 차단 회귀. 환경 차이가 진단 어려웠던
+6번째 보고 후 해결.
+
+### Fixed
+
+- **CSP path 를 정확한 폰트 버전으로 명시** ([PR #276](https://github.com/hang-in/tunaFlow/pull/276)) —
+  `tauri.conf.json:26` 의 `style-src` / `font-src` path 를 `pretendard/`
+  (trailing slash) → `pretendard@v1.3.9/` (정확한 버전 path) 로 변경.
+  W3C CSP spec 상 `pretendard/` 도 stripped 후 prefix 매칭이라 통과
+  해야 했으나, **Win 10 22H2 의 구버전 WebView2 가 strict 매칭 구현** —
+  `pretendard/` 다음 char 가 정확히 `/` 이어야 매칭. URL 의 `@v1.3.9` 가
+  그 자리라 차단. `pretendard@v1.3.9/` 명시로 strict matching 통과 +
+  Gemini #276 review 의 *최소 권한 원칙* (orioncactus org 의 다른 repo
+  차단 유지) 충족.
+
+### Notes
+
+- **외부 사용자 회복 path (#264 Win 10)**: v0.1.7-beta-6 자산 재설치 후
+  pretendard 폰트 정상 로드 → 라벨/UI 깨짐 해소 예상. 폰트 외 다른 영역
+  영향 가능성도 있어 console 추가 캡처 + WebView2 version 진단 요청
+  댓글 게시.
+- **Trade-off**: 폰트 버전 업데이트 시 CSP 도 함께 갱신 필요. Gemini
+  review 권장 그대로 보안 강화 우선.
+- macOS / Linux 영향 0 — CSP 변경은 모든 OS 적용이지만 *기존 허용 영역
+  보존 + path 더 정확*.
+- Test baseline: **Rust 636 / Frontend 422** 그대로.
+
 ## [0.1.7-beta-5] - 2026-05-07
 
 🩹 **Windows 1단 통합 UX 회복 + 모바일 페어링 LAN 노출 토글** —
