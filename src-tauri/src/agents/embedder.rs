@@ -40,9 +40,17 @@ pub struct BgeM3Embedder {
 
 #[allow(dead_code)]
 impl BgeM3Embedder {
-    /// Create with default pool size (2 sessions for desktop app).
+    /// Create with default pool size (1 session — single-user desktop).
+    ///
+    /// Pool size 1 인 이유 (issue #271, devbug 외부 보고 2026-05-07):
+    /// `EMBED_SEMAPHORE = Semaphore(1)` (`send_common/persistence.rs:10-22`) 가
+    /// 동시 임베딩 추론을 1로 직렬화하므로 pool size 2 가 throughput 을 살리지
+    /// 못한다. 반면 ONNX session 은 1.1GB weight 를 in-process 로 두 번 보유
+    /// → RSS +2.2GB 순수 비용. 8GB RAM 환경 / 다른 앱 jetsam 간접 유발 위험.
+    /// pool size 1 은 throughput 회귀 0 + RSS 약 1.1GB 절감.
+    /// RT 다중 임베딩 burst 케이스 등장 시 별 PR 로 with_pool_size 노출 검토.
     pub fn new(model_dir: &Path) -> Result<Self, AppError> {
-        Self::with_pool_size(model_dir, 2)
+        Self::with_pool_size(model_dir, 1)
     }
 
     pub fn with_pool_size(model_dir: &Path, pool_size: usize) -> Result<Self, AppError> {
