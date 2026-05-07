@@ -66,30 +66,37 @@ export function TitleBar() {
         className={isWindows ? "h-full w-[12px] shrink-0" : "h-full w-[72px] shrink-0"}
       />
 
-      {/* Info row — left-aligned on both OSes (Q-WT-4) */}
-      <div data-tauri-drag-region className="h-full flex items-center gap-0 shrink-0">
-        <span data-tauri-drag-region className="text-[11px] font-bold text-foreground/70 tracking-wide">
-          tunaFlow
-        </span>
+      {/* Info row — selectedProjectKey 가 있을 때만 (즉 메인 AppShell 분기)
+          렌더. splash / ProjectStartup 화면에서는 카드 자체가 24px logo 를
+          이미 표시하므로 chrome 의 11px "tunaFlow" 가 redundant + 깔끔한
+          시작 화면 디자인 의도를 깨뜨려 숨긴다. 캡션바의 드래그 / 닫기 /
+          더블클릭 maximize 동작은 좌측 패딩 + 가운데 spacer + WindowControls
+          (Windows) 만으로 모두 보장된다 (#264 후속). */}
+      {selectedProjectKey && (
+        <div data-tauri-drag-region className="h-full flex items-center gap-0 shrink-0">
+          <span data-tauri-drag-region className="text-[11px] font-bold text-foreground/70 tracking-wide">
+            tunaFlow
+          </span>
 
-        {projectName && (
-          <>
-            <span data-tauri-drag-region className="mx-2 text-[6px] text-muted-foreground/30">●</span>
-            <span data-tauri-drag-region className="text-[11px] font-medium text-foreground/45 truncate max-w-[160px]">
-              {projectName}
-            </span>
-          </>
-        )}
+          {projectName && (
+            <>
+              <span data-tauri-drag-region className="mx-2 text-[6px] text-muted-foreground/30">●</span>
+              <span data-tauri-drag-region className="text-[11px] font-medium text-foreground/45 truncate max-w-[160px]">
+                {projectName}
+              </span>
+            </>
+          )}
 
-        {gitBranch && (
-          <>
-            <span data-tauri-drag-region className="mx-2 text-[6px] text-muted-foreground/25">●</span>
-            <span data-tauri-drag-region className="text-[10px] font-mono text-muted-foreground/35 truncate max-w-[180px]">
-              {gitBranch}
-            </span>
-          </>
-        )}
-      </div>
+          {gitBranch && (
+            <>
+              <span data-tauri-drag-region className="mx-2 text-[6px] text-muted-foreground/25">●</span>
+              <span data-tauri-drag-region className="text-[10px] font-mono text-muted-foreground/35 truncate max-w-[180px]">
+                {gitBranch}
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Center — large drag region. h-full 없으면 빈 div 의 height 0 →
           캡션바의 가장 큰 영역이 클릭 hit 0 이 되어 드래그·더블클릭 모두 실패. */}
