@@ -33,19 +33,34 @@ export function WindowControls() {
     return () => { if (cleanup) cleanup(); };
   }, []);
 
-  const onMinimize = () => { getCurrentWindow().minimize().catch(() => {}); };
-  const onToggleMax = () => { getCurrentWindow().toggleMaximize().catch(() => {}); };
-  const onClose = () => { getCurrentWindow().close().catch(() => {}); };
+  // Failure 시에만 console.error — 정상 click 은 noise 회피. 권한 누락 시
+  // capabilities/default.json 에 core:window:allow-{minimize,toggle-maximize,close}
+  // 가 빠진 회귀 단서 (issue #264 의 진짜 root cause 패턴).
+  const onMinimize = () => {
+    getCurrentWindow().minimize().catch((e) => console.error("[WindowControls] minimize err", e));
+  };
+  const onToggleMax = () => {
+    getCurrentWindow().toggleMaximize().catch((e) => console.error("[WindowControls] toggleMaximize err", e));
+  };
+  const onClose = () => {
+    getCurrentWindow().close().catch((e) => console.error("[WindowControls] close err", e));
+  };
+
+  // Tauri 2 의 `data-tauri-drag-region` 은 element + descendants 까지 mousedown
+  // 을 drag 로 가로챈다. parent TitleBar 가 drag region 이라 button 의 click
+  // 이 escalate 되어 동작하지 않는 회귀 (architect dev 검증, 2026-05-07).
+  // mousedown 단계에서 stopPropagation 하면 drag 로 가지 않고 click 이 정상 fire.
+  const stopDrag = (e: React.MouseEvent) => { e.stopPropagation(); };
 
   return (
     <div
       className="flex items-center h-full shrink-0"
-      data-tauri-drag-region={false}
       data-testid="window-controls"
     >
       <button
         type="button"
         aria-label="Minimize"
+        onMouseDown={stopDrag}
         onClick={onMinimize}
         className="h-full w-[46px] flex items-center justify-center text-foreground/70 hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:bg-foreground/10"
       >
@@ -54,6 +69,7 @@ export function WindowControls() {
       <button
         type="button"
         aria-label={isMaximized ? "Restore" : "Maximize"}
+        onMouseDown={stopDrag}
         onClick={onToggleMax}
         className="h-full w-[46px] flex items-center justify-center text-foreground/70 hover:bg-foreground/10 hover:text-foreground focus-visible:outline-none focus-visible:bg-foreground/10"
       >
@@ -62,6 +78,7 @@ export function WindowControls() {
       <button
         type="button"
         aria-label="Close"
+        onMouseDown={stopDrag}
         onClick={onClose}
         className="h-full w-[46px] flex items-center justify-center text-foreground/70 hover:bg-status-rejected hover:text-white focus-visible:outline-none focus-visible:bg-status-rejected focus-visible:text-white"
       >

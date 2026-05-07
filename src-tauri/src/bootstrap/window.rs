@@ -10,17 +10,14 @@ pub fn restore_window_state(app: &tauri::App) -> Result<(), Box<dyn std::error::
         return Ok(());
     };
 
-    // Windows: drop native decorations so the custom TitleBar + WindowControls
-    // own the caption area (mac parity — `titleBarStyle: "Overlay"` +
-    // `hiddenTitle: true` are macOS-only). Done while the window is still
-    // hidden (`visible: false` in tauri.conf.json) so the user never sees the
-    // native chrome flicker out. cfg-gated → mac/Linux untouched.
-    #[cfg(target_os = "windows")]
-    {
-        if let Err(e) = window.set_decorations(false) {
-            eprintln!("[bootstrap/window] set_decorations(false) failed: {}", e);
-        }
-    }
+    // 2026-05-07 — issue #264 hotfix: PR #237 에서 도입했던 Windows 전용
+    // `set_decorations(false)` 를 제거. devbug 외부 사용자 환경에서 native
+    // chrome 사라진 후 `WindowControls` 가 마운트되지 않거나 click 이 가로채
+    // 져서 *닫기/최소화/최대화/드래그 모두 부재* 차단 회귀. Native frame 으로
+    // 회복하고 `WindowControls` 는 그대로 둬 "1 라인 통합" UX 는 후속 PR 에서
+    // platform detection / drag region 격리가 검증된 후 다시 도입.
+    //
+    // mac/Linux 영향 0 (이 호출 자체가 cfg(windows) 분기였음).
 
     // window-state plugin restores position/size BEFORE setup runs.
     // Log actual state to diagnose restoration issues.
