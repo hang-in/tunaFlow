@@ -226,15 +226,22 @@ export function AppShell() {
   // 네이티브 캡션바를 제거한 상태이므로, splash / ProjectStartup 분기에서도
   // <TitleBar> 가 함께 마운트되어야 캡션·드래그·닫기 버튼이 보장된다. 마운트
   // 누락 시 사용자는 창 이동·종료 불가 상태에 갇힌다.
+  // PR #277 review (HIGH): splash 분기에서도 Toaster 마운트 — init() 단계
+  // 에서 fire 되는 toast (예: mobile_pairing migration toast, init catch
+  // 블록의 에러 알림) 가 사용자에게 표시되도록 함. 기존엔 splash 분기에
+  // Toaster 가 없어 invisible.
   if (!loaded) return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans select-none">
-      <TitleBar />
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
-        <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-        <div className="text-foreground/60 text-[13px] font-medium">tunaFlow</div>
-        <div className="text-foreground/40 text-[11px]">{loadingStep}</div>
+    <>
+      <Toaster position="bottom-right" theme={themeMode} richColors closeButton />
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans relative select-none">
+        <TitleBar />
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
+          <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+          <div className="text-foreground/60 text-[13px] font-medium">tunaFlow</div>
+          <div className="text-foreground/40 text-[11px]">{loadingStep}</div>
+        </div>
       </div>
-    </div>
+    </>
   );
 
   // Project-first startup: show selector if no project is selected.
@@ -251,7 +258,7 @@ export function AppShell() {
             initialSection={settingsInitialSection}
           />
         )}
-        <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans">
+        <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans relative">
           <TitleBar />
           <div className="flex-1 min-h-0">
             <ProjectStartup />
