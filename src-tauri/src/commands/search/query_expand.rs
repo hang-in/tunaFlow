@@ -18,6 +18,7 @@ use rusqlite::{params, Connection};
 
 use crate::db::migrations::now_epoch_ms;
 use crate::errors::AppError;
+use crate::no_console::NoConsole;
 
 const CACHE_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000; // 7 days
 const HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
@@ -156,6 +157,7 @@ fn write_cache(conn: &Connection, key: &str, expanded: &str) -> Result<(), AppEr
 fn invoke_claude_haiku(query: &str) -> Result<String, AppError> {
     let prompt = build_expansion_prompt(query);
     let output = std::process::Command::new("claude")
+        .no_console()
         .args(["-p", &prompt, "--model", HAIKU_MODEL])
         .output()
         .map_err(|e| AppError::Agent(format!("claude subprocess: {e}")))?;

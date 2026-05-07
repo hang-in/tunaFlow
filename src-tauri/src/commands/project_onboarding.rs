@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::no_console::NoConsole;
+
 use super::projects::detect_project_info;
 
 // ─── Cancellation flag ───────────────────────────────────────────────────────
@@ -575,6 +577,12 @@ async fn call_cli_agent(
     use std::process::Stdio;
 
     let mut cmd = tokio::process::Command::new(bin);
+    // Windows 에서 CREATE_NO_WINDOW flag 미적용 시 .cmd wrapper (npm 글로벌
+    // 설치 시 표준 형태) 가 새 cmd.exe console 창에 attach 되어 (a) 사용자
+    // 에게 보이고 (b) child stdout 이 부모 pipe 로 routing 되지 않아 즉시
+    // exit 1 + stderr 빈 채로 실패. no_console.rs 헤더의 invariant ("모든
+    // Command::new 직후 .no_console() chain 호출") 누락 회귀.
+    cmd.no_console();
     match engine {
         "claude" => {
             cmd.args(["-p", prompt, "--max-turns", "1", "--output-format", "text"]);
