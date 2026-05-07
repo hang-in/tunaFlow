@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://avatars.githubusercontent.com https://github.com; font-src 'self' data:; connect-src 'self' https://cdn.dos.zone https://dos.zone; worker-src 'self' blob:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/gh/orioncactus/pretendard/; img-src 'self' data: blob: https://avatars.githubusercontent.com https://github.com; font-src 'self' data: https://cdn.jsdelivr.net/gh/orioncactus/pretendard/; connect-src 'self' ipc: http://ipc.localhost https://cdn.dos.zone https://dos.zone; worker-src 'self' blob:"
     }
   },
   "bundle": {
