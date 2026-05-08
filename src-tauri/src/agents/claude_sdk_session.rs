@@ -1874,4 +1874,79 @@ mod tests {
             "model_id 없어도 stash 비어있으면 trigger 안 됨"
         );
     }
+
+    /// (claudeSdkSessionWindowGuardPlan Task 05) 통합 e2e — fresh-rotate 발동
+    /// 시 모든 side effect (SESSIONS / RESUME_IDS / LAST_DELIVERED / window
+    /// guard stash) 가 일관되게 invalidate 되는지 검증.
+    ///
+    /// 시나리오: dev turn 누적 → Reviewer 호출 (stash 가 임계 초과) → trigger
+    /// → kill_session_clear_resume → 다음 dispatch 진입 시 stash 0 + LAST_DELIVERED
+    /// 비어있음 → ContextPack full mode (INV-CSW-2) 자연 회복.
+    #[test]
+    fn sdk_window_guard_full_rotate_flow_invalidates_all_state() {
+        use crate::commands::agents_helpers::send_common::session_freshness::{
+            last_delivered_key, record_delivered_key,
+        };
+
+        let conv = unique_conv("wg-rotate-full-flow");
+        let key = session_key_for(&conv);
+
+        // 사전 상태: dev turn 누적 + 정상 SDK 세션 동작 중 imitating
+        RESUME_IDS.lock().insert(key.clone(), "sid-DEV-ACCUMULATED".into());
+        record_delivered_key(&conv, "claude-ws:sid-DEV-ACCUMULATED");
+        stash_window_guard_input_tokens(&key, 185_000);
+
+        // 사전 상태 검증
+        assert_eq!(read_window_guard_input_tokens(&key), 185_000);
+        assert!(RESUME_IDS.lock().contains_key(&key));
+        assert!(last_delivered_key(&conv).is_some());
+        assert!(should_trigger_window_rotate(&key, Some("claude-opus-4-7")));
+
+        // Reviewer 호출 시뮬레이션 — stream_run_sdk 진입부 trigger 발동 시 호출되는
+        // 두 cleanup 함수 (kill_session_clear_resume 가 둘 다 invoke)
+        kill_session_clear_resume(&conv);
+
+        // 사후 상태 검증 (INV-CSW-2 + INV-CSW-1 의 reset 영역)
+        assert_eq!(
+            read_window_guard_input_tokens(&key),
+            0,
+            "fresh-rotate 후 window guard stash 0 — 다음 send 가 정상 누적 시작"
+        );
+        assert!(
+            !RESUME_IDS.lock().contains_key(&key),
+            "fresh-rotate 후 RESUME_IDS 비어있음 — 다음 send 가 fresh session 으로 spawn"
+        );
+        assert!(
+            last_delivered_key(&conv).is_none(),
+            "fresh-rotate 후 LAST_DELIVERED 비어있음 — is_session_continuation=false → ContextPack full mode 자연 회복"
+        );
+        assert!(
+            !should_trigger_window_rotate(&key, Some("claude-opus-4-7")),
+            "fresh-rotate 후 trigger 자체 미발동 (stash 0 fast path)"
+        );
+    }
+
+    /// (claudeSdkSessionWindowGuardPlan Task 05) 시나리오: `[1m]` variant 사용
+    /// 자가 같은 dev turn 누적량 (200K) 을 받아도 fresh-rotate 미발동 확인.
+    /// INV-CSW-5 핵심 가드.
+    #[test]
+    fn sdk_window_guard_1m_variant_skips_rotate_in_full_flow() {
+        let conv = unique_conv("wg-1m-no-rotate-flow");
+        let key = session_key_for(&conv);
+
+        clear_window_guard_input_tokens(&key);
+        // 200K 누적 — default 모드면 trigger 됐을 양
+        stash_window_guard_input_tokens(&key, 200_000);
+
+        // default 모델: trigger 발동
+        assert!(should_trigger_window_rotate(&key, Some("claude-opus-4-7")));
+
+        // 1M variant: trigger 미발동 (INV-CSW-5)
+        assert!(
+            !should_trigger_window_rotate(&key, Some("claude-opus-4-7-1m")),
+            "1M variant 사용자는 200K 에서 미발동 (cap 900K)"
+        );
+
+        clear_window_guard_input_tokens(&key);
+    }
 }
