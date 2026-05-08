@@ -38,6 +38,7 @@ description: 세션별 전체 작업 이력. 새 세션 시작 시 또는 과거
 | 25 | 2026-04-12 | 버그 9건 수정 + UI 개선 4건 (MarkdownComponents h-tags/empty span/relative link, PTY persona+duration+label, PlanProposalCard reload, branch stale closure, Insight 이전분석 우측 패널, adopt 중 스트리밍 보존+결과 복원, 드로어 라운딩, 사이드바 가독성, 알림배지 오버랩) |
 | 26 | 2026-04-13 | 코드베이스 리팩토링 v3 Tier 1(부분)+Tier 2 — conversation_memory 3분리, vector_search 4분리, workflowOrchestration 5분리, InsightPanel 4분리, ptyTypes 추출. Rust/TS 테스트 전원 통과. |
 | 35 | 2026-04-13 | 구조개선 Sprint 2~3 (planWorkflowService 도메인 규칙, threadRtRunner 분리, silent catch 7건), PTY Enter 3중 수정, bge-m3 CPU 스파이크 수정(ONNX 스레드 제한+세마포어+점진적 인덱싱). 232 Rust + 188 TS tests. |
+| **v0.1.8-beta** | **2026-05-09** | **Reviewer "Prompt is too long" 회귀 자동 회복** — claudeSdkSessionWindowGuardPlan 4 PR (#279~#281 + test/docs PR-4). SDK 누적 input_tokens 임계 (180K default / 900K `[1m]`) 도달 시 자동 fresh-rotate + sonner toast + Reviewer specific squeeze (LIMIT 20→10 / plan_doc 6K→3K). claudeTransportFlipHardeningPlan T9-a 패턴 재사용. Rust 635 → 649 (+14 unit) / FE 422 → 426 (+4 listener). DB migration 영향 0 (in-memory stash). |
 
 ---
 

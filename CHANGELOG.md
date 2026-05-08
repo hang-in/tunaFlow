@@ -4,6 +4,58 @@ All notable changes to tunaFlow are recorded here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8-beta] - 2026-05-09
+
+🩹 **Reviewer 단계 *"Prompt is too long"* 회귀 자동 회복** —
+v0.1.7-beta release 후 사용자 본인 환경에서 표면화된 SDK 세션 누적
+window 한계 회귀. `MAX_TOTAL_PROMPT = 60,000` chars 가 *system 영역
+outgoing* 만 가드하고 claude SDK 세션의 cumulative input_tokens (200K
+default / 1M `[1m]`) 는 별 영역. Reviewer 가 빈번한 surface 인 이유는
+같은 conv 의 dev turn 누적 + plan_document 6K + verdict 반복으로 SDK
+누적 input_tokens 가 200K limit hit. Architect plan + 4 PR 묶음 fix.
+
+### Fixed
+
+- **SDK 누적 임계 도달 시 자동 fresh-rotate** ([PR #279](https://github.com/hang-in/tunaFlow/pull/279)) —
+  default 모드 180K tokens / `[1m]` variant 모드 900K tokens 도달 시
+  `claude_sdk_session::stream_run_sdk` 진입 직후 자동 fresh session
+  rotate. SESSIONS / RESUME_IDS / LAST_DELIVERED 모두 invalidate →
+  `is_session_continuation=false` → ContextPack full mode + anchor 2
+  turns → plan_doc / findings / RT consensus 재주입 (사용자 컨텍스트
+  회복). claudeTransportFlipHardeningPlan T9-a/T11 의 fresh-session
+  정책 패턴 재사용.
+- **fresh-rotate 사용자 가시화 토스트** ([PR #280](https://github.com/hang-in/tunaFlow/pull/280)) —
+  Tauri event `tunaflow:sdk-session-window-rotated` + ClaudeFallbackEvents
+  listener 가 sonner toast info 5초 dismiss 표시. ko/en i18n 분기 +
+  conversation 별 sessionStorage spam 차단 flag. 신규 컴포넌트 0,
+  기존 sonner 인프라 재사용 (INV-CSW-7).
+- **Reviewer specific squeeze** ([PR #281](https://github.com/hang-in/tunaFlow/pull/281)) —
+  `load_recent_messages_excluding_rt` LIMIT 20 → 10 (reviewer 만) +
+  `plan_document` cap 6,000 → 3,000 chars (reviewer 만). 다른 role
+  (Architect / Developer / Persona / single-agent) 영향 0 (INV-CSW-6).
+  PR-1 의 fresh-rotate trigger threshold 늦춤 보조 → fresh-rotate 빈도
+  감소. squeeze 영역은 verdict 정확도에 영향 미미 (rubric / findings /
+  RT consensus 는 별 섹션).
+
+### Notes
+
+- **`[1m]` variant 사용자 영향 0** (INV-CSW-5) — claude-opus-4-7-1m 등
+  1M context variant 사용자는 임계 900K 적용. 200K limit 영역 무관 →
+  default 사용자보다 5배 늦은 시점에 fresh-rotate 발동 (또는 거의 발동
+  안 됨).
+- **release notes 강조 항목**:
+  - *"Reviewer 단계 'Prompt is too long' 회귀 자동 회복 — 세션 누적
+     한계 도달 시 자동 fresh-rotate + toast 알림"*
+  - *"`[1m]` variant 사용자 (1M context 모드) 영향 0"*
+  - *"Reviewer specific squeeze — plan_document + recent messages 영역
+     압축으로 trigger 빈도 감소"*
+- **DB migration 영향 0** — `accumulated_input_tokens` 는 in-memory stash
+  (앱 재시작 시 reset). 영구 저장 (재시작 후에도 정확한 cap 적용) 는 별
+  P3 plan 영역.
+- **사용자 자가 회복 path** — v0.1.8-beta 자산 재설치 + Reviewer 진입 시
+  *"Prompt is too long"* 회귀 0 / 임계 도달 시 toast 알림 표시 / 새 세션
+  의 첫 turn 부터 ContextPack 재주입 동작 확인.
+
 ## [0.1.7-beta-6] - 2026-05-07
 
 🩹 **Win 10 22H2 WebView2 strict CSP path matching hotfix** —
