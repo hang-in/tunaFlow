@@ -155,10 +155,23 @@ pub fn assemble_prompt(
     // Weight policy (Structured Memory Source Strengthening):
     //   Structured task memory (plan/findings/artifacts) > Conversational memory (compressed) > Cross-session
     //   "현재 작업과 직접 연결된 구조화 객체"가 "대화 요약"보다 우선한다.
+    // (claudeSdkSessionWindowGuardPlan Task 03) Reviewer 분기 plan_doc cap
+    // squeeze. Reviewer 는 SDK 누적 history 폭발 surface 가 빈번한 role —
+    // plan_document max_chars 6000 → 3000 으로 좁혀 trigger threshold 늦춤.
+    // 다른 role (Architect / Developer / Persona / single-agent) 은 6000 보존
+    // (INV-CSW-6).
+    //
+    // min_chars 는 1000 그대로 — Reviewer 가 verdict 근거로 필요한 최소
+    // task spec/rubric 영역이 1000 안에 들어옴 (plan §3 Task 03 위험 항목 참고).
+    let plan_doc_max_chars = if data.sender_role.as_deref() == Some("reviewer") {
+        3000
+    } else {
+        6000
+    };
     let budget_alloc = guardrail::allocate_budgets(total_budget, &[
         // Structured task memory — highest priority
         guardrail::SectionBudget { name: "plan",       content_len: data.plan_section.as_ref().map_or(0, |s| s.len()),     weight: 1.5, min_chars: 500,  max_chars: guardrail::MAX_PLAN_SECTION },
-        guardrail::SectionBudget { name: "plan-doc",   content_len: data.plan_document.as_ref().map_or(0, |s| s.len()),    weight: 2.0, min_chars: 1000, max_chars: 6000 },
+        guardrail::SectionBudget { name: "plan-doc",   content_len: data.plan_document.as_ref().map_or(0, |s| s.len()),    weight: 2.0, min_chars: 1000, max_chars: plan_doc_max_chars },
         guardrail::SectionBudget { name: "findings",   content_len: data.findings_section.as_ref().map_or(0, |s| s.len()), weight: 1.2, min_chars: 500,  max_chars: guardrail::MAX_FINDINGS_SECTION },
         // RT consensus 는 findings 와 동일 weight + min_chars (devbug #263 Task 04).
         // 라운드별 1줄 axis 누적 → 일반적으로 짧음, MAX_FINDINGS_SECTION 안에서 충분.
@@ -1206,6 +1219,102 @@ mod tests {
         assert!(
             !assembled.contains("Roundtable Consensus"),
             "prompt 본문에도 RT 합의 섹션 부재",
+        );
+    }
+
+    // ─── claudeSdkSessionWindowGuardPlan Task 03 — Reviewer squeeze ────────
+
+    /// plan_doc 가 아주 길 때, Reviewer role 분기는 max_chars 3000 적용,
+    /// 다른 role 은 6000 적용. `## Plan Document\n\n` 헤더 뒤 본문 길이로
+    /// 정확히 측정.
+    ///
+    /// 핵심 단순화: total_budget = 60K (default), 다른 섹션 content_len = 0
+    /// 으로 plan-doc 만 충분히 큼 → max_chars 가 dominant cap 으로 작동.
+    fn measure_plan_doc_body_len(assembled: &str) -> usize {
+        let header = "## Plan Document\n\n";
+        let Some(start) = assembled.find(header) else { return 0; };
+        let body_start = start + header.len();
+        // truncate 시 "[... truncated]" marker 가 끝에 붙음. body 길이 = marker 직전까지
+        let after = &assembled[body_start..];
+        let body_end = after.find("\n\n[... truncated]")
+            .unwrap_or_else(|| {
+                // truncate 안 됐으면 next ## 헤더 또는 끝까지
+                after.find("\n## ").unwrap_or(after.len())
+            });
+        body_end
+    }
+
+    #[test]
+    fn reviewer_role_uses_squeezed_plan_doc_cap() {
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        // Reviewer 가 받는 plan_document — 10K (실제 회귀 시나리오 매칭).
+        // unique marker (앞 100자 = "REV-PLANDOC-") 는 다른 영역과 충돌 차단.
+        data.plan_document = Some(format!("REVPLAN{}", "x".repeat(9_993)));
+        data.context_mode_override = Some("standard".into());
+        data.sender_role = Some("reviewer".into());
+
+        let (assembled, _, meta) = assemble_prompt(&data, None);
+        assert!(
+            meta.sections.contains(&"plan-document".to_string()),
+            "plan-document 섹션 등장"
+        );
+
+        let body_len = measure_plan_doc_body_len(&assembled);
+        assert!(
+            body_len <= 3050, // 3000 cap + char_boundary 보정 여유
+            "reviewer 의 plan_doc body 는 3K 이하로 squeeze (got {})",
+            body_len
+        );
+    }
+
+    /// 다른 role (Architect / Developer / Persona / single-agent) 은 기존
+    /// max_chars 6000 보존. INV-CSW-6 의 회귀 가드.
+    #[test]
+    fn non_reviewer_roles_keep_original_plan_doc_cap() {
+        // Architect
+        let tmp = TempDir::new().unwrap();
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_document = Some(format!("ARCH{}", "y".repeat(9_996)));
+        data.context_mode_override = Some("standard".into());
+        data.sender_role = Some("architect".into());
+        let (assembled, _, _) = assemble_prompt(&data, None);
+        let body_len = measure_plan_doc_body_len(&assembled);
+        assert!(
+            body_len > 3050,
+            "architect 분기는 3K squeeze 적용 안 됨 (got {} body chars)",
+            body_len
+        );
+        assert!(
+            body_len <= 6050, // 6000 cap + 보정 여유
+            "architect 분기는 6K cap 보존 (got {})",
+            body_len
+        );
+
+        // Developer (별 sender_role)
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_document = Some(format!("DEV{}", "z".repeat(9_997)));
+        data.context_mode_override = Some("standard".into());
+        data.sender_role = Some("developer".into());
+        let (assembled, _, _) = assemble_prompt(&data, None);
+        let body_len = measure_plan_doc_body_len(&assembled);
+        assert!(
+            body_len > 3050,
+            "developer 분기도 3K squeeze 적용 안 됨 (got {})",
+            body_len
+        );
+
+        // sender_role None (single-agent dispatch 등)
+        let mut data = empty_context_data(Some(tmp.path().to_string_lossy().to_string()));
+        data.plan_document = Some(format!("NONE{}", "w".repeat(9_996)));
+        data.context_mode_override = Some("standard".into());
+        data.sender_role = None;
+        let (assembled, _, _) = assemble_prompt(&data, None);
+        let body_len = measure_plan_doc_body_len(&assembled);
+        assert!(
+            body_len > 3050,
+            "sender_role None 분기도 3K squeeze 적용 안 됨 (got {})",
+            body_len
         );
     }
 }

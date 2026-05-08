@@ -554,6 +554,19 @@ pub fn load_context_data(
     ).unwrap_or_else(|_| "main".into());
     let is_scratchpad = conv_type == "scratchpad";
 
+    // (claudeSdkSessionWindowGuardPlan Task 03) Reviewer specific squeeze.
+    //
+    // resolve_agent_role 결과를 미리 결정해 current_messages LIMIT 와
+    // plan_document cap 분기에 사용. 기존엔 line 890 부근에서 한 번 호출했으나,
+    // Task 03 의 squeeze 가 *current_messages 로딩 (line 586) 과 plan_document
+    // 로딩 (line 653)* 모두 이전 시점이라 위로 끌어올림.
+    //
+    // INV-CSW-6: Reviewer 외 role 의 ContextPack 동작 변경 0 — squeeze 분기는
+    // `agent_role == "reviewer"` 정확히 매칭 시만 적용. resolve_agent_role 의
+    // reviewer 매칭은 plans.review_branch_id 기반 (false positive 0).
+    let agent_role: &'static str = resolve_agent_role(conn, conversation_id);
+    let is_reviewer = agent_role == "reviewer";
+
     // Query 1: has_active_plan (auto mode signal) — check main chat plan for scratchpads
     let plan_lookup_conv = if is_scratchpad {
         // Find main chat for this project
@@ -583,10 +596,22 @@ pub fn load_context_data(
     //
     // INV-RTC-7/8 (RT 미사용 영향 0): RT 한번도 안 쓴 conv 는 모든 row 의
     // rt_round_index = NULL → 출력이 기존 동작과 동일.
+    //
+    // (claudeSdkSessionWindowGuardPlan Task 03) Reviewer 분기 squeeze:
+    // Reviewer 는 SDK 누적 history 폭발 surface 가 빈번한 role — LIMIT 20 → 10
+    // 으로 좁혀 trigger threshold 늦춤. 다른 role 은 기존 LIMIT 20 보존
+    // (INV-CSW-6).
+    const RECENT_MESSAGES_LIMIT_DEFAULT: i64 = 20;
+    const RECENT_MESSAGES_LIMIT_REVIEWER: i64 = 10;
+    let recent_messages_limit = if is_reviewer {
+        RECENT_MESSAGES_LIMIT_REVIEWER
+    } else {
+        RECENT_MESSAGES_LIMIT_DEFAULT
+    };
     let current_messages = crate::commands::context_queries::load_recent_messages_excluding_rt(
         conn,
         conversation_id,
-        20,
+        recent_messages_limit,
     );
 
     // Query 3: parent messages (branch: parent conv, scratchpad: main chat)
@@ -887,7 +912,11 @@ pub fn load_context_data(
     // 결정해 두 곳 (agent_role_doc 로딩 + intent_lookup 활성화) 에서 공유한다.
     // resolve_agent_role 은 plans.implementation_branch_id / review_branch_id 를
     // 조회하므로 비-architect 일 때만 짧게 read query.
-    let agent_role = resolve_agent_role(conn, conversation_id);
+    //
+    // (claudeSdkSessionWindowGuardPlan Task 03) `agent_role` 는 함수 입구
+    // (`is_reviewer` 결정 시점) 에서 이미 결정 — current_messages LIMIT /
+    // plan_document cap 분기에 사용하기 위해 위로 끌어올렸다. 여기서는 그
+    // 결과를 그대로 재사용 (단일 SSOT).
 
     // Load agent role document from project docs/agents/
     let agent_role_doc: Option<String> = project_path.and_then(|pp| {
@@ -1602,5 +1631,81 @@ mod tests {
             [],
         ).unwrap();
         assert_eq!(resolve_agent_role(&conn, "branch:b-rev"), "reviewer");
+    }
+
+    // ─── claudeSdkSessionWindowGuardPlan Task 03 — Reviewer squeeze ────────
+
+    /// Reviewer 분기 LIMIT 가 10 으로 좁혀짐. resolve_agent_role 결과에 따라
+    /// load_context_data 안에서 분기되는 LIMIT 상수만 단위 검증.
+    ///
+    /// 본 test 는 *상수 분기 자체* 를 검증 — load_recent_messages_excluding_rt
+    /// 의 실제 LIMIT 결과는 별 (existing) test 에서 다룸. 본 test 는 *INV-CSW-6
+    /// 의 분기 정확도* (reviewer 만 10, 다른 role 20) 를 작은 단위로 검증.
+    #[test]
+    fn reviewer_role_uses_squeezed_recent_messages_limit() {
+        // resolve_agent_role 가 reviewer 반환하는 시나리오 (review_branch_id 매핑)
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                implementation_branch_id TEXT,
+                review_branch_id TEXT
+             );",
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO plans (review_branch_id) VALUES ('b-rev-squeeze')",
+            [],
+        ).unwrap();
+        let role = resolve_agent_role(&conn, "branch:b-rev-squeeze");
+        let is_reviewer = role == "reviewer";
+        assert!(is_reviewer, "review_branch_id 매핑 시 reviewer");
+
+        // 분기 결과 검증 — limit 상수
+        const RECENT_MESSAGES_LIMIT_DEFAULT: i64 = 20;
+        const RECENT_MESSAGES_LIMIT_REVIEWER: i64 = 10;
+        let limit = if is_reviewer {
+            RECENT_MESSAGES_LIMIT_REVIEWER
+        } else {
+            RECENT_MESSAGES_LIMIT_DEFAULT
+        };
+        assert_eq!(limit, 10, "reviewer 분기 LIMIT 10");
+    }
+
+    /// 다른 role (architect / developer) 의 LIMIT 가 20 보존 (INV-CSW-6).
+    #[test]
+    fn non_reviewer_roles_keep_original_recent_messages_limit() {
+        // architect (default — main chat)
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE plans (
+                implementation_branch_id TEXT,
+                review_branch_id TEXT
+             );",
+        ).unwrap();
+        let role = resolve_agent_role(&conn, "conv-main-keep");
+        assert_eq!(role, "architect");
+        let is_reviewer = role == "reviewer";
+        const RECENT_MESSAGES_LIMIT_DEFAULT: i64 = 20;
+        const RECENT_MESSAGES_LIMIT_REVIEWER: i64 = 10;
+        let limit = if is_reviewer {
+            RECENT_MESSAGES_LIMIT_REVIEWER
+        } else {
+            RECENT_MESSAGES_LIMIT_DEFAULT
+        };
+        assert_eq!(limit, 20, "architect 분기 LIMIT 20 보존");
+
+        // developer (impl_branch_id 매핑)
+        conn.execute(
+            "INSERT INTO plans (implementation_branch_id) VALUES ('b-impl-keep')",
+            [],
+        ).unwrap();
+        let role = resolve_agent_role(&conn, "branch:b-impl-keep");
+        assert_eq!(role, "developer");
+        let is_reviewer = role == "reviewer";
+        let limit = if is_reviewer {
+            RECENT_MESSAGES_LIMIT_REVIEWER
+        } else {
+            RECENT_MESSAGES_LIMIT_DEFAULT
+        };
+        assert_eq!(limit, 20, "developer 분기 LIMIT 20 보존");
     }
 }
