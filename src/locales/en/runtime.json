@@ -7,6 +7,11 @@
       "learnMore": "Open Claude usage",
       "manualRestart": "Restart Claude session"
     },
+    "windowRotated": {
+      "title": "Claude session window limit reached",
+      "body": "Cumulative context approached the model's window limit, so the SDK session was rotated to a fresh one. Prior conversation context is re-attached via ContextPack — the first reply may be slightly slower.",
+      "dismiss": "Got it"
+    },
     "rateLimit": {
       "ok": "Claude usage OK",
       "approaching": "Approaching Claude's 5-hour limit",

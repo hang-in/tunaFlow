@@ -163,6 +163,7 @@ where
         session_id: None,
         last_rate_limit: None,
         fresh_fallback: false,
+        window_rotated: None,
     })
 }
 

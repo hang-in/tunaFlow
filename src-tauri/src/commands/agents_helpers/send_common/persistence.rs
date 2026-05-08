@@ -483,6 +483,21 @@ pub fn finalize_engine_run(
                     "rateLimit": rl,
                 }));
             }
+
+            // (claudeSdkSessionWindowGuardPlan Task 02) SDK 누적 window guard 가
+            // fresh-rotate 발동 시 frontend 에 toast 알림 발행. ClaudeFallbackEvents.tsx
+            // 의 listener 가 sonner toast 표시. 회귀 가드: window_rotated=None 이면
+            // 정상 path (rotate 미발생) — 이벤트 발행 안 함. claude / claude-code 외
+            // 엔진은 항상 None 이라 자연스럽게 skip.
+            if let Some(ref wr) = out.window_rotated {
+                let _ = app.emit("tunaflow:sdk-session-window-rotated", serde_json::json!({
+                    "messageId": msg_id,
+                    "conversationId": conversation_id,
+                    "engine": engine_key,
+                    "priorTokens": wr.prior_tokens,
+                    "threshold": wr.threshold,
+                }));
+            }
             insert_trace_log_with_context(conn, conversation_id, out.input_tokens, out.output_tokens, out.cost_usd, now,
                 &SpanInfo { trace_id: &new_trace_id(), span_id: new_span_id(), parent_span_id: None,
                     operation: "agent.stream", engine: engine_key, duration_ms: duration_ms as i64, status: "ok" },

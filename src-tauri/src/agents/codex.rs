@@ -212,6 +212,7 @@ pub fn run(input: RunInput) -> Result<RunOutput, AppError> {
         session_id: None,
         last_rate_limit: None,
         fresh_fallback: false,
+        window_rotated: None,
     })
 }
 
@@ -413,6 +414,7 @@ where
         session_id: None,
         last_rate_limit: None,
         fresh_fallback: false,
+        window_rotated: None,
     })
 }
 

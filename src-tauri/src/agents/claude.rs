@@ -179,6 +179,26 @@ pub struct RunOutput {
     /// revival 자동 발동, (c) frontend 에 `claude:fresh_fallback` event emit.
     /// claudeTransportFlipHardeningPlan T2 + T3.
     pub fresh_fallback: bool,
+    /// (claudeSdkSessionWindowGuardPlan Task 02) `Some((prior_tokens, threshold))`
+    /// = stream_run_sdk 진입 직후 SDK 누적 window guard 가 fresh-rotate trigger
+    /// 발동했음. finalize_engine_run 이 본 정보를 보고 frontend 에 Tauri event
+    /// `tunaflow:sdk-session-window-rotated` 발행 → sonner toast 알림. None 이면
+    /// rotate 미발생 (정상 path) — 이벤트 발행 안 함. cli/sdk path 모두 동일 필드
+    /// 사용 (cli path 는 항상 None).
+    pub window_rotated: Option<WindowRotatedInfo>,
+}
+
+/// (claudeSdkSessionWindowGuardPlan Task 02) fresh-rotate 발생 metadata.
+///
+/// SSOT: `docs/plans/claudeSdkSessionWindowGuardPlan_2026-05-09.md` Task 02.
+/// frontend toast 의 description 에 사용 (디버깅 / 사용자 인지 정보).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowRotatedInfo {
+    /// rotate 직전 누적 input_tokens
+    pub prior_tokens: u64,
+    /// 적용된 임계값 (180K default / 900K `[1m]`)
+    pub threshold: u64,
 }
 
 /// claude API 에러를 사용자 친화 카테고리로 분류 (T7).
@@ -581,6 +601,8 @@ where
                     last_rate_limit: last_rate_limit.take(),
                     // T2: stream_run wrapper 가 retry 후 true 로 set. 1회 시도 자체는 false.
                     fresh_fallback: false,
+                    // cli `-p` path 는 본 plan scope 외 (sdk-url path 만 cumulative window guard 적용)
+                    window_rotated: None,
                 });
             }
             _ => {}
@@ -692,6 +714,8 @@ pub fn run(input: RunInput) -> Result<RunOutput, AppError> {
         // 못한다 (stream-json 전용). 항상 None.
         last_rate_limit: None,
         fresh_fallback: false,
+        // cli `-p` path 는 본 plan scope 외 (sdk-url path 만 cumulative window guard 적용)
+        window_rotated: None,
     })
 }
 

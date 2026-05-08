@@ -356,6 +356,7 @@ where
                     session_id: Some(thread_id),
                     last_rate_limit: None,
                     fresh_fallback: false,
+                    window_rotated: None,
                 });
             }
             // wire format: "error" (NOT "errorNotification"; codex v2 protocol common.rs:978)

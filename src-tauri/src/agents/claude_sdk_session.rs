@@ -891,19 +891,22 @@ where
     G: FnMut(String) + Send,
     C: Fn() -> bool + Send,
 {
-    // (claudeSdkSessionWindowGuardPlan Task 01) SDK 누적 window guard.
+    // (claudeSdkSessionWindowGuardPlan Task 01+02) SDK 누적 window guard.
     //
     // 직전 turn 의 result event 가 stash 한 누적 input_tokens 를 read 해서
     // 임계 (default 180K / `[1m]` 900K) 도달이면 fresh-rotate 발동:
     //   1. kill_session_clear_resume — SESSIONS + RESUME_IDS + LAST_DELIVERED 모두 invalidate
     //   2. clear_window_guard_input_tokens — stash 도 reset
-    //   3. (PR-2) Tauri event emit `tunaflow:sdk-session-window-rotated`
+    //   3. window_rotated_pending 에 metadata stash → result event 에서 RunOutput
+    //      에 옮김 → finalize_engine_run 이 Tauri event `tunaflow:sdk-session-window-rotated`
+    //      발행 → frontend toast 알림 (PR-2 Task 02)
     //   4. 다음 줄의 get_or_create_session 이 fresh session 으로 spawn (INV-CSW-2)
     //
     // 회복 가시화: persistence.rs 가 LAST_DELIVERED 비어있음을 인지 →
     // is_session_continuation=false → ContextPack full mode + anchor 2 turns
     // → plan_doc / findings / RT consensus 재주입 (사용자 컨텍스트 회복).
     let pre_dispatch_key = session_key_for(conv_id);
+    let mut window_rotated_pending: Option<crate::agents::claude::WindowRotatedInfo> = None;
     if should_trigger_window_rotate(&pre_dispatch_key, input.model.as_deref()) {
         let prior_tokens = read_window_guard_input_tokens(&pre_dispatch_key);
         let threshold = crate::agents::claude_window_guard::current_window_guard_threshold(
@@ -920,8 +923,12 @@ where
         );
         kill_session_clear_resume(conv_id);
         clear_window_guard_input_tokens(&pre_dispatch_key);
-        // (PR-2 Task 02) Tauri event emit hook — frontend toast 알림.
-        // PR-1 단독 머지 시 silent 진행 (UX 마찰 ↑) but 회귀 차단은 즉시 발동.
+        // (PR-2 Task 02) frontend toast 발행을 위한 metadata stash.
+        // result event 가 RunOutput.window_rotated 에 옮긴다.
+        window_rotated_pending = Some(crate::agents::claude::WindowRotatedInfo {
+            prior_tokens,
+            threshold,
+        });
         emit_window_rotated_event(conv_id, prior_tokens, threshold);
     }
 
@@ -1155,6 +1162,9 @@ where
                     // sdk-session path 는 본 plan scope 외 — 호환성만 유지.
                     last_rate_limit: None,
                     fresh_fallback: false,
+                    // (claudeSdkSessionWindowGuardPlan Task 02) 진입부 fresh-rotate
+                    // 발생 시 metadata 를 옮김. None 이면 정상 path (rotate 미발생).
+                    window_rotated: window_rotated_pending.take(),
                 });
             }
             "control_request" => {

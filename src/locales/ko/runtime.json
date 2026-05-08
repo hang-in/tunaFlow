@@ -7,6 +7,11 @@
       "learnMore": "Claude 사용량 보기",
       "manualRestart": "Claude 세션 다시 시작"
     },
+    "windowRotated": {
+      "title": "Claude 세션 컨텍스트 한계 도달",
+      "body": "누적 컨텍스트가 한계에 가까워져 새 세션으로 자동 전환됐습니다. 이전 대화 맥락은 ContextPack 으로 재주입됩니다 — 첫 응답이 약간 느릴 수 있습니다.",
+      "dismiss": "확인"
+    },
     "rateLimit": {
       "ok": "Claude 사용량 정상",
       "approaching": "Claude 5시간 한도에 가까워졌습니다",
