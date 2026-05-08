@@ -1,6 +1,7 @@
 pub mod anthropic_sdk;
 pub mod claude;
 pub mod claude_sdk_session;
+pub mod claude_window_guard;
 pub mod codex;
 pub mod codex_app_server;
 pub mod context_hub;
