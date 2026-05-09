@@ -1,0 +1,32 @@
+# Copy this file to config.toml and edit. The app refuses to start without config.toml.
+
+[architect]
+# Codex CLI command. Adjust if your binary is not on PATH or has a different name.
+command = "codex"
+
+# Per-call timeout for `codex exec` (seconds). Codex can be slow on cold cache.
+timeout_seconds = 180
+
+[developer]
+# Ollama model name — must match `ollama list` output exactly.
+# 27B-class models are the original spec target; pick whatever fits your VRAM.
+# Examples: "qwen2.5:32b", "gemma2:27b", "command-r:35b", "gemma4:e4b" (smaller fallback).
+model = "gemma4:e4b"
+
+# Ollama HTTP host. Default localhost is fine.
+host = "http://localhost:11434"
+
+# Generation parameters. Lower temperature = less creative, more reproducible.
+temperature = 0.3
+num_ctx = 8192
+
+# Per-call timeout (seconds). Local models can be slow on first load.
+timeout_seconds = 300
+
+[ui]
+# Show wall-clock duration after each role finishes.
+show_timing = true
+
+# Maximum retries when Reviewer says "retry". After this, the workflow gives up
+# and the user decides what to do.
+max_retries = 2
