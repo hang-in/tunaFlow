@@ -221,12 +221,27 @@ export function AppShell() {
   // Windows 첫 실행 + 기존 프로젝트 DB load 시 수십 초 걸릴 수 있어 spinner +
   // 단계 텍스트로 hang 인지 가시화. tauri.conf.json 의 visible: false 로 React
   // mount 전에는 창 자체가 안 보이고, mount 직후 본 splash 가 첫 화면.
+  //
+  // Issue #264: bootstrap/window.rs 가 Windows 에서 set_decorations(false) 로
+  // 네이티브 캡션바를 제거한 상태이므로, splash / ProjectStartup 분기에서도
+  // <TitleBar> 가 함께 마운트되어야 캡션·드래그·닫기 버튼이 보장된다. 마운트
+  // 누락 시 사용자는 창 이동·종료 불가 상태에 갇힌다.
+  // PR #277 review (HIGH): splash 분기에서도 Toaster 마운트 — init() 단계
+  // 에서 fire 되는 toast (예: mobile_pairing migration toast, init catch
+  // 블록의 에러 알림) 가 사용자에게 표시되도록 함. 기존엔 splash 분기에
+  // Toaster 가 없어 invisible.
   if (!loaded) return (
-    <div className="fixed inset-0 bg-sidebar flex flex-col items-center justify-center gap-4 select-none">
-      <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
-      <div className="text-foreground/60 text-[13px] font-medium">tunaFlow</div>
-      <div className="text-foreground/40 text-[11px]">{loadingStep}</div>
-    </div>
+    <>
+      <Toaster position="bottom-right" theme={themeMode} richColors closeButton />
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans relative select-none">
+        <TitleBar />
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
+          <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+          <div className="text-foreground/60 text-[13px] font-medium">tunaFlow</div>
+          <div className="text-foreground/40 text-[11px]">{loadingStep}</div>
+        </div>
+      </div>
+    </>
   );
 
   // Project-first startup: show selector if no project is selected.
@@ -235,7 +250,6 @@ export function AppShell() {
   if (!selectedProjectKey) {
     return (
       <>
-        <ProjectStartup />
         <Toaster position="bottom-right" theme={themeMode} richColors closeButton />
         <FirstRunDependencyDialog />
         {settingsOpen && (
@@ -244,6 +258,12 @@ export function AppShell() {
             initialSection={settingsInitialSection}
           />
         )}
+        <div className="flex flex-col h-screen w-screen overflow-hidden bg-sidebar text-foreground font-sans relative">
+          <TitleBar />
+          <div className="flex-1 min-h-0">
+            <ProjectStartup />
+          </div>
+        </div>
       </>
     );
   }

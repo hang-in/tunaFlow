@@ -62,7 +62,7 @@ export function ProjectStartup() {
   };
 
   return (
-    <div className="flex items-center justify-center h-screen w-screen bg-sidebar text-foreground">
+    <div className="flex items-center justify-center h-full w-full bg-sidebar text-foreground">
       <div className="w-[400px] space-y-6">
         {/* Logo / Title */}
         <div className="text-center">
