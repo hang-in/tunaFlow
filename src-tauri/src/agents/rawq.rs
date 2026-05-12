@@ -244,17 +244,14 @@ pub fn resolve_diagnostics() -> String {
 pub fn ensure_daemon() {
     let Ok(bin) = resolve_rawq_bin() else { return; };
 
-    // Check if already running
-    let status = Command::new(&bin).no_console()
-        .args(["daemon", "status"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-    if let Ok(s) = status {
-        if s.success() {
-            eprintln!("[rawq] daemon already running");
-            return;
-        }
+    // Check if already running. is_daemon_ready 는 3s timeout 을 적용한
+    // try_wait 패턴이므로, 부팅 시점에 daemon 의 IPC 가 어떤 이유로 응답
+    // 안 해도 ensure_daemon 의 background thread 가 영원히 stuck 되지
+    // 않는다. 기존엔 `.status()` 직접 호출이라 timeout 없어 부팅 시
+    // daemon 이 안 켜지는 회귀 가능성.
+    if is_daemon_ready() {
+        eprintln!("[rawq] daemon already running");
+        return;
     }
 
     // Start daemon in background
@@ -323,29 +320,78 @@ pub struct IndexInfo {
     pub model: String,
 }
 
-/// Get index status. Returns `Ok(Some(info))` if indexed, `Ok(None)` if not, `Err` on failure.
-pub fn index_status(project_path: &str) -> Result<Option<IndexInfo>, RawqError> {
+/// `rawq index status <path> --json` 을 timeout 과 함께 spawn 하고 stdout 을
+/// 반환. graceful fallback — daemon 이 응답하지 않아 timeout 도달 시 `Ok(None)`
+/// 으로 caller 에게 "인덱스 없음" 시그널 전달 (메인 chat 의 ContextPack 흐름은
+/// rawq 섹션을 skip 하고 정상 진행).
+///
+/// 기존 `.output()` 직접 호출은 timeout 없어 daemon hang 시 메인 chat 무한
+/// 대기 회귀의 root cause 였음. (`docs/`/PR 본문 참조)
+fn run_index_status(project_path: &str) -> Result<Option<serde_json::Value>, RawqError> {
     let bin = resolve_rawq_bin()?;
-    let output = Command::new(&bin).no_console()
+    let mut child = Command::new(&bin).no_console()
         .args(["index", "status", project_path, "--json"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .output()
+        .spawn()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
 
-    if !output.status.success() {
+    // search_with_options 와 같은 drain thread 패턴. `wait_with_output` 은
+    // daemon 이 stdio handle 을 inherit 한 채 살아있으면 EOF 미도착으로 무한
+    // block 가능 (search 경로에서 실측 53s hang). 메인 chat ContextPack 에서
+    // 매 요청마다 호출되므로 같은 안전망 필요.
+    let stdout_pipe = child.stdout.take()
+        .ok_or_else(|| RawqError::ExecFailed("stdout pipe missing".into()))?;
+    let stdout_buf = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    spawn_drain_thread(stdout_pipe, stdout_buf.clone());
+
+    let t0 = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(5);
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {
+                if t0.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    eprintln!(
+                        "[rawq] index_status timed out (5s) — treating as 'not indexed' for graceful fallback"
+                    );
+                    return Ok(None);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(e) => return Err(RawqError::ExecFailed(e.to_string())),
+        }
+    };
+
+    // child 종료 후 drain thread 가 잔여 stdout 을 흡수할 시간 — stderr 는
+    // null 로 redirect 했으므로 stdout 만 추적.
+    wait_for_stable_buffer(&[&stdout_buf]);
+
+    if !exit_status.success() {
         return Ok(None);
     }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout_bytes = stdout_buf.lock().map(|b| b.clone()).unwrap_or_default();
+    let stdout = String::from_utf8_lossy(&stdout_bytes);
+    if stdout.trim().is_empty() {
+        return Ok(None);
+    }
     let parsed: serde_json::Value = serde_json::from_str(&stdout)
         .map_err(|e| RawqError::ParseFailed(e.to_string()))?;
+    Ok(Some(parsed))
+}
 
+/// Get index status. Returns `Ok(Some(info))` if indexed, `Ok(None)` if not or
+/// timed out, `Err` only on hard failures (binary missing / parse error).
+pub fn index_status(project_path: &str) -> Result<Option<IndexInfo>, RawqError> {
+    let Some(parsed) = run_index_status(project_path)? else {
+        return Ok(None);
+    };
     let indexed = parsed.get("indexed").and_then(|v| v.as_bool()).unwrap_or(false);
     if !indexed {
         return Ok(None);
     }
-
     Ok(Some(IndexInfo {
         files: parsed.get("files").and_then(|v| v.as_u64()).unwrap_or(0),
         chunks: parsed.get("chunks").and_then(|v| v.as_u64()).unwrap_or(0),
@@ -354,27 +400,14 @@ pub fn index_status(project_path: &str) -> Result<Option<IndexInfo>, RawqError> 
 }
 
 /// Check if a rawq index exists for the given path.
-/// Returns `true` if indexed, `false` otherwise.
+/// Returns `true` if indexed, `false` if not or timed out (graceful).
 ///
 /// CLI: `rawq index status <path> --json`
 /// Output: `{ "indexed": true/false, "files": N, "chunks": N, ... }`
 pub fn is_indexed(project_path: &str) -> Result<bool, RawqError> {
-    let bin = resolve_rawq_bin()?;
-    let output = Command::new(&bin).no_console()
-        .args(["index", "status", project_path, "--json"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
-
-    if !output.status.success() {
+    let Some(parsed) = run_index_status(project_path)? else {
         return Ok(false);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout)
-        .map_err(|e| RawqError::ParseFailed(e.to_string()))?;
-
+    };
     Ok(parsed.get("indexed").and_then(|v| v.as_bool()).unwrap_or(false))
 }
 
@@ -646,10 +679,31 @@ pub fn search_with_options(project_path: &str, query: &str, opts: SearchOptions)
         .spawn()
         .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
 
+    // stdout/stderr 를 별도 thread 에서 chunk read 로 누적한다.
+    //
+    // 원인 (Windows, 2026-05-12 진단): rawq CLI 가 검색 결과를 stdout 에 다 쓰고
+    // exit code 0 으로 종료해도, 자식이 spawn 한 daemon 이 stdout/stderr handle
+    // 을 inherit 한 채 살아있으면 OS 는 pipe write-end 가 모두 close 됐다고 보지
+    // 않아 read 가 EOF 를 받지 못한다. `Child::wait_with_output()` 은 EOF 까지
+    // read 하므로 child 가 죽은 뒤에도 daemon 이 살아있는 한 무한 block.
+    //
+    // 대응: drain thread + 짧은 drain wait. child 종료 시점이면 rawq 는 stdout
+    // 에 결과를 이미 모두 write 했으므로 buffer 에 data 는 들어와 있고, EOF
+    // 미도착이어도 메인 흐름은 buffer snapshot 으로 진행한다. macOS 는 daemon
+    // 이 stdio 를 close 하는 일반 Unix 패턴이라 drain 이 즉시 끝난다.
+    let stdout_pipe = child.stdout.take()
+        .ok_or_else(|| RawqError::ExecFailed("stdout pipe missing".into()))?;
+    let stderr_pipe = child.stderr.take()
+        .ok_or_else(|| RawqError::ExecFailed("stderr pipe missing".into()))?;
+    let stdout_buf = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let stderr_buf = Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    spawn_drain_thread(stdout_pipe, stdout_buf.clone());
+    spawn_drain_thread(stderr_pipe, stderr_buf.clone());
+
     let timeout = std::time::Duration::from_secs(3);
-    loop {
+    let exit_status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
+            Ok(Some(s)) => break s,
             Ok(None) => {
                 if t0.elapsed() > timeout {
                     let _ = child.kill();
@@ -660,23 +714,84 @@ pub fn search_with_options(project_path: &str, query: &str, opts: SearchOptions)
             }
             Err(e) => return Err(RawqError::ExecFailed(e.to_string())),
         }
-    }
+    };
 
-    let output = child.wait_with_output()
-        .map_err(|e| RawqError::ExecFailed(e.to_string()))?;
-    eprintln!("[rawq] search completed in {}ms (rerank={}, text_weight={:?})", t0.elapsed().as_millis(), opts.rerank, opts.text_weight);
+    // child 종료 후 drain thread 가 잔여 데이터를 다 흡수할 짧은 시간을 준다.
+    // stderr 도 같이 추적해 에러 케이스 (NonZeroExit) 에서 stderr 메시지가 잘려
+    // 빈 문자열로 반환되는 회귀를 방지.
+    wait_for_stable_buffer(&[&stdout_buf, &stderr_buf]);
 
-    if !output.status.success() {
-        let code = output.status.code().unwrap_or(-1);
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout_bytes = stdout_buf.lock().map(|b| b.clone()).unwrap_or_default();
+    let stderr_bytes = stderr_buf.lock().map(|b| b.clone()).unwrap_or_default();
+    eprintln!(
+        "[rawq] search completed in {}ms (rerank={}, text_weight={:?}, stdout={}b)",
+        t0.elapsed().as_millis(), opts.rerank, opts.text_weight, stdout_bytes.len()
+    );
+
+    if !exit_status.success() {
+        let code = exit_status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
         if code == 1 {
             return Err(RawqError::NoResults);
         }
         return Err(RawqError::NonZeroExit { code, stderr });
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&stdout_bytes);
     parse_json(&stdout, opts.limit)
+}
+
+/// chunk read 로 pipe 를 비우면서 buffer 에 누적한다. `read_to_end` 는 atomic
+/// 이라 중단 불가 — daemon 이 stdio handle 을 hold 해 EOF 가 안 와도 main thread
+/// 가 누적된 buffer 를 snapshot 으로 가져갈 수 있도록 chunk 단위로 mutex 에 push.
+///
+/// EOF 가 오면 thread 는 자연 종료. EOF 안 오는 환경에서는 daemon 이 결국 idle
+/// timeout 으로 죽을 때 thread 도 일제히 풀린다 (leak 은 thread 1개라 경량).
+fn spawn_drain_thread<R: std::io::Read + Send + 'static>(
+    mut reader: R,
+    buf: Arc<std::sync::Mutex<Vec<u8>>>,
+) {
+    std::thread::spawn(move || {
+        let mut chunk = [0u8; 4096];
+        loop {
+            match reader.read(&mut chunk) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    if let Ok(mut guard) = buf.lock() {
+                        guard.extend_from_slice(&chunk[..n]);
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+/// child 종료 후 drain thread 가 잔여 데이터를 흡수할 시간을 준다. 모든 추적
+/// 대상 buffer 의 합계 길이가 100ms 동안 변화 없으면 안정으로 판단해 early exit.
+/// 최대 1000ms 까지 대기 — macOS 보수적 마진 + drain thread 가 마지막 chunk
+/// 처리 못 끝낸 edge case 커버. EOF 못 받는 Windows daemon hang 케이스에서도
+/// rawq 가 이미 write 한 결과는 OS pipe buffer 에 들어와 있어 ms 단위에 안정화.
+fn wait_for_stable_buffer(buffers: &[&Arc<std::sync::Mutex<Vec<u8>>>]) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+    let total_len = || -> usize {
+        buffers.iter().map(|b| b.lock().map(|g| g.len()).unwrap_or(0)).sum()
+    };
+    let mut prev = total_len();
+    let mut stable = 0u32;
+    while std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let cur = total_len();
+        if cur == prev {
+            stable += 1;
+            if stable >= 5 {
+                break;
+            }
+        } else {
+            stable = 0;
+            prev = cur;
+        }
+    }
 }
 
 /// Parse rawq search --json output.
